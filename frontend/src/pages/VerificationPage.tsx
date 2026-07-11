@@ -33,6 +33,7 @@ import VendorAnalysis from "../components/results/VendorAnalysis";
 import ActionsPanel from "../components/results/ActionsPanel";
 import { InvestigationBanner } from "../components/results/shared/dashboardShell";
 import { verifyDocument } from "../api/verificationApi";
+import { ACTIVE_ENGINE_DISPLAY_NAME } from "../config/vendors";
 import type { DocumentInfoData, VerificationResult } from "../types/verification";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -232,10 +233,13 @@ function SplitLayout({
         <Box
           sx={{
             flexShrink: 0,
-            width: { xs: "100%", md: isDashboard ? "38%" : 400 },
+            width: { xs: "100%", md: "38%" },
+            minWidth: { md: 360 },
+            maxWidth: { md: 520 },
             position: { md: "sticky" },
             top: { md: "64px" },
-            maxHeight: { md: "calc(100vh - 80px)" },
+            height: { xs: 420, md: "calc(100vh - 96px)" },
+            maxHeight: { xs: 420, md: "calc(100vh - 96px)" },
             display: "flex",
             flexDirection: "column",
           }}
@@ -357,7 +361,7 @@ export default function VerificationPage() {
           uploadTime: uploadTime ? formatUploadTime(uploadTime) : "—",
           processingTime:
             processingMs !== null ? formatProcessingTime(processingMs) : null,
-          vendorName: step === "results" ? "TruthScan" : null,
+          vendorName: step === "results" ? ACTIVE_ENGINE_DISPLAY_NAME : null,
           verifiedAt:
             step === "results" && verificationResult
               ? formatVerifiedAt(verificationResult.verifiedAt)
@@ -372,7 +376,7 @@ export default function VerificationPage() {
       "Fraud detection",
       "Metadata analysis",
       "OCR validation",
-      "Multi-vendor checks",
+      "Multi-engine checks",
       "Executive report",
     ];
 
@@ -542,7 +546,7 @@ export default function VerificationPage() {
             }}
           >
             {[
-              { label: "AI Engine", value: "TruthScan forensic model" },
+              { label: "AI Engine", value: `${ACTIVE_ENGINE_DISPLAY_NAME} forensic model` },
               { label: "Security", value: "Encrypted in transit · no public sharing" },
               { label: "Output", value: "Executive risk & evidence pack" },
             ].map((item) => (
@@ -760,7 +764,11 @@ export default function VerificationPage() {
 
         <TechnicalDetails signals={verificationResult.signals} />
 
-        <ActionsPanel onVerifyAnother={reset} />
+        <ActionsPanel
+          result={verificationResult}
+          fileName={file?.name ?? "certificate"}
+          onVerifyAnother={reset}
+        />
       </Box>
     );
   }

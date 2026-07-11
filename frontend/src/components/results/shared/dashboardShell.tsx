@@ -182,7 +182,7 @@ export function InvestigationBanner({
     { label: "Confidence", value: confidence != null ? `${confidence}%` : "—" },
     { label: "Risk Score", value: riskScore != null ? `${riskScore}/100` : "—" },
     { label: "Signals", value: signalCount != null ? String(signalCount) : "—" },
-    { label: "Vendors", value: vendorCount != null ? String(vendorCount) : "—" },
+    { label: "Engines", value: vendorCount != null ? String(vendorCount) : "—" },
   ];
 
   return (

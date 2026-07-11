@@ -13,4 +13,6 @@ def get_logger(name: str) -> logging.Logger:
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter(LOG_FORMAT))
         logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
     return logger

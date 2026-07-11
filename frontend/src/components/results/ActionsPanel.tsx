@@ -8,12 +8,24 @@ import Button from "@mui/material/Button";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import ReplayIcon from "@mui/icons-material/Replay";
 import { DASHBOARD } from "./shared/dashboardShell";
+import type { VerificationResult } from "../../types/verification";
+import { downloadVerificationReport } from "../../utils/downloadReport";
 
 interface ActionsPanelProps {
+  result: VerificationResult;
+  fileName?: string;
   onVerifyAnother: () => void;
 }
 
-export default function ActionsPanel({ onVerifyAnother }: ActionsPanelProps) {
+export default function ActionsPanel({
+  result,
+  fileName = "certificate",
+  onVerifyAnother,
+}: ActionsPanelProps) {
+  const handleDownload = () => {
+    downloadVerificationReport(result, fileName);
+  };
+
   return (
     <Box
       sx={{
@@ -51,6 +63,7 @@ export default function ActionsPanel({ onVerifyAnother }: ActionsPanelProps) {
         <Button
           variant="outlined"
           startIcon={<DownloadOutlinedIcon />}
+          onClick={handleDownload}
           sx={{
             flex: 1,
             minWidth: 180,

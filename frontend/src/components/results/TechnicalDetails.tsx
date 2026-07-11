@@ -1,9 +1,9 @@
 /**
  * TechnicalDetails — Section 6: Technical Analysis
- * Tile grid with status indicators and coverage meter.
+ * Shows only modules that returned real findings after verification.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Collapse from "@mui/material/Collapse";
@@ -22,45 +22,145 @@ interface AnalysisCategory {
   signalCategories: string[];
 }
 
+/** Known forensic modules. Only rendered when the engine returns matching signals. */
 const ANALYSIS_CATEGORIES: AnalysisCategory[] = [
-  { key: "metadata", label: "Metadata", description: "Properties & modification history", signalCategories: ["Metadata Integrity", "Metadata"] },
-  { key: "qr", label: "QR Code", description: "Detection & payload validation", signalCategories: ["QR Analysis", "QR Code"] },
-  { key: "signature", label: "Signature", description: "Digital & handwritten validity", signalCategories: ["Signature Analysis", "Signature"] },
-  { key: "structure", label: "Structure", description: "Layout & format integrity", signalCategories: ["Visual Pattern", "Structure Analysis", "Structure"] },
-  { key: "ocr", label: "OCR", description: "Text extraction & consistency", signalCategories: ["OCR Analysis", "OCR"] },
-  { key: "ai", label: "AI Forensics", description: "Deep learning classification", signalCategories: ["AI Analysis"] },
+  {
+    key: "metadata",
+    label: "Metadata",
+    description: "Properties & modification history",
+    signalCategories: ["Metadata Integrity", "Metadata"],
+  },
+  {
+    key: "provenance",
+    label: "Provenance",
+    description: "C2PA / digital provenance checks",
+    signalCategories: ["Provenance / C2PA", "Provenance"],
+  },
+  {
+    key: "qr",
+    label: "QR Code",
+    description: "Detection & payload validation",
+    signalCategories: ["QR Analysis", "QR Code"],
+  },
+  {
+    key: "signature",
+    label: "Signature",
+    description: "Digital & handwritten validity",
+    signalCategories: ["Signature Analysis", "Signature"],
+  },
+  {
+    key: "structure",
+    label: "Structure",
+    description: "Layout & format integrity",
+    signalCategories: ["Visual Pattern", "Structure Analysis", "Structure", "Visual / Overlay"],
+  },
+  {
+    key: "ocr",
+    label: "OCR",
+    description: "Text extraction & consistency",
+    signalCategories: ["OCR Analysis", "OCR"],
+  },
+  {
+    key: "forensic",
+    label: "Forensic",
+    description: "Forensic engine checks",
+    signalCategories: ["Forensic"],
+  },
+  {
+    key: "perceptual",
+    label: "Perceptual",
+    description: "Perceptual / visual consistency",
+    signalCategories: ["Perceptual"],
+  },
+  {
+    key: "field",
+    label: "Field Evidence",
+    description: "Field-assigned anomalies",
+    signalCategories: ["Field Evidence"],
+  },
+  {
+    key: "ai",
+    label: "AI Forensics",
+    description: "Deep learning classification",
+    signalCategories: [
+      "AI Analysis",
+      "AI Indicator",
+      "AI Review",
+      "ML Model",
+      "Detection Pipeline",
+      "Document Validity",
+      "Semantic",
+    ],
+  },
 ];
 
-type ResolvedStatus = "passed" | "warning" | "failed" | "pending";
+type ResolvedStatus = "passed" | "warning" | "failed";
 
-const STATUS_STYLE: Record<ResolvedStatus, { label: string; color: string; bgColor: string; Icon: typeof CheckCircleIcon }> = {
+const STATUS_STYLE: Record<
+  ResolvedStatus,
+  { label: string; color: string; bgColor: string; Icon: typeof CheckCircleIcon }
+> = {
   passed: { label: "Passed", color: "#107C10", bgColor: "#ECFDF5", Icon: CheckCircleIcon },
   warning: { label: "Warning", color: "#D97706", bgColor: "#FFFBEB", Icon: WarningAmberIcon },
   failed: { label: "Failed", color: "#C50F1F", bgColor: "#FEF2F2", Icon: CancelIcon },
-  pending: { label: "Pending", color: "#94A3B8", bgColor: "#F1F5F9", Icon: WarningAmberIcon },
 };
 
-function resolveCategoryStatus(
-  category: AnalysisCategory,
-  signals: Signal[]
-): { status: ResolvedStatus; detail: string | null } {
-  const matching = signals.filter((s) =>
-    category.signalCategories.some((cat) => cat.toLowerCase() === s.category.toLowerCase())
-  );
-
-  if (matching.length === 0) return { status: "pending", detail: null };
-
-  const hasFailed = matching.some((s) => s.status === "fail");
-  const hasWarning = matching.some((s) => s.status === "warning");
-  const status: ResolvedStatus = hasFailed ? "failed" : hasWarning ? "warning" : "passed";
-  const detail = matching.map((s) => s.description).join(" · ");
-
-  return { status, detail };
+interface ResolvedModule {
+  key: string;
+  label: string;
+  detail: string;
+  status: ResolvedStatus;
 }
 
-function AnalysisTile({ category, signals }: { category: AnalysisCategory; signals: Signal[] }) {
-  const { status, detail } = resolveCategoryStatus(category, signals);
-  const style = STATUS_STYLE[status];
+function statusFromSignals(matching: Signal[]): ResolvedStatus {
+  if (matching.some((s) => s.status === "fail")) return "failed";
+  if (matching.some((s) => s.status === "warning")) return "warning";
+  return "passed";
+}
+
+function resolveReportedModules(signals: Signal[]): ResolvedModule[] {
+  const claimed = new Set<string>();
+  const modules: ResolvedModule[] = [];
+
+  for (const category of ANALYSIS_CATEGORIES) {
+    const matching = signals.filter((s) =>
+      category.signalCategories.some((cat) => cat.toLowerCase() === s.category.toLowerCase())
+    );
+    if (matching.length === 0) continue;
+
+    matching.forEach((s) => claimed.add(s.id));
+    modules.push({
+      key: category.key,
+      label: category.label,
+      detail: matching.map((s) => s.description).join(" · "),
+      status: statusFromSignals(matching),
+    });
+  }
+
+  // Surface any engine-specific categories that are not in the known map.
+  const leftovers = new Map<string, Signal[]>();
+  for (const signal of signals) {
+    if (claimed.has(signal.id)) continue;
+    const key = signal.category.trim() || "Additional Findings";
+    const list = leftovers.get(key) ?? [];
+    list.push(signal);
+    leftovers.set(key, list);
+  }
+
+  for (const [label, matching] of leftovers) {
+    modules.push({
+      key: `extra-${label.toLowerCase().replace(/\s+/g, "-")}`,
+      label,
+      detail: matching.map((s) => s.description).join(" · "),
+      status: statusFromSignals(matching),
+    });
+  }
+
+  return modules;
+}
+
+function AnalysisTile({ module }: { module: ResolvedModule }) {
+  const style = STATUS_STYLE[module.status];
   const { Icon } = style;
 
   return (
@@ -78,7 +178,7 @@ function AnalysisTile({ category, signals }: { category: AnalysisCategory; signa
     >
       <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", mb: 1 }}>
         <Typography sx={{ fontSize: "0.875rem", fontWeight: 700, color: DASHBOARD.textPrimary }}>
-          {category.label}
+          {module.label}
         </Typography>
         <Box
           sx={{
@@ -91,15 +191,11 @@ function AnalysisTile({ category, signals }: { category: AnalysisCategory; signa
             justifyContent: "center",
           }}
         >
-          {status === "pending" ? (
-            <Box sx={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: style.color }} />
-          ) : (
-            <Icon sx={{ fontSize: 16, color: style.color }} />
-          )}
+          <Icon sx={{ fontSize: 16, color: style.color }} />
         </Box>
       </Box>
       <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted, mb: 1, flex: 1, lineHeight: 1.45 }}>
-        {detail || category.description}
+        {module.detail}
       </Typography>
       <Typography
         sx={{
@@ -122,17 +218,49 @@ interface TechnicalDetailsProps {
 
 export default function TechnicalDetails({ signals }: TechnicalDetailsProps) {
   const [isOpen, setIsOpen] = useState(true);
+  const modules = useMemo(() => resolveReportedModules(signals), [signals]);
 
-  const resolvedCount = ANALYSIS_CATEGORIES.filter(
-    (cat) => resolveCategoryStatus(cat, signals).status !== "pending"
-  ).length;
-  const coveragePct = Math.round((resolvedCount / ANALYSIS_CATEGORIES.length) * 100);
+  if (modules.length === 0) {
+    return (
+      <SectionShell
+        title="Technical Analysis"
+        icon={<ScienceIcon sx={{ fontSize: 18 }} />}
+        badge={<SectionBadge>Not Available</SectionBadge>}
+      >
+        <Box
+          sx={{
+            py: 3.5,
+            px: 2,
+            textAlign: "center",
+            borderRadius: "12px",
+            backgroundColor: "#F8FAFC",
+            border: `1px solid ${DASHBOARD.borderLight}`,
+            mt: -1,
+          }}
+        >
+          <Typography sx={{ fontSize: "0.875rem", color: DASHBOARD.textMuted }}>
+            Not Provided by Engine
+          </Typography>
+          <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted, mt: 0.75 }}>
+            This verification engine did not return module-level technical findings.
+          </Typography>
+        </Box>
+      </SectionShell>
+    );
+  }
+
+  const passedCount = modules.filter((m) => m.status === "passed").length;
+  const coveragePct = Math.round((passedCount / modules.length) * 100);
 
   return (
     <SectionShell
       title="Technical Analysis"
       icon={<ScienceIcon sx={{ fontSize: 18 }} />}
-      badge={<SectionBadge>{resolvedCount}/{ANALYSIS_CATEGORIES.length} modules</SectionBadge>}
+      badge={
+        <SectionBadge>
+          {modules.length} module{modules.length !== 1 ? "s" : ""} reported
+        </SectionBadge>
+      }
       noPadding
     >
       <Box
@@ -163,10 +291,10 @@ export default function TechnicalDetails({ signals }: TechnicalDetailsProps) {
           />
           <Box>
             <Typography sx={{ fontSize: "0.875rem", fontWeight: 700, color: DASHBOARD.textPrimary }}>
-              Analysis Coverage
+              Module Results
             </Typography>
             <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted }}>
-              {resolvedCount} of {ANALYSIS_CATEGORIES.length} forensic modules resolved
+              {passedCount} of {modules.length} reported modules passed
             </Typography>
           </Box>
         </Box>
@@ -186,8 +314,8 @@ export default function TechnicalDetails({ signals }: TechnicalDetailsProps) {
             backgroundColor: "#FAFBFD",
           }}
         >
-          {ANALYSIS_CATEGORIES.map((category) => (
-            <AnalysisTile key={category.key} category={category} signals={signals} />
+          {modules.map((module) => (
+            <AnalysisTile key={module.key} module={module} />
           ))}
         </Box>
       </Collapse>

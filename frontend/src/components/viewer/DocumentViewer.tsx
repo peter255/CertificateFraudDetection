@@ -1,12 +1,8 @@
 /**
- * DocumentViewer — enterprise document preview panel.
+ * DocumentViewer — fixed-height preview panel.
  *
- * Features:
- *   - Toolbar: zoom in/out, fit-width reset, page navigation (PDF only)
- *   - Image rendering: native browser via URL.createObjectURL + CSS width zoom
- *   - PDF rendering: react-pdf with page controls
- *   - Loading indicator while PDF loads
- *   - Object URLs revoked on unmount/file change
+ * Zoom uses CSS transform (no re-layout / no PDF re-rasterize),
+ * which eliminates the shake when a file loads or Fit width is clicked.
  */
 
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
@@ -22,19 +18,20 @@ import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
 import NavigateNextIcon from "@mui/icons-material/NavigateNext";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import { Document, Page, pdfjs } from "react-pdf";
+import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString();
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
 const ZOOM_STEP = 0.25;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 3.0;
-const ZOOM_DEFAULT = 1.0;
+const ZOOM_FIT = 1.0;
+
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff"]);
+const PDF_EXTENSIONS = new Set(["pdf"]);
 
 function clampZoom(z: number) {
-  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100));
 }
 
 function formatFileSize(bytes: number): string {
@@ -45,11 +42,30 @@ function formatFileSize(bytes: number): string {
 
 type ViewerMode = "empty" | "image" | "pdf";
 
+function fileExtension(file: File): string {
+  const parts = file.name.split(".");
+  return parts.length > 1 ? (parts.pop() || "").toLowerCase() : "";
+}
+
 function resolveViewerMode(file: File | null): ViewerMode {
   if (!file) return "empty";
-  if (file.type.startsWith("image/")) return "image";
+  const mime = (file.type || "").toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime === "application/pdf") return "pdf";
+  const ext = fileExtension(file);
+  if (IMAGE_EXTENSIONS.has(ext)) return "image";
+  if (PDF_EXTENSIONS.has(ext)) return "pdf";
   return "pdf";
 }
+
+/** Shared scroll-area styles — stable gutter prevents width shake when scrollbar appears. */
+const scrollAreaSx = {
+  flex: 1,
+  minHeight: 0,
+  overflow: "auto",
+  scrollbarGutter: "stable" as const,
+  backgroundColor: "#EEF2F7",
+};
 
 interface ToolbarProps {
   zoom: number;
@@ -61,6 +77,7 @@ interface ToolbarProps {
   onPrevPage: () => void;
   onNextPage: () => void;
   showPageNav: boolean;
+  disabled?: boolean;
 }
 
 function Toolbar({
@@ -73,7 +90,9 @@ function Toolbar({
   onPrevPage,
   onNextPage,
   showPageNav,
+  disabled = false,
 }: ToolbarProps) {
+  const isFit = Math.abs(zoom - ZOOM_FIT) < 0.001;
   const btnSx = {
     color: "#475569",
     borderRadius: "7px",
@@ -92,7 +111,7 @@ function Toolbar({
         borderBottom: "1px solid #E2E8F0",
         backgroundColor: "#F8FAFC",
         flexShrink: 0,
-        flexWrap: "wrap",
+        minHeight: 44,
       }}
     >
       <Tooltip title="Zoom out">
@@ -100,7 +119,7 @@ function Toolbar({
           <IconButton
             size="small"
             onClick={onZoomOut}
-            disabled={zoom <= ZOOM_MIN}
+            disabled={disabled || zoom <= ZOOM_MIN}
             sx={btnSx}
           >
             <ZoomOutIcon sx={{ fontSize: 18 }} />
@@ -127,7 +146,7 @@ function Toolbar({
           <IconButton
             size="small"
             onClick={onZoomIn}
-            disabled={zoom >= ZOOM_MAX}
+            disabled={disabled || zoom >= ZOOM_MAX}
             sx={btnSx}
           >
             <ZoomInIcon sx={{ fontSize: 18 }} />
@@ -136,42 +155,37 @@ function Toolbar({
       </Tooltip>
 
       <Tooltip title="Fit width">
-        <IconButton
-          size="small"
-          onClick={onFitWidth}
-          sx={{
-            ...btnSx,
-            color: zoom === ZOOM_DEFAULT ? "#0078D4" : btnSx.color,
-          }}
-        >
-          <FitScreenIcon sx={{ fontSize: 18 }} />
-        </IconButton>
+        <span>
+          <IconButton
+            size="small"
+            onClick={onFitWidth}
+            disabled={disabled}
+            sx={{
+              ...btnSx,
+              color: isFit ? "#0078D4" : btnSx.color,
+              backgroundColor: isFit ? "rgba(0,120,212,0.08)" : "transparent",
+            }}
+          >
+            <FitScreenIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </span>
       </Tooltip>
 
-      {showPageNav && totalPages > 0 && (
+      {showPageNav && (
         <>
-          <Box
-            sx={{
-              width: "1px",
-              height: 16,
-              backgroundColor: "#E2E8F0",
-              mx: 0.75,
-              flexShrink: 0,
-            }}
-          />
+          <Box sx={{ width: "1px", height: 16, backgroundColor: "#E2E8F0", mx: 0.75, flexShrink: 0 }} />
           <Tooltip title="Previous page">
             <span>
               <IconButton
                 size="small"
                 onClick={onPrevPage}
-                disabled={currentPage <= 1}
+                disabled={disabled || currentPage <= 1 || totalPages === 0}
                 sx={btnSx}
               >
                 <NavigateBeforeIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </span>
           </Tooltip>
-
           <Typography
             sx={{
               fontSize: "0.6875rem",
@@ -180,17 +194,18 @@ function Toolbar({
               fontVariantNumeric: "tabular-nums",
               userSelect: "none",
               whiteSpace: "nowrap",
+              minWidth: 48,
+              textAlign: "center",
             }}
           >
-            {currentPage} / {totalPages}
+            {totalPages > 0 ? `${currentPage} / ${totalPages}` : "— / —"}
           </Typography>
-
           <Tooltip title="Next page">
             <span>
               <IconButton
                 size="small"
                 onClick={onNextPage}
-                disabled={currentPage >= totalPages}
+                disabled={disabled || totalPages === 0 || currentPage >= totalPages}
                 sx={btnSx}
               >
                 <NavigateNextIcon sx={{ fontSize: 18 }} />
@@ -207,11 +222,11 @@ function EmptyState() {
   return (
     <Box
       sx={{
+        ...scrollAreaSx,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        flex: 1,
         gap: 1.75,
         px: 4,
         backgroundColor: "#F8FAFC",
@@ -245,33 +260,35 @@ function EmptyState() {
 
 function ImageViewer({ objectUrl, zoom }: { objectUrl: string; zoom: number }) {
   return (
-    <Box
-      sx={{
-        flex: 1,
-        overflow: "auto",
-        display: "flex",
-        alignItems: zoom > 1 ? "flex-start" : "center",
-        justifyContent: "center",
-        p: 2.5,
-        minHeight: 0,
-        backgroundColor: "#EEF2F7",
-      }}
-    >
+    <Box sx={{ ...scrollAreaSx, p: 2.5 }}>
+      {/*
+        Outer box sizes to the scaled footprint so scrollbars stay correct.
+        Inner image stays at natural fit-width; zoom is pure transform — no reflow shake.
+      */}
       <Box
-        component="img"
-        src={objectUrl}
-        alt="Certificate preview"
         sx={{
           width: `${zoom * 100}%`,
-          height: "auto",
-          display: "block",
-          borderRadius: "6px",
-          boxShadow: "0 4px 20px rgba(15,23,42,0.1)",
-          border: "1px solid #E2E8F0",
-          minWidth: "50%",
-          backgroundColor: "#FFFFFF",
+          mx: "auto",
         }}
-      />
+      >
+        <Box
+          component="img"
+          src={objectUrl}
+          alt="Certificate preview"
+          sx={{
+            width: `${100 / zoom}%`,
+            maxWidth: "none",
+            height: "auto",
+            display: "block",
+            transform: `scale(${zoom})`,
+            transformOrigin: "top left",
+            borderRadius: "6px",
+            boxShadow: "0 4px 20px rgba(15,23,42,0.1)",
+            border: "1px solid #E2E8F0",
+            backgroundColor: "#FFFFFF",
+          }}
+        />
+      </Box>
     </Box>
   );
 }
@@ -285,28 +302,49 @@ interface PdfViewerProps {
 }
 
 function PdfViewer({ file, zoom, currentPage, onLoadSuccess, onLoadError }: PdfViewerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(400);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const [baseWidth, setBaseWidth] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
-
-  const objectUrl = useMemo(() => URL.createObjectURL(file), [file]);
-  useEffect(() => () => URL.revokeObjectURL(objectUrl), [objectUrl]);
+  const [useNativeFallback, setUseNativeFallback] = useState(false);
+  const lockedWidth = useRef(0);
 
   useEffect(() => {
-    const el = containerRef.current;
+    setIsLoading(true);
+    setUseNativeFallback(false);
+    lockedWidth.current = 0;
+    setBaseWidth(0);
+  }, [file]);
+
+  useEffect(() => {
+    const el = measureRef.current;
     if (!el) return;
-    const obs = new ResizeObserver(([entry]) => {
-      setContainerWidth(entry.contentRect.width);
-    });
+
+    const measure = () => {
+      // clientWidth excludes scrollbar; gutter:stable keeps this stable across load.
+      const w = Math.floor(el.clientWidth - 40);
+      if (w < 200) return;
+
+      // Lock after first solid measurement — ignore tiny scrollbar jitter.
+      if (lockedWidth.current > 0 && Math.abs(w - lockedWidth.current) < 24) {
+        return;
+      }
+      lockedWidth.current = w;
+      setBaseWidth(w);
+    };
+
+    // Defer one frame so layout/padding is final before measuring.
+    const raf = requestAnimationFrame(measure);
+    const obs = new ResizeObserver(() => measure());
     obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
+    return () => {
+      cancelAnimationFrame(raf);
+      obs.disconnect();
+    };
+  }, [file]);
 
   const handleLoadSuccess = useCallback(
     ({ numPages }: { numPages: number }) => {
       setIsLoading(false);
-      setHasError(false);
       onLoadSuccess(numPages);
     },
     [onLoadSuccess]
@@ -314,26 +352,13 @@ function PdfViewer({ file, zoom, currentPage, onLoadSuccess, onLoadError }: PdfV
 
   const handleLoadError = useCallback(() => {
     setIsLoading(false);
-    setHasError(true);
+    setUseNativeFallback(true);
     onLoadError();
   }, [onLoadError]);
 
   return (
-    <Box
-      ref={containerRef}
-      sx={{
-        flex: 1,
-        overflow: "auto",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        p: 2.5,
-        minHeight: 0,
-        position: "relative",
-        backgroundColor: "#EEF2F7",
-      }}
-    >
-      {isLoading && (
+    <Box ref={measureRef} sx={{ ...scrollAreaSx, p: useNativeFallback ? 0 : 2.5, position: "relative" }}>
+      {(isLoading || baseWidth === 0) && !useNativeFallback && (
         <Box
           sx={{
             position: "absolute",
@@ -342,7 +367,7 @@ function PdfViewer({ file, zoom, currentPage, onLoadSuccess, onLoadError }: PdfV
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: "rgba(248,250,252,0.92)",
+            backgroundColor: "#EEF2F7",
             zIndex: 1,
           }}
         >
@@ -361,49 +386,74 @@ function PdfViewer({ file, zoom, currentPage, onLoadSuccess, onLoadError }: PdfV
         </Box>
       )}
 
-      {hasError && (
-        <Box
-          sx={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 1,
-          }}
-        >
-          <Typography sx={{ fontSize: "0.875rem", color: "#64748B" }}>
-            Unable to render document
-          </Typography>
-        </Box>
-      )}
-
-      {!hasError && (
-        <Document
-          file={objectUrl}
-          onLoadSuccess={handleLoadSuccess}
-          onLoadError={handleLoadError}
-          loading=""
-        >
+      {useNativeFallback ? (
+        <NativePdfFallback file={file} />
+      ) : (
+        baseWidth > 0 && (
           <Box
             sx={{
-              boxShadow: "0 4px 20px rgba(15,23,42,0.1)",
-              borderRadius: "6px",
-              overflow: "hidden",
-              border: "1px solid #E2E8F0",
-              backgroundColor: "#FFFFFF",
+              width: `${zoom * 100}%`,
+              mx: "auto",
             }}
           >
-            <Page
-              pageNumber={currentPage}
-              width={Math.floor(containerWidth * zoom - 40)}
-              renderTextLayer={false}
-              renderAnnotationLayer={false}
-            />
+            <Box
+              sx={{
+                width: `${100 / zoom}%`,
+                transform: `scale(${zoom})`,
+                transformOrigin: "top left",
+              }}
+            >
+              <Document
+                file={file}
+                onLoadSuccess={handleLoadSuccess}
+                onLoadError={handleLoadError}
+                loading=""
+                error=""
+              >
+                <Box
+                  sx={{
+                    boxShadow: "0 4px 20px rgba(15,23,42,0.1)",
+                    borderRadius: "6px",
+                    overflow: "hidden",
+                    border: "1px solid #E2E8F0",
+                    backgroundColor: "#FFFFFF",
+                    width: baseWidth,
+                  }}
+                >
+                  <Page
+                    pageNumber={currentPage}
+                    width={baseWidth}
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
+                  />
+                </Box>
+              </Document>
+            </Box>
           </Box>
-        </Document>
+        )
       )}
     </Box>
+  );
+}
+
+function NativePdfFallback({ file }: { file: File }) {
+  const objectUrl = useMemo(() => URL.createObjectURL(file), [file]);
+  useEffect(() => () => URL.revokeObjectURL(objectUrl), [objectUrl]);
+
+  return (
+    <Box
+      component="iframe"
+      title={file.name}
+      src={`${objectUrl}#view=FitH`}
+      sx={{
+        width: "100%",
+        height: "100%",
+        border: "none",
+        backgroundColor: "#FFFFFF",
+        flex: 1,
+        minHeight: 0,
+      }}
+    />
   );
 }
 
@@ -421,6 +471,7 @@ function ViewerHeader({ file }: { file: File | null }) {
         alignItems: "center",
         gap: 1.25,
         flexShrink: 0,
+        minHeight: 52,
       }}
     >
       <Box
@@ -471,7 +522,7 @@ function ViewerHeader({ file }: { file: File | null }) {
   );
 }
 
-function ViewerFooter({ file }: { file: File }) {
+function ViewerFooter({ file }: { file: File | null }) {
   return (
     <Box
       sx={{
@@ -483,13 +534,14 @@ function ViewerFooter({ file }: { file: File }) {
         gap: 1.5,
         flexShrink: 0,
         backgroundColor: "#FFFFFF",
+        minHeight: 48,
       }}
     >
       <Typography
         sx={{
           fontSize: "0.8125rem",
           fontWeight: 500,
-          color: "#334155",
+          color: file ? "#334155" : "#94A3B8",
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
@@ -497,27 +549,22 @@ function ViewerFooter({ file }: { file: File }) {
           minWidth: 0,
         }}
       >
-        {file.name}
+        {file?.name ?? "No file selected"}
       </Typography>
-      <Box
-        sx={{
-          px: 1.1,
-          py: 0.3,
-          borderRadius: "5px",
-          backgroundColor: "#F1F5F9",
-        }}
-      >
-        <Typography
-          sx={{
-            fontSize: "0.6875rem",
-            fontWeight: 600,
-            color: "#64748B",
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          {formatFileSize(file.size)}
-        </Typography>
-      </Box>
+      {file && (
+        <Box sx={{ px: 1.1, py: 0.3, borderRadius: "5px", backgroundColor: "#F1F5F9" }}>
+          <Typography
+            sx={{
+              fontSize: "0.6875rem",
+              fontWeight: 600,
+              color: "#64748B",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {formatFileSize(file.size)}
+          </Typography>
+        </Box>
+      )}
     </Box>
   );
 }
@@ -528,25 +575,22 @@ interface DocumentViewerProps {
   variant?: "default" | "dashboard";
 }
 
-export default function DocumentViewer({
-  file,
-  onPageCountChange,
-  variant = "default",
-}: DocumentViewerProps) {
-  const [zoom, setZoom] = useState(ZOOM_DEFAULT);
+export default function DocumentViewer({ file, onPageCountChange }: DocumentViewerProps) {
+  const [zoom, setZoom] = useState(ZOOM_FIT);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const onPageCountChangeRef = useRef(onPageCountChange);
+  onPageCountChangeRef.current = onPageCountChange;
 
   const mode = resolveViewerMode(file);
-  const isDashboard = variant === "dashboard";
 
   useEffect(() => {
-    setZoom(ZOOM_DEFAULT);
+    setZoom(ZOOM_FIT);
     setCurrentPage(1);
     setTotalPages(0);
-    onPageCountChange?.(0);
-  }, [file, onPageCountChange]);
+    onPageCountChangeRef.current?.(0);
+  }, [file]);
 
   useEffect(() => {
     if (!file || mode !== "image") {
@@ -560,20 +604,17 @@ export default function DocumentViewer({
 
   const handleZoomIn = useCallback(() => setZoom((z) => clampZoom(z + ZOOM_STEP)), []);
   const handleZoomOut = useCallback(() => setZoom((z) => clampZoom(z - ZOOM_STEP)), []);
-  const handleFitWidth = useCallback(() => setZoom(ZOOM_DEFAULT), []);
+  const handleFitWidth = useCallback(() => setZoom(ZOOM_FIT), []);
 
-  const handleLoadSuccess = useCallback(
-    (numPages: number) => {
-      setTotalPages(numPages);
-      onPageCountChange?.(numPages);
-    },
-    [onPageCountChange]
-  );
+  const handleLoadSuccess = useCallback((numPages: number) => {
+    setTotalPages(numPages);
+    onPageCountChangeRef.current?.(numPages);
+  }, []);
 
   const handleLoadError = useCallback(() => {
     setTotalPages(0);
-    onPageCountChange?.(0);
-  }, [onPageCountChange]);
+    onPageCountChangeRef.current?.(0);
+  }, []);
 
   const handlePrevPage = useCallback(() => {
     setCurrentPage((p) => Math.max(1, p - 1));
@@ -582,9 +623,6 @@ export default function DocumentViewer({
   const handleNextPage = useCallback(() => {
     setCurrentPage((p) => Math.min(totalPages, p + 1));
   }, [totalPages]);
-
-  const showToolbar = mode !== "empty";
-  const showPageNav = mode === "pdf";
 
   return (
     <Box
@@ -595,33 +633,30 @@ export default function DocumentViewer({
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
-        height: { xs: "auto", md: isDashboard ? "calc(100vh - 96px)" : "100%" },
-        minHeight: { xs: 320, md: isDashboard ? 560 : 0 },
+        height: "100%",
+        minHeight: 0,
+        maxHeight: "100%",
         boxShadow: "0 1px 2px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.04)",
       }}
     >
       <ViewerHeader file={file} />
 
-      {showToolbar && (
-        <Toolbar
-          zoom={zoom}
-          onZoomIn={handleZoomIn}
-          onZoomOut={handleZoomOut}
-          onFitWidth={handleFitWidth}
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPrevPage={handlePrevPage}
-          onNextPage={handleNextPage}
-          showPageNav={showPageNav}
-        />
-      )}
+      {/* Toolbar always mounted — avoids height jump when a file is selected. */}
+      <Toolbar
+        zoom={zoom}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onFitWidth={handleFitWidth}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPrevPage={handlePrevPage}
+        onNextPage={handleNextPage}
+        showPageNav={mode === "pdf" || mode === "empty"}
+        disabled={mode === "empty"}
+      />
 
       {mode === "empty" && <EmptyState />}
-
-      {mode === "image" && objectUrl && (
-        <ImageViewer objectUrl={objectUrl} zoom={zoom} />
-      )}
-
+      {mode === "image" && objectUrl && <ImageViewer objectUrl={objectUrl} zoom={zoom} />}
       {mode === "pdf" && file && (
         <PdfViewer
           file={file}
@@ -632,7 +667,8 @@ export default function DocumentViewer({
         />
       )}
 
-      {file && <ViewerFooter file={file} />}
+      {/* Footer always mounted — same reason as toolbar. */}
+      <ViewerFooter file={file} />
     </Box>
   );
 }

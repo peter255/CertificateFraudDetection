@@ -1,6 +1,6 @@
 /**
  * DocumentInfo — Section 4: Document Information
- * Grid of icon stat cards for forensic metadata.
+ * Grid of icon stat cards. Empty fields are omitted.
  */
 
 import Box from "@mui/material/Box";
@@ -23,10 +23,8 @@ function InfoCard({
 }: {
   icon: typeof DescriptionOutlinedIcon;
   label: string;
-  value: string | null;
+  value: string;
 }) {
-  const isEmpty = !value;
-
   return (
     <Box
       sx={{
@@ -69,14 +67,14 @@ function InfoCard({
         <Typography
           sx={{
             fontSize: "0.9375rem",
-            fontWeight: isEmpty ? 400 : 600,
-            color: isEmpty ? DASHBOARD.textMuted : DASHBOARD.textPrimary,
+            fontWeight: 600,
+            color: DASHBOARD.textPrimary,
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
           }}
         >
-          {isEmpty ? "—" : value}
+          {value}
         </Typography>
       </Box>
     </Box>
@@ -96,8 +94,14 @@ export default function DocumentInfo({ data }: DocumentInfoProps) {
     { icon: AccessTimeIcon, label: "Upload Time", value: data.uploadTime },
     { icon: TimerOutlinedIcon, label: "Processing Time", value: data.processingTime },
     { icon: EventAvailableIcon, label: "Verified At", value: data.verifiedAt },
-    { icon: VerifiedUserOutlinedIcon, label: "Verification Vendor", value: data.vendorName },
-  ];
+    { icon: VerifiedUserOutlinedIcon, label: "Verification Engine", value: data.vendorName },
+  ].filter((field): field is { icon: typeof DescriptionOutlinedIcon; label: string; value: string } =>
+    Boolean(field.value && field.value !== "—")
+  );
+
+  if (fields.length === 0) {
+    return null;
+  }
 
   return (
     <SectionShell

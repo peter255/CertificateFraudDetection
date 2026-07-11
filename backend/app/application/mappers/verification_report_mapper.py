@@ -88,7 +88,7 @@ def build_summary(finding: VendorFinding, status: VerificationStatus) -> str:
     ocr_label = finding.raw_response.get("ocr_label")
 
     parts = [
-        f"TruthScan classified this document as {label} ({confidence_pct}% confidence)."
+        f"Verification Engine V1 classified this document as {label} ({confidence_pct}% confidence)."
     ]
     if ml_label:
         parts.append(f"ML model verdict: {ml_label}.")

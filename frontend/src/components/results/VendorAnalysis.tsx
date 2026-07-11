@@ -1,6 +1,6 @@
 /**
- * VendorAnalysis — Section 5: Vendor Analysis
- * Vendor cards with radial confidence meters.
+ * EngineAnalysis — Section 5: Verification engine results
+ * Engine cards with radial confidence meters.
  */
 
 import Box from "@mui/material/Box";
@@ -33,8 +33,7 @@ function resolveStatusStyle(status: string): StatusStyle {
   if (
     normalized.includes("inconclusive") ||
     normalized.includes("suspicious") ||
-    normalized.includes("warning") ||
-    normalized.includes("pending")
+    normalized.includes("warning")
   ) {
     return { label: status, color: "#D97706", bgColor: "#FFFBEB", Icon: WarningAmberIcon };
   }
@@ -42,7 +41,7 @@ function resolveStatusStyle(status: string): StatusStyle {
   return { label: status || "Unknown", color: "#64748B", bgColor: "#F8FAFC", Icon: HelpOutlineOutlinedIcon };
 }
 
-function VendorCard({ finding }: { finding: VendorFinding }) {
+function EngineCard({ finding }: { finding: VendorFinding }) {
   const style = resolveStatusStyle(finding.status);
   const { Icon } = style;
   const confidencePct = Math.round(finding.confidenceScore * 1000) / 10;
@@ -67,7 +66,7 @@ function VendorCard({ finding }: { finding: VendorFinding }) {
           {finding.vendor}
         </Typography>
         <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted, mb: 1.5 }}>
-          Forensic verification provider
+          Forensic verification engine
         </Typography>
         <Box
           sx={{
@@ -97,10 +96,26 @@ function VendorCard({ finding }: { finding: VendorFinding }) {
       </Box>
 
       <Box sx={{ textAlign: "right", flexShrink: 0 }}>
-        <Typography sx={{ fontSize: "0.5625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: DASHBOARD.textMuted, mb: 0.25 }}>
+        <Typography
+          sx={{
+            fontSize: "0.5625rem",
+            fontWeight: 700,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: DASHBOARD.textMuted,
+            mb: 0.25,
+          }}
+        >
           Confidence
         </Typography>
-        <Typography sx={{ fontSize: "1.5rem", fontWeight: 800, color: style.color, fontVariantNumeric: "tabular-nums" }}>
+        <Typography
+          sx={{
+            fontSize: "1.5rem",
+            fontWeight: 800,
+            color: style.color,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
           {confidencePct}%
         </Typography>
       </Box>
@@ -113,37 +128,25 @@ interface VendorAnalysisProps {
 }
 
 export default function VendorAnalysis({ vendorFindings }: VendorAnalysisProps) {
+  if (vendorFindings.length === 0) {
+    return null;
+  }
+
   return (
     <SectionShell
-      title="Vendor Analysis"
+      title="Engine Analysis"
       icon={<BusinessCenterIcon sx={{ fontSize: 18 }} />}
       badge={
         <SectionBadge>
-          {vendorFindings.length} vendor{vendorFindings.length !== 1 ? "s" : ""}
+          {vendorFindings.length} engine{vendorFindings.length !== 1 ? "s" : ""}
         </SectionBadge>
       }
     >
-      {vendorFindings.length === 0 ? (
-        <Box
-          sx={{
-            py: 4,
-            textAlign: "center",
-            border: `2px dashed ${DASHBOARD.borderLight}`,
-            borderRadius: "12px",
-            backgroundColor: "#F8FAFC",
-          }}
-        >
-          <Typography sx={{ fontSize: "0.875rem", color: DASHBOARD.textMuted }}>
-            No vendor analysis data available
-          </Typography>
-        </Box>
-      ) : (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, mt: -1 }}>
-          {vendorFindings.map((finding) => (
-            <VendorCard key={finding.vendor} finding={finding} />
-          ))}
-        </Box>
-      )}
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, mt: -1 }}>
+        {vendorFindings.map((finding) => (
+          <EngineCard key={finding.vendor} finding={finding} />
+        ))}
+      </Box>
     </SectionShell>
   );
 }
