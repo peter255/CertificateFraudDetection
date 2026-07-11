@@ -1,0 +1,61 @@
+# Certificate Fraud Detection — local development stack
+# Usage: docker compose up --build
+#
+# Frontend (Vite HMR): http://localhost:5173
+# Backend API docs:    http://localhost:8000/docs
+# Health check:        http://localhost:8000/health
+
+services:
+  backend:
+    container_name: cfd-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      # Hot reload — source changes reflect without rebuilding the image
+      - ./backend/app:/app/app
+    command:
+      [
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+      ]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    container_name: cfd-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    env_file:
+      - ./frontend/.env
+    environment:
+      # Browser calls /api/* on the Vite host; proxy forwards to the backend container
+      VITE_PROXY_TARGET: http://backend:8000
+      # Reliable file watching on Docker Desktop (especially Windows/macOS)
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/public:/app/public
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+    depends_on:
+      backend:
+        condition: service_healthy

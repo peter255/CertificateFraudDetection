@@ -27,6 +27,11 @@ def create_application() -> FastAPI:
     application.add_exception_handler(InfrastructureError, infrastructure_error_handler)  # type: ignore[arg-type]
     application.include_router(router)
 
+    @application.get("/health", tags=["health"], summary="Service health check")
+    async def health() -> dict[str, str]:
+        """Lightweight liveness probe for Docker and load balancers."""
+        return {"status": "ok"}
+
     return application
 
 
