@@ -162,7 +162,7 @@ class TruthScanClient:
                     "model": "generic",
                     "generate_preview": False,
                     "generate_analysis_details": True,
-                    "generate_heatmap": False,
+                    "generate_heatmap": True,
                 },
                 headers={"Content-Type": "application/json", "accept": "application/json"},
             )

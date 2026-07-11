@@ -53,11 +53,13 @@ function regionBoxStyle(region: TamperRegion, selected: boolean) {
 interface AnnotatedDocumentSectionProps {
   file: File;
   regions: TamperRegion[];
+  heatmapUrl?: string | null;
 }
 
 export default function AnnotatedDocumentSection({
   file,
   regions,
+  heatmapUrl = null,
 }: AnnotatedDocumentSectionProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -118,7 +120,11 @@ export default function AnnotatedDocumentSection({
       badge={
         <SectionBadge color="rgba(197,15,31,0.10)">
           <Box component="span" sx={{ color: DASHBOARD.danger }}>
-            {regions.length} marked region{regions.length === 1 ? "" : "s"}
+            {regions.length > 0
+              ? `${regions.length} marked region${regions.length === 1 ? "" : "s"}`
+              : heatmapUrl
+                ? "Heatmap available"
+                : "No markers"}
           </Box>
         </SectionBadge>
       }
@@ -196,6 +202,24 @@ export default function AnnotatedDocumentSection({
                       </Box>
                     </Box>
                   ))}
+                  {heatmapUrl && regions.length === 0 && (
+                    <Box
+                      component="img"
+                      src={heatmapUrl}
+                      alt="Tamper heatmap"
+                      sx={{
+                        position: "absolute",
+                        inset: 0,
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "fill",
+                        borderRadius: "8px",
+                        opacity: 0.55,
+                        mixBlendMode: "screen",
+                        pointerEvents: "none",
+                      }}
+                    />
+                  )}
                 </Box>
               ) : (
                 <Box sx={{ position: "relative", width: "100%" }}>
@@ -223,6 +247,23 @@ export default function AnnotatedDocumentSection({
                           title={region.label}
                         />
                       ))}
+                      {heatmapUrl && regions.length === 0 && (
+                        <Box
+                          component="img"
+                          src={heatmapUrl}
+                          alt="Tamper heatmap"
+                          sx={{
+                            position: "absolute",
+                            inset: 0,
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "fill",
+                            opacity: 0.55,
+                            mixBlendMode: "multiply",
+                            pointerEvents: "none",
+                          }}
+                        />
+                      )}
                     </Box>
                   </Document>
                   {pdfPages > 1 && (
@@ -251,7 +292,7 @@ export default function AnnotatedDocumentSection({
                 </Box>
               )}
 
-              {regions.length === 0 && (
+              {regions.length === 0 && !heatmapUrl && (
                 <Box sx={{ mt: 2, display: "flex", justifyContent: "center" }}>
                   <Box
                     sx={{
@@ -294,7 +335,11 @@ export default function AnnotatedDocumentSection({
               Marked areas
             </Typography>
             <Typography sx={{ fontSize: "0.875rem", color: DASHBOARD.textSecondary, lineHeight: 1.5 }}>
-              Click a region or list item to highlight where manipulation was detected.
+              {regions.length > 0
+                ? "Click a region or list item to highlight where manipulation was detected."
+                : heatmapUrl
+                  ? "A forensic heatmap highlights likely manipulation zones on the document."
+                  : "Spatial markers were not returned for this analysis."}
             </Typography>
           </Box>
 
@@ -311,7 +356,9 @@ export default function AnnotatedDocumentSection({
           >
             {regions.length === 0 ? (
               <Box sx={{ p: 2, color: DASHBOARD.textMuted, fontSize: "0.875rem" }}>
-                No bounding-box evidence available.
+                {heatmapUrl
+                  ? "Heatmap overlay is shown on the document. Bounding-box markers were not provided."
+                  : "No bounding-box evidence available."}
               </Box>
             ) : (
               regions.map((region, index) => {

@@ -708,7 +708,7 @@ export default function VerificationPage() {
     const verifiedAtDisplay = formatVerifiedAt(verificationResult.verifiedAt) ?? "—";
 
     const VERDICT_DISPLAY: Record<string, { label: string; color: string }> = {
-      authentic: { label: "Authentic", color: "#107C10" },
+      authentic: { label: "Trusted", color: "#107C10" },
       suspicious: { label: "Suspicious", color: "#D97706" },
       fraudulent: { label: "Potentially Fraudulent", color: "#C50F1F" },
     };
@@ -739,23 +739,24 @@ export default function VerificationPage() {
             verifiedAt={verifiedAtDisplay}
             certificateId={verificationResult.certificateId}
             confidence={verificationResult.confidence}
-            riskScore={verificationResult.report.riskScore}
+            trustScore={verificationResult.report.trustScore}
             signalCount={verificationResult.signals.length}
+          />
+
+          <VerdictCard
+            verdict={verificationResult.verdict}
+            confidence={verificationResult.confidence}
+            trustScore={verificationResult.report.trustScore}
+            riskLevel={verificationResult.report.riskLevel}
           />
 
           {file && (
             <AnnotatedDocumentSection
               file={file}
               regions={verificationResult.tamperRegions}
+              heatmapUrl={verificationResult.heatmapUrl}
             />
           )}
-
-          <VerdictCard
-            verdict={verificationResult.verdict}
-            confidence={verificationResult.confidence}
-            riskScore={verificationResult.report.riskScore}
-            riskLevel={verificationResult.report.riskLevel}
-          />
 
           <ExecutiveReport
             report={verificationResult.report}

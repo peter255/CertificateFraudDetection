@@ -174,7 +174,7 @@ def _build_summary(
 ) -> str:
     confidence_pct = round(confidence_score * 100, 1)
     parts = [
-        f"Verification Engine V1 classified this document as {analysis.verdict_label} "
+        f"This document was classified as {analysis.verdict_label} "
         f"({confidence_pct}% confidence)."
     ]
     if analysis.ml_label:
@@ -247,9 +247,9 @@ def _build_signals(status: str, analysis: TruthScanAnalysisDetails) -> list[Trut
         )
 
     if analysis.is_valid is True:
-        add("Document Validity", "Vendor marked the uploaded document as valid for analysis.", "pass")
+        add("Document Validity", "The uploaded document was marked as valid for analysis.", "pass")
     elif analysis.is_valid is False:
-        add("Document Validity", "Vendor flagged the uploaded document as invalid.", "fail")
+        add("Document Validity", "The uploaded document was flagged as invalid.", "fail")
 
     if not signals:
         add(
@@ -264,64 +264,74 @@ def _build_signals(status: str, analysis: TruthScanAnalysisDetails) -> list[Trut
 def _build_findings(analysis: TruthScanAnalysisDetails) -> list[TruthScanFinding]:
     findings: list[TruthScanFinding] = []
 
-    label = analysis.verdict_label or ""
-    if label or analysis.ml_label:
-        detail = f"Final verdict: {label or analysis.ml_label}."
-        if analysis.ml_score is not None:
-            detail += f" Model confidence: {round(float(analysis.ml_score), 1)}%."
-        if analysis.analysis_agreement:
-            detail += f" Inter-model agreement: {analysis.analysis_agreement}."
-        findings.append(TruthScanFinding(title="Model Consensus", detail=detail))
-
+    # 1) Why — one explanation
     if analysis.reasoning:
-        findings.append(TruthScanFinding(title="AI Analysis", detail=analysis.reasoning))
-
-    if analysis.ocr_label:
-        detail = str(analysis.ocr_label)
-        if analysis.ocr_score is not None:
-            detail += f" (OCR score: {analysis.ocr_score})."
-        findings.append(TruthScanFinding(title="OCR Assessment", detail=detail))
-
-    if analysis.metadata_notes:
         findings.append(
-            TruthScanFinding(
-                title="Metadata Extraction",
-                detail=" | ".join(str(n) for n in analysis.metadata_notes[:4]),
-            )
+            TruthScanFinding(title="Why this result", detail=analysis.reasoning)
         )
 
+    # 2) Issues / indicators
     if analysis.key_indicators:
         findings.append(
             TruthScanFinding(
-                title="Key Indicators",
-                detail=" ".join(f"• {i}" for i in analysis.key_indicators[:6]),
+                title="Issues detected",
+                detail="\n".join(f"• {i}" for i in analysis.key_indicators[:8]),
             )
         )
 
+    # 3) Visual patterns as evidence
     if analysis.visual_patterns:
         findings.append(
             TruthScanFinding(
-                title="Visual Patterns",
-                detail=" ".join(f"• {p}" for p in analysis.visual_patterns[:5]),
+                title="Evidence on the document",
+                detail="\n".join(f"• {p}" for p in analysis.visual_patterns[:8]),
+            )
+        )
+
+    # 4) Risk-style OCR / metadata notes
+    risk_bits: list[str] = []
+    if analysis.ocr_label:
+        ocr = str(analysis.ocr_label)
+        if analysis.ocr_score is not None:
+            ocr += f" (score {analysis.ocr_score})"
+        risk_bits.append(ocr)
+    for note in analysis.metadata_notes[:4]:
+        risk_bits.append(str(note))
+    if risk_bits:
+        findings.append(
+            TruthScanFinding(
+                title="Risk factors",
+                detail="\n".join(f"• {b}" for b in risk_bits),
+            )
+        )
+
+    # 5) Model / score breakdown
+    score_bits: list[str] = []
+    if analysis.verdict_label:
+        score_bits.append(f"Verdict: {analysis.verdict_label}")
+    if analysis.ml_label:
+        ml = f"ML model: {analysis.ml_label}"
+        if analysis.ml_score is not None:
+            ml += f" ({round(float(analysis.ml_score), 1)})"
+        score_bits.append(ml)
+    if analysis.analysis_agreement:
+        score_bits.append(f"Agreement: {analysis.analysis_agreement}")
+    if analysis.raw_score:
+        score_bits.append(f"Raw score: {round(float(analysis.raw_score), 1)}")
+    if score_bits:
+        findings.append(
+            TruthScanFinding(
+                title="Score breakdown",
+                detail=" · ".join(score_bits),
             )
         )
 
     if analysis.vendor_recommendations:
         findings.append(
             TruthScanFinding(
-                title="Verification Recommendations",
-                detail=" ".join(analysis.vendor_recommendations),
+                title="Review notes",
+                detail="\n".join(f"• {r}" for r in analysis.vendor_recommendations[:6]),
             )
         )
-
-    pipeline_bits: list[str] = []
-    if analysis.detection_step is not None:
-        pipeline_bits.append(f"Detection step: {analysis.detection_step}.")
-    if analysis.job_id:
-        pipeline_bits.append(f"Vendor job ID: {analysis.job_id}.")
-    if analysis.analysis_status:
-        pipeline_bits.append(f"Deep analysis status: {analysis.analysis_status}.")
-    if pipeline_bits:
-        findings.append(TruthScanFinding(title="Pipeline Trace", detail=" ".join(pipeline_bits)))
 
     return findings

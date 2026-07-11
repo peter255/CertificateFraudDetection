@@ -93,9 +93,11 @@ export default function DocumentInfo({ data }: DocumentInfoProps) {
     { icon: AccessTimeIcon, label: "Upload Time", value: data.uploadTime },
     { icon: TimerOutlinedIcon, label: "Processing Time", value: data.processingTime },
     { icon: EventAvailableIcon, label: "Verified At", value: data.verifiedAt },
-  ].filter((field): field is { icon: typeof DescriptionOutlinedIcon; label: string; value: string } =>
-    Boolean(field.value && field.value !== "—")
-  );
+  ].filter((field): field is { icon: typeof DescriptionOutlinedIcon; label: string; value: string } => {
+    if (!field.value) return false;
+    const v = field.value.trim().toLowerCase();
+    return v !== "—" && v !== "-" && v !== "unknown" && v !== "n/a";
+  });
 
   if (fields.length === 0) {
     return null;

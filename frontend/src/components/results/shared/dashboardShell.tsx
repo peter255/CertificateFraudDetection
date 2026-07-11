@@ -162,7 +162,7 @@ interface InvestigationBannerProps {
   verifiedAt: string;
   certificateId?: string;
   confidence?: number;
-  riskScore?: number;
+  trustScore?: number;
   signalCount?: number;
 }
 
@@ -173,12 +173,12 @@ export function InvestigationBanner({
   verifiedAt,
   certificateId,
   confidence,
-  riskScore,
+  trustScore,
   signalCount,
 }: InvestigationBannerProps) {
   const metrics = [
-    { label: "Trust Score", value: confidence != null ? `${confidence}%` : "—" },
-    { label: "Risk Score", value: riskScore != null ? `${riskScore}/100` : "—" },
+    { label: "Model Confidence", value: confidence != null ? `${confidence}%` : "—" },
+    { label: "Trust Score", value: trustScore != null ? `${trustScore}/100` : "—" },
     { label: "Signals", value: signalCount != null ? String(signalCount) : "—" },
   ].filter((item) => item.value !== "—");
 

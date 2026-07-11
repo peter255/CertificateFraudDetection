@@ -106,7 +106,7 @@ function EngineCard({ finding }: { finding: VendorFinding }) {
             mb: 0.25,
           }}
         >
-          Trust Score
+          Model Confidence
         </Typography>
         <Typography
           sx={{

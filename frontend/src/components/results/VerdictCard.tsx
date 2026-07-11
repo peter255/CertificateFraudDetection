@@ -23,15 +23,15 @@ interface VerdictConfig {
 
 const VERDICT_CONFIG: Record<VerdictType, VerdictConfig> = {
   authentic: {
-    label: "Authentic",
-    description: "Document passed all forensic verification checks.",
+    label: "Trusted",
+    description: "High-confidence analysis supports authenticity.",
     color: "#107C10",
     bgGradient: "linear-gradient(180deg, #F0FDF4 0%, #FFFFFF 100%)",
     Icon: CheckCircleIcon,
   },
   suspicious: {
     label: "Suspicious",
-    description: "Anomalies detected — manual review recommended.",
+    description: "Result is uncertain or weakly supported — manual review recommended.",
     color: "#D97706",
     bgGradient: "linear-gradient(180deg, #FFFBEB 0%, #FFFFFF 100%)",
     Icon: WarningAmberIcon,
@@ -55,19 +55,20 @@ const RISK_COLOR: Record<RiskLevel, string> = {
 interface VerdictCardProps {
   verdict: VerdictType;
   confidence: number;
-  riskScore: number;
+  trustScore: number;
   riskLevel: RiskLevel;
 }
 
 export default function VerdictCard({
   verdict,
   confidence,
-  riskScore,
+  trustScore,
   riskLevel,
 }: VerdictCardProps) {
   const cfg = VERDICT_CONFIG[verdict];
   const { Icon } = cfg;
   const riskColor = RISK_COLOR[riskLevel];
+  const trustColor = verdict === "authentic" ? cfg.color : riskColor;
 
   return (
     <SectionShell
@@ -144,16 +145,16 @@ export default function VerdictCard({
       >
         <CircularGauge
           value={confidence}
-          label="Trust Score"
+          label="Model Confidence"
           color={cfg.color}
           size={150}
         />
         <CircularGauge
-          value={riskScore}
+          value={trustScore}
           max={100}
-          label="Risk Score"
+          label="Trust Score"
           sublabel="/ 100"
-          color={riskColor}
+          color={trustColor}
           size={150}
         />
       </Box>

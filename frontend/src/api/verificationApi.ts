@@ -6,8 +6,6 @@
 
 import type {
   VerificationResult,
-  VerdictType,
-  RiskLevel,
   SignalStatus,
   Signal,
   Finding,
@@ -17,6 +15,11 @@ import {
   ACTIVE_VERIFICATION_ENGINE,
   VERIFICATION_ENGINE_PATH,
 } from "../config/vendors";
+import {
+  decideUserVerdict,
+  DECISION_THRESHOLDS,
+  type EnginePredictionLabel,
+} from "../decision";
 
 // ── Engine V1 response DTO ───────────────────────────────────────────────────
 
@@ -56,6 +59,21 @@ interface EngineV1ApiResponse {
   ai_summary: string;
   verified_at: string;
   duration_ms: number;
+  analysis?: {
+    heatmap_url?: string | null;
+    reasoning?: string;
+    key_indicators?: string[];
+    visual_patterns?: string[];
+    ocr_label?: string | null;
+    ocr_score?: number | null;
+    ml_label?: string | null;
+    ml_score?: number | null;
+    metadata_notes?: string[];
+    verdict_label?: string;
+    analysis_agreement?: string;
+    vendor_recommendations?: string[];
+    raw_score?: number;
+  };
 }
 
 // ── Engine V2 response DTO ───────────────────────────────────────────────────
@@ -148,23 +166,36 @@ interface EngineV2ApiResponse {
   duration_ms: number;
 }
 
-const V1_STATUS_TO_VERDICT: Record<string, VerdictType> = {
+const V1_STATUS_TO_PREDICTION: Record<string, EnginePredictionLabel> = {
   authentic: "authentic",
+  trusted: "authentic",
+  real: "authentic",
+  clean: "authentic",
+  pass: "authentic",
   fraudulent: "fraudulent",
-  inconclusive: "suspicious",
-  pending: "suspicious",
+  forgery: "fraudulent",
+  forged: "fraudulent",
+  fake: "fraudulent",
+  inconclusive: "inconclusive",
+  pending: "inconclusive",
 };
 
-const V2_VERDICT_MAP: Record<string, VerdictType> = {
+const V2_VERDICT_TO_PREDICTION: Record<string, EnginePredictionLabel> = {
   authentic: "authentic",
+  trusted: "authentic",
+  real: "authentic",
+  clean: "authentic",
+  pass: "authentic",
+  low_risk: "authentic",
   suspicious: "suspicious",
+  inconclusive: "inconclusive",
+  review: "suspicious",
+  manual_review: "suspicious",
   fraudulent: "fraudulent",
-};
-
-const V2_RECOMMENDATION_MAP: Record<string, string> = {
-  accept: "approve",
-  manual_review: "manual_review",
-  reject: "reject",
+  forgery: "fraudulent",
+  forged: "fraudulent",
+  fake: "fraudulent",
+  high_risk: "fraudulent",
 };
 
 function scrubEngineName(text: string): string {
@@ -172,9 +203,64 @@ function scrubEngineName(text: string): string {
     .replace(/\bT[\w]*Scan\b/gi, "analysis")
     .replace(/\bP[\w]*work(?:\.to)?\b/gi, "analysis")
     .replace(/\bVerification\s+Engine\s*V?\d*\b/gi, "analysis")
-    .replace(/\bLLM\s+trust\s+score\b/gi, "Trust score")
+    .replace(/\bLLM\s+trust\s+score\b/gi, "Model confidence")
+    .replace(/\bTrust\s+Score\b/gi, "Model Confidence")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+function clampScore100(n: number): number {
+  return Math.round(Math.min(100, Math.max(0, n)) * 10) / 10;
+}
+
+function applyUserDecision(
+  base: VerificationResult,
+  prediction: {
+    label: EnginePredictionLabel;
+    modelConfidence: number;
+    rawLabel?: string;
+    engine: "v1" | "v2";
+  }
+): VerificationResult {
+  const decision = decideUserVerdict({
+    engine: prediction.engine,
+    label: prediction.label,
+    modelConfidence: prediction.modelConfidence,
+    rawLabel: prediction.rawLabel,
+  });
+
+  const findings = [...base.report.findings];
+  if (decision.decisionNote) {
+    findings.unshift({
+      title: "Why this result",
+      detail: decision.decisionNote,
+    });
+  }
+
+  return {
+    ...base,
+    verdict: decision.verdict,
+    /** Model confidence in the engine prediction (0–100). Not document trust. */
+    confidence: decision.modelConfidence,
+    aiSummary: decision.decisionNote
+      ? scrubEngineName(decision.decisionNote)
+      : base.aiSummary,
+    report: {
+      ...base.report,
+      summary: decision.decisionNote
+        ? scrubEngineName(decision.decisionNote)
+        : base.report.summary,
+      findings,
+      riskLevel: decision.riskLevel,
+      riskScore: decision.riskScore,
+      trustScore: decision.trustScore,
+      recommendation: decision.recommendation,
+    },
+    vendorFindings: base.vendorFindings.map((vf) => ({
+      ...vf,
+      confidenceScore: decision.modelConfidence / 100,
+    })),
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -207,12 +293,31 @@ function formatScore(value: unknown): string {
 }
 
 function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
-  const summary = scrubEngineName(data.ai_summary || data.report?.summary || "");
+  const analysis = data.analysis || {};
+  const summary = scrubEngineName(
+    (typeof analysis.reasoning === "string" && analysis.reasoning.trim()) ||
+      data.ai_summary ||
+      data.report?.summary ||
+      ""
+  );
 
-  return {
+  // Prefer curated backend findings; fall back to remapping older shapes.
+  const findings = (data.report?.findings || []).map((f) => ({
+    title: f.title,
+    detail: scrubEngineName(f.detail),
+  }));
+
+  const modelConfidence = clampScore100(
+    typeof data.confidence_score === "number" ? data.confidence_score * 100 : DECISION_THRESHOLDS.DEFAULT_MODEL_CONFIDENCE
+  );
+
+  const engineLabel =
+    V1_STATUS_TO_PREDICTION[(data.overall_status || "").toLowerCase().trim()] ?? "inconclusive";
+
+  const base: VerificationResult = {
     certificateId: data.certificate_id || "",
-    verdict: V1_STATUS_TO_VERDICT[data.overall_status] ?? "suspicious",
-    confidence: Math.round(data.confidence_score * 1000) / 10,
+    verdict: "suspicious",
+    confidence: modelConfidence,
     documentType: data.document_type || "Unknown",
     issuingAuthority: data.issuer_name || "Unknown",
     holderName: data.holder_name || "Unknown",
@@ -227,23 +332,33 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
     })),
     report: {
       summary: scrubEngineName(data.report.summary),
-      riskLevel: data.report.risk_level as RiskLevel,
-      riskScore: data.report.risk_score,
-      findings: data.report.findings.map((f) => ({
-        title: f.title,
-        detail: scrubEngineName(f.detail),
-      })),
-      recommendation: data.report.recommendation,
+      // Placeholder — Decision Engine overwrites risk + recommendation.
+      riskLevel: "medium",
+      riskScore: 50,
+      trustScore: 50,
+      findings,
+      recommendation: "manual_review",
     },
     vendorFindings: [
       {
         vendor: "Analysis",
         status: data.overall_status,
-        confidenceScore: data.confidence_score,
+        confidenceScore: modelConfidence / 100,
       },
     ],
     tamperRegions: [],
+    heatmapUrl:
+      typeof analysis.heatmap_url === "string" && analysis.heatmap_url.trim()
+        ? analysis.heatmap_url.trim()
+        : null,
   };
+
+  return applyUserDecision(base, {
+    engine: "v1",
+    label: engineLabel,
+    modelConfidence,
+    rawLabel: data.final_result || data.overall_status,
+  });
 }
 
 function normalizeSeverity(raw: string | null | undefined): TamperRegion["severity"] {
@@ -682,10 +797,6 @@ function mapV2Findings(data: EngineV2ApiResponse): Finding[] {
   return findings;
 }
 
-function clampScore100(value: number): number {
-  return Math.round(Math.min(Math.max(value, 0), 100) * 10) / 10;
-}
-
 /**
  * Normalize engine score fields to 0–100.
  * Accepts either a ratio (0–1) or a percent (0–100).
@@ -702,9 +813,39 @@ function toScore100(...candidates: Array<number | null | undefined>): number | n
   return null;
 }
 
+function resolveV2ModelConfidence(
+  label: EnginePredictionLabel,
+  trustScore: number | null,
+  fraudScore: number | null
+): number {
+  // Prefer an explicit positive trust/confidence from the engine.
+  if (trustScore != null && trustScore > 0) {
+    return trustScore;
+  }
+
+  if (label === "fraudulent") {
+    // Fraud intensity as confidence in the fraud call — never treat 0 as "sure".
+    if (fraudScore != null && fraudScore > 0) return fraudScore;
+    return DECISION_THRESHOLDS.DEFAULT_MODEL_CONFIDENCE;
+  }
+
+  if (label === "authentic") {
+    // Low fraud ⇒ high confidence in authenticity.
+    if (fraudScore != null) return clampScore100(100 - fraudScore);
+    return DECISION_THRESHOLDS.DEFAULT_MODEL_CONFIDENCE;
+  }
+
+  // suspicious / inconclusive — fraud intensity only when > 0; never map 0 → 0%.
+  if (fraudScore != null && fraudScore > 0) return fraudScore;
+  return DECISION_THRESHOLDS.DEFAULT_MODEL_CONFIDENCE;
+}
+
 function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
-  const verdictKey = (data.verdict || data.fraud?.verdict || "").toLowerCase();
-  const verdict = V2_VERDICT_MAP[verdictKey] ?? "suspicious";
+  const verdictKey = (data.verdict || data.fraud?.verdict || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[\s-]+/g, "_");
+  const engineLabel = V2_VERDICT_TO_PREDICTION[verdictKey] ?? "inconclusive";
 
   // Prefer explicit 0–100 fields first; fall back to 0–1 ratio.
   const fraudScore = toScore100(
@@ -719,28 +860,7 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
     typeof llmReport.trust_score === "number" ? llmReport.trust_score : null
   );
 
-  // Prefer trust score when provided (already 0–100)
-  const confidence =
-    trustScore != null
-      ? trustScore
-      : fraudScore != null
-        ? clampScore100(100 - fraudScore)
-        : 50;
-
-  const riskLevel = ((data.risk_level || "").toLowerCase() ||
-    (fraudScore != null && fraudScore >= 70
-      ? "high"
-      : fraudScore != null && fraudScore >= 35
-        ? "medium"
-        : "low")) as RiskLevel;
-
-  const recommendationRaw = (
-    data.recommendation ||
-    data.fraud?.recommendation ||
-    ""
-  ).toLowerCase();
-  const recommendation =
-    V2_RECOMMENDATION_MAP[recommendationRaw] || recommendationRaw || "manual_review";
+  const modelConfidence = resolveV2ModelConfidence(engineLabel, trustScore, fraudScore);
 
   const signals = mapV2Signals(data);
   const findings = mapV2Findings(data);
@@ -773,19 +893,10 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
   const issueDate =
     (typeof data.issue_date === "string" && data.issue_date.trim()) || "—";
 
-  const riskScore =
-    fraudScore != null
-      ? Math.round(fraudScore)
-      : riskLevel === "high"
-        ? 85
-        : riskLevel === "medium"
-          ? 50
-          : 15;
-
-  return {
+  const base: VerificationResult = {
     certificateId: data.job_id || "",
-    verdict,
-    confidence,
+    verdict: "suspicious",
+    confidence: modelConfidence,
     documentType: String(documentType).replace(/_/g, " "),
     issuingAuthority,
     holderName,
@@ -795,20 +906,30 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
     signals,
     report: {
       summary,
-      riskLevel,
-      riskScore,
+      // Placeholder — Decision Engine overwrites risk + recommendation.
+      riskLevel: "medium",
+      riskScore: 50,
+      trustScore: 50,
       findings,
-      recommendation,
+      recommendation: "manual_review",
     },
     vendorFindings: [
       {
         vendor: "Analysis",
-        status: (data.verdict || verdict).toLowerCase(),
-        confidenceScore: confidence / 100,
+        status: (data.verdict || engineLabel).toLowerCase(),
+        confidenceScore: modelConfidence / 100,
       },
     ],
     tamperRegions: mapTamperRegions(data),
+    heatmapUrl: null,
   };
+
+  return applyUserDecision(base, {
+    engine: "v2",
+    label: engineLabel,
+    modelConfidence,
+    rawLabel: data.verdict || data.fraud?.verdict || engineLabel,
+  });
 }
 
 const BASE_URL = "/api/v1";

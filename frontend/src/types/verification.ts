@@ -22,6 +22,8 @@ export interface ExecReport {
   summary: string;
   riskLevel: RiskLevel;
   riskScore: number;
+  /** Higher = more trust (Trusted=100). Used by overview gauges. */
+  trustScore: number;
   findings: Finding[];
   recommendation: string;
 }
@@ -49,6 +51,10 @@ export interface TamperRegion {
 export interface VerificationResult {
   certificateId: string;
   verdict: VerdictType;
+  /**
+   * Model confidence in the engine's prediction (0–100).
+   * Display as "Model Confidence" — not document authenticity / trust.
+   */
   confidence: number;
   documentType: string;
   issuingAuthority: string;
@@ -60,6 +66,8 @@ export interface VerificationResult {
   report: ExecReport;
   vendorFindings: VendorFinding[];
   tamperRegions: TamperRegion[];
+  /** Engine V1 heatmap overlay URL when spatial bboxes are unavailable. */
+  heatmapUrl?: string | null;
 }
 
 export interface DocumentInfoData {

@@ -7,6 +7,7 @@ import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import ReplayIcon from "@mui/icons-material/Replay";
+import { useState } from "react";
 import { DASHBOARD } from "./shared/dashboardShell";
 import type { VerificationResult } from "../../types/verification";
 import { downloadVerificationReport } from "../../utils/downloadReport";
@@ -22,8 +23,19 @@ export default function ActionsPanel({
   fileName = "certificate",
   onVerifyAnother,
 }: ActionsPanelProps) {
-  const handleDownload = () => {
-    downloadVerificationReport(result, fileName);
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await downloadVerificationReport(result, fileName);
+    } catch (err) {
+      console.error("Failed to generate PDF report", err);
+      window.alert("Could not generate the PDF report. Please try again.");
+    } finally {
+      setDownloading(false);
+    }
   };
 
   return (
@@ -56,7 +68,7 @@ export default function ActionsPanel({
           lineHeight: 1.65,
         }}
       >
-        Export the investigation report or start a new verification session.
+        Export a professional PDF investigation report or start a new verification session.
       </Typography>
 
       <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
@@ -64,6 +76,7 @@ export default function ActionsPanel({
           variant="outlined"
           startIcon={<DownloadOutlinedIcon />}
           onClick={handleDownload}
+          disabled={downloading}
           sx={{
             flex: 1,
             minWidth: 180,
@@ -71,7 +84,7 @@ export default function ActionsPanel({
             borderRadius: "8px",
           }}
         >
-          Download Report
+          {downloading ? "Preparing PDF..." : "Download PDF Report"}
         </Button>
         <Button
           variant="contained"
