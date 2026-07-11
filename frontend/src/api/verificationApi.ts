@@ -11,6 +11,7 @@ import type {
   SignalStatus,
   Signal,
   Finding,
+  TamperRegion,
 } from "../types/verification";
 import {
   ACTIVE_VERIFICATION_ENGINE,
@@ -75,6 +76,8 @@ interface EngineV2Signal {
   id?: string | null;
   bbox?: number[] | null;
   page?: number | null;
+  image_width?: number | null;
+  image_height?: number | null;
   location?: string | null;
   field?: string | null;
   field_label?: string | null;
@@ -105,6 +108,8 @@ interface EngineV2VisualEvidence {
   description?: string | null;
   page?: number | null;
   bbox?: number[] | null;
+  image_width?: number | null;
+  image_height?: number | null;
 }
 
 interface EngineV2ApiResponse {
@@ -237,7 +242,164 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
         confidenceScore: data.confidence_score,
       },
     ],
+    tamperRegions: [],
   };
+}
+
+function normalizeSeverity(raw: string | null | undefined): TamperRegion["severity"] {
+  const s = (raw || "").toLowerCase();
+  if (s === "critical") return "critical";
+  if (s === "high") return "high";
+  if (s === "low") return "low";
+  return "medium";
+}
+
+function asBBox(value: unknown): [number, number, number, number] | null {
+  if (!Array.isArray(value) || value.length !== 4) return null;
+  const nums = value.map((n) => Number(n));
+  if (nums.some((n) => !Number.isFinite(n) || n < 0)) return null;
+  if (nums[2] <= 0 || nums[3] <= 0) return null;
+  return [nums[0], nums[1], nums[2], nums[3]];
+}
+
+function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
+  const out: TamperRegion[] = [];
+  const seen = new Set<string>();
+
+  const push = (input: {
+    id?: string | null;
+    label: string;
+    description: string;
+    severity?: string | null;
+    bbox?: number[] | null;
+    page?: number | null;
+    imageWidth?: number | null;
+    imageHeight?: number | null;
+    location?: string | null;
+  }) => {
+    const bbox = asBBox(input.bbox);
+    if (!bbox) return;
+    const imageWidth = Number(input.imageWidth);
+    const imageHeight = Number(input.imageHeight);
+    if (!Number.isFinite(imageWidth) || !Number.isFinite(imageHeight) || imageWidth <= 0 || imageHeight <= 0) {
+      return;
+    }
+
+    const key = `${input.page || 1}-${bbox.join(",")}-${input.label}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    out.push({
+      id: String(input.id || key),
+      label: input.label,
+      description: scrubEngineName(input.description || input.label),
+      severity: normalizeSeverity(input.severity),
+      bbox,
+      page: input.page && input.page > 0 ? input.page : 1,
+      imageWidth,
+      imageHeight,
+      location: input.location || undefined,
+    });
+  };
+
+  for (const signal of [...(data.signals || []), ...(data.field_evidence || [])]) {
+    push({
+      id: signal.id,
+      label:
+        signal.field_label ||
+        signal.field ||
+        signal.type ||
+        signal.check ||
+        "Anomaly",
+      description: signal.description || signal.type || "Tamper indicator",
+      severity: signal.severity,
+      bbox: signal.bbox,
+      page: signal.page,
+      imageWidth: signal.image_width,
+      imageHeight: signal.image_height,
+      location: signal.location,
+    });
+  }
+
+  for (const item of data.visual_evidence || []) {
+    push({
+      id: item.type,
+      label: item.title || item.field_label || item.field || item.type || "Visual evidence",
+      description: item.description || item.location || item.title || "Visual evidence",
+      severity: item.severity,
+      bbox: item.bbox,
+      page: item.page,
+      imageWidth: item.image_width,
+      imageHeight: item.image_height,
+      location: item.location,
+    });
+  }
+
+  // Prefer higher severity first for legend ordering.
+  const rank = { critical: 0, high: 1, medium: 2, low: 3 } as const;
+
+  // Fill missing canvas size from sibling regions on the same page when possible.
+  const dimsByPage = new Map<number, { w: number; h: number }>();
+  for (const region of out) {
+    dimsByPage.set(region.page, { w: region.imageWidth, h: region.imageHeight });
+  }
+
+  // Re-scan sources that lacked dims using page fallbacks — rebuild lightly.
+  const withFallback: TamperRegion[] = [...out];
+  const tryFallback = (input: {
+    id?: string | null;
+    label: string;
+    description: string;
+    severity?: string | null;
+    bbox?: number[] | null;
+    page?: number | null;
+    imageWidth?: number | null;
+    imageHeight?: number | null;
+    location?: string | null;
+  }) => {
+    const bbox = asBBox(input.bbox);
+    if (!bbox) return;
+    const page = input.page && input.page > 0 ? input.page : 1;
+    let imageWidth = Number(input.imageWidth);
+    let imageHeight = Number(input.imageHeight);
+    if (!Number.isFinite(imageWidth) || imageWidth <= 0 || !Number.isFinite(imageHeight) || imageHeight <= 0) {
+      const fallback = dimsByPage.get(page);
+      if (!fallback) return;
+      imageWidth = fallback.w;
+      imageHeight = fallback.h;
+    }
+    const key = `${page}-${bbox.join(",")}-${input.label}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    withFallback.push({
+      id: String(input.id || key),
+      label: input.label,
+      description: scrubEngineName(input.description || input.label),
+      severity: normalizeSeverity(input.severity),
+      bbox,
+      page,
+      imageWidth,
+      imageHeight,
+      location: input.location || undefined,
+    });
+  };
+
+  for (const item of data.visual_evidence || []) {
+    tryFallback({
+      id: item.type,
+      label: item.title || item.field_label || item.field || item.type || "Visual evidence",
+      description: item.description || item.location || item.title || "Visual evidence",
+      severity: item.severity,
+      bbox: item.bbox,
+      page: item.page,
+      imageWidth: item.image_width,
+      imageHeight: item.image_height,
+      location: item.location,
+    });
+  }
+
+  withFallback.sort((a, b) => rank[a.severity] - rank[b.severity]);
+  return withFallback;
 }
 
 function v2SignalStatus(signal: EngineV2Signal): SignalStatus {
@@ -645,6 +807,7 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
         confidenceScore: confidence / 100,
       },
     ],
+    tamperRegions: mapTamperRegions(data),
   };
 }
 

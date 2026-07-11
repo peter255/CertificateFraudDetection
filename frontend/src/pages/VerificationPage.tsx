@@ -28,6 +28,7 @@ import VerdictCard from "../components/results/VerdictCard";
 import SignalsList from "../components/results/SignalsList";
 import ExecutiveReport from "../components/results/ExecutiveReport";
 import DocumentInfo from "../components/results/DocumentInfo";
+import AnnotatedDocumentSection from "../components/results/AnnotatedDocumentSection";
 import ActionsPanel from "../components/results/ActionsPanel";
 import { InvestigationBanner } from "../components/results/shared/dashboardShell";
 import { verifyDocument } from "../api/verificationApi";
@@ -584,13 +585,11 @@ export default function VerificationPage() {
 
   // ── Non-idle states: split-panel layout ───────────────────────────────────
 
-  const isResults = step === "results" && !!verificationResult;
-
   const leftPanel = (
     <DocumentViewer
       file={file}
       onPageCountChange={setPageCount}
-      variant={isResults ? "dashboard" : "default"}
+      variant="default"
     />
   );
 
@@ -704,7 +703,7 @@ export default function VerificationPage() {
     );
   }
 
-  // ── results: full analysis output ──────────────────────────────────────────
+  // ── results: full-width investigation layout (no side viewer) ──────────────
   else if (step === "results" && verificationResult) {
     const verifiedAtDisplay = formatVerifiedAt(verificationResult.verifiedAt) ?? "—";
 
@@ -715,48 +714,66 @@ export default function VerificationPage() {
     };
     const verdictDisplay = VERDICT_DISPLAY[verificationResult.verdict] ?? VERDICT_DISPLAY.suspicious;
 
-    rightPanel = (
+    return (
       <Box
-        ref={resultsRef}
         sx={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 3.5,
+          px: { xs: 2, sm: 3, md: 4 },
+          pt: { xs: 3, md: 4 },
+          pb: { xs: 8, md: 7 },
+          maxWidth: 1680,
+          mx: "auto",
         }}
       >
-        <InvestigationBanner
-          fileName={file?.name ?? "certificate.pdf"}
-          verdict={verdictDisplay.label}
-          verdictColor={verdictDisplay.color}
-          verifiedAt={verifiedAtDisplay}
-          certificateId={verificationResult.certificateId}
-          confidence={verificationResult.confidence}
-          riskScore={verificationResult.report.riskScore}
-          signalCount={verificationResult.signals.length}
-        />
-        <VerdictCard
-          verdict={verificationResult.verdict}
-          confidence={verificationResult.confidence}
-          riskScore={verificationResult.report.riskScore}
-          riskLevel={verificationResult.report.riskLevel}
-        />
+        <Box
+          ref={resultsRef}
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 3.5,
+          }}
+        >
+          <InvestigationBanner
+            fileName={file?.name ?? "certificate.pdf"}
+            verdict={verdictDisplay.label}
+            verdictColor={verdictDisplay.color}
+            verifiedAt={verifiedAtDisplay}
+            certificateId={verificationResult.certificateId}
+            confidence={verificationResult.confidence}
+            riskScore={verificationResult.report.riskScore}
+            signalCount={verificationResult.signals.length}
+          />
 
-        <ExecutiveReport
-          report={verificationResult.report}
-          fileName={file?.name ?? "certificate.pdf"}
-          aiSummary={verificationResult.aiSummary}
-          verifiedAt={verifiedAtDisplay}
-        />
+          {file && (
+            <AnnotatedDocumentSection
+              file={file}
+              regions={verificationResult.tamperRegions}
+            />
+          )}
 
-        <SignalsList signals={verificationResult.signals} />
+          <VerdictCard
+            verdict={verificationResult.verdict}
+            confidence={verificationResult.confidence}
+            riskScore={verificationResult.report.riskScore}
+            riskLevel={verificationResult.report.riskLevel}
+          />
 
-        {documentInfo && <DocumentInfo data={documentInfo} />}
+          <ExecutiveReport
+            report={verificationResult.report}
+            fileName={file?.name ?? "certificate.pdf"}
+            aiSummary={verificationResult.aiSummary}
+            verifiedAt={verifiedAtDisplay}
+          />
 
-        <ActionsPanel
-          result={verificationResult}
-          fileName={file?.name ?? "certificate"}
-          onVerifyAnother={reset}
-        />
+          <SignalsList signals={verificationResult.signals} />
+
+          {documentInfo && <DocumentInfo data={documentInfo} />}
+
+          <ActionsPanel
+            result={verificationResult}
+            fileName={file?.name ?? "certificate"}
+            onVerifyAnother={reset}
+          />
+        </Box>
       </Box>
     );
   }
@@ -765,7 +782,7 @@ export default function VerificationPage() {
     <SplitLayout
       left={leftPanel}
       right={rightPanel}
-      variant={isResults ? "dashboard" : "default"}
+      variant="default"
     />
   );
 }

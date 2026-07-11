@@ -32,6 +32,20 @@ export interface VendorFinding {
   confidenceScore: number;
 }
 
+/** Spatial tamper / anomaly region on the source document. */
+export interface TamperRegion {
+  id: string;
+  label: string;
+  description: string;
+  severity: "critical" | "high" | "medium" | "low";
+  /** [x, y, width, height] in source image pixels (origin top-left). */
+  bbox: [number, number, number, number];
+  page: number;
+  imageWidth: number;
+  imageHeight: number;
+  location?: string;
+}
+
 export interface VerificationResult {
   certificateId: string;
   verdict: VerdictType;
@@ -45,6 +59,7 @@ export interface VerificationResult {
   signals: Signal[];
   report: ExecReport;
   vendorFindings: VendorFinding[];
+  tamperRegions: TamperRegion[];
 }
 
 export interface DocumentInfoData {
