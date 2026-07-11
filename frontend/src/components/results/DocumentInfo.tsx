@@ -11,7 +11,6 @@ import StorageIcon from "@mui/icons-material/Storage";
 import LibraryBooksIcon from "@mui/icons-material/LibraryBooks";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import TimerOutlinedIcon from "@mui/icons-material/TimerOutlined";
-import VerifiedUserOutlinedIcon from "@mui/icons-material/VerifiedUserOutlined";
 import EventAvailableIcon from "@mui/icons-material/EventAvailable";
 import type { DocumentInfoData } from "../../types/verification";
 import { DASHBOARD, SectionShell } from "./shared/dashboardShell";
@@ -94,7 +93,6 @@ export default function DocumentInfo({ data }: DocumentInfoProps) {
     { icon: AccessTimeIcon, label: "Upload Time", value: data.uploadTime },
     { icon: TimerOutlinedIcon, label: "Processing Time", value: data.processingTime },
     { icon: EventAvailableIcon, label: "Verified At", value: data.verifiedAt },
-    { icon: VerifiedUserOutlinedIcon, label: "Verification Engine", value: data.vendorName },
   ].filter((field): field is { icon: typeof DescriptionOutlinedIcon; label: string; value: string } =>
     Boolean(field.value && field.value !== "—")
   );

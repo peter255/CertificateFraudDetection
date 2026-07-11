@@ -1,6 +1,5 @@
 /**
- * ExecutiveReport — Section 2: AI Executive Summary
- * Timeline-style findings with prominent recommendation card.
+ * ExecutiveReport — recommendation + short summary + clear Key Findings.
  */
 
 import Box from "@mui/material/Box";
@@ -9,7 +8,12 @@ import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CancelIcon from "@mui/icons-material/Cancel";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
-import type { ExecReport, RiskLevel } from "../../types/verification";
+import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
+import ReportProblemOutlinedIcon from "@mui/icons-material/ReportProblemOutlined";
+import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
+import VerifiedUserOutlinedIcon from "@mui/icons-material/VerifiedUserOutlined";
+import SpeedOutlinedIcon from "@mui/icons-material/SpeedOutlined";
+import type { ExecReport, Finding, RiskLevel } from "../../types/verification";
 import { DASHBOARD, SectionBadge, SectionShell } from "./shared/dashboardShell";
 
 const RISK_STYLE: Record<RiskLevel, { label: string; color: string }> = {
@@ -50,6 +54,269 @@ const DEFAULT_REC = {
   bgGradient: "linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%)",
   Icon: WarningAmberIcon,
 };
+
+type Tone = "info" | "warn" | "danger" | "ok";
+
+const TONE: Record<Tone, { color: string; bg: string }> = {
+  info: { color: DASHBOARD.accent, bg: "#EFF6FF" },
+  warn: { color: "#D97706", bg: "#FFFBEB" },
+  danger: { color: "#C50F1F", bg: "#FEF2F2" },
+  ok: { color: "#107C10", bg: "#F0FDF4" },
+};
+
+function findingTone(title: string): Tone {
+  const t = title.toLowerCase();
+  if (t.includes("evidence") || t.includes("issue") || t.includes("tamper")) return "danger";
+  if (t.includes("risk") || t.includes("why")) return "warn";
+  if (t.includes("provenance")) return "warn";
+  if (t.includes("score")) return "info";
+  return "info";
+}
+
+function findingIcon(title: string) {
+  const t = title.toLowerCase();
+  if (t.includes("why")) return HelpOutlineOutlinedIcon;
+  if (t.includes("issue") || t.includes("tamper") || t.includes("risk")) return ReportProblemOutlinedIcon;
+  if (t.includes("evidence")) return FactCheckOutlinedIcon;
+  if (t.includes("provenance")) return VerifiedUserOutlinedIcon;
+  if (t.includes("score")) return SpeedOutlinedIcon;
+  return FactCheckOutlinedIcon;
+}
+
+function severityFromText(text: string): Tone {
+  const t = text.toLowerCase();
+  if (/\bcritical\b|\bhigh\b|\bfail\b|\bfraud/.test(t)) return "danger";
+  if (/\bmedium\b|\bsuspicious\b|\breview\b|\bwarning\b/.test(t)) return "warn";
+  if (/\blow\b|\bpass\b|\bcomplete\b|\baccept\b/.test(t)) return "ok";
+  return "info";
+}
+
+function splitLines(detail: string): string[] {
+  if (detail.includes("\n")) {
+    return detail
+      .split("\n")
+      .map((l) => l.replace(/^•\s*/, "").trim())
+      .filter(Boolean);
+  }
+  if (detail.includes("•")) {
+    return detail
+      .split("•")
+      .map((l) => l.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function ScoreBars({ detail }: { detail: string }) {
+  const parts = detail.split(" · ").map((p) => p.trim()).filter(Boolean);
+  const rows = parts
+    .map((part) => {
+      // "Forensic: 39.8" or "Trust: 50/100" — never concatenate digits
+      const m = part.match(/^(.+?):\s*([\d.]+)/);
+      if (!m) return null;
+      const value = Number(m[2]);
+      if (!Number.isFinite(value)) return null;
+      return { label: m[1].trim(), value };
+    })
+    .filter((x): x is { label: string; value: number } => x != null);
+
+  if (!rows.length) {
+    return (
+      <Typography sx={{ fontSize: "0.875rem", color: DASHBOARD.textSecondary, lineHeight: 1.65 }}>
+        {detail}
+      </Typography>
+    );
+  }
+
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+      {rows.map((row) => {
+        const pct = Math.min(Math.max(row.value, 0), 100);
+        const color = pct >= 70 ? "#C50F1F" : pct >= 35 ? "#D97706" : "#107C10";
+        return (
+          <Box key={row.label}>
+            <Box sx={{ display: "flex", justifyContent: "space-between", mb: 0.5 }}>
+              <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, color: DASHBOARD.textPrimary }}>
+                {row.label}
+              </Typography>
+              <Typography sx={{ fontSize: "0.8125rem", fontWeight: 800, color }}>
+                {Number.isInteger(row.value) ? row.value : row.value.toFixed(1)}
+                <Box component="span" sx={{ fontWeight: 600, color: DASHBOARD.textMuted }}>
+                  /100
+                </Box>
+              </Typography>
+            </Box>
+            <Box sx={{ height: 8, borderRadius: 999, backgroundColor: "#E2E8F0", overflow: "hidden" }}>
+              <Box
+                sx={{
+                  width: `${pct}%`,
+                  height: "100%",
+                  backgroundColor: color,
+                  borderRadius: 999,
+                }}
+              />
+            </Box>
+          </Box>
+        );
+      })}
+      <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted }}>
+        Higher contribution = stronger signal toward fraud risk.
+      </Typography>
+    </Box>
+  );
+}
+
+function IssueList({ lines }: { lines: string[] }) {
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+      {lines.map((line) => {
+        const [title, ...rest] = line.split(" — ");
+        const meaning = rest.join(" — ");
+        const tone = severityFromText(line);
+        const style = TONE[tone];
+        return (
+          <Box
+            key={line}
+            sx={{
+              display: "flex",
+              gap: 1.5,
+              p: 1.5,
+              borderRadius: "12px",
+              backgroundColor: style.bg,
+              border: `1px solid ${style.color}22`,
+              borderLeft: `4px solid ${style.color}`,
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontSize: "0.875rem", fontWeight: 700, color: DASHBOARD.textPrimary }}>
+                {title}
+              </Typography>
+              {meaning && (
+                <Typography sx={{ fontSize: "0.8125rem", color: DASHBOARD.textSecondary, mt: 0.35, lineHeight: 1.55 }}>
+                  {meaning}
+                </Typography>
+              )}
+            </Box>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
+function EvidenceList({ lines }: { lines: string[] }) {
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+      {lines.map((line) => {
+        const tone = severityFromText(line);
+        const style = TONE[tone];
+        // Prefer "Title: body" when present
+        const idx = line.indexOf(": ");
+        const title = idx > 0 ? line.slice(0, idx) : line;
+        const body = idx > 0 ? line.slice(idx + 2) : "";
+        return (
+          <Box
+            key={line}
+            sx={{
+              p: 1.75,
+              borderRadius: "12px",
+              backgroundColor: "#FFFFFF",
+              border: `1px solid ${DASHBOARD.borderLight}`,
+              borderLeft: `4px solid ${style.color}`,
+            }}
+          >
+            <Typography sx={{ fontSize: "0.8125rem", fontWeight: 700, color: DASHBOARD.textPrimary, mb: body ? 0.5 : 0 }}>
+              {title}
+            </Typography>
+            {body && (
+              <Typography sx={{ fontSize: "0.8125rem", color: DASHBOARD.textSecondary, lineHeight: 1.6 }}>
+                {body}
+              </Typography>
+            )}
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
+function FindingBody({ finding }: { finding: Finding }) {
+  const title = finding.title.toLowerCase();
+  const lines = splitLines(finding.detail);
+
+  if (title.includes("score")) {
+    return <ScoreBars detail={finding.detail} />;
+  }
+
+  if (title.includes("issue") || title.includes("risk factor")) {
+    return <IssueList lines={lines.length ? lines : [finding.detail]} />;
+  }
+
+  if (title.includes("evidence")) {
+    return <EvidenceList lines={lines.length ? lines : [finding.detail]} />;
+  }
+
+  if (lines.length >= 2) {
+    return <IssueList lines={lines} />;
+  }
+
+  return (
+    <Typography sx={{ fontSize: "0.875rem", color: DASHBOARD.textSecondary, lineHeight: 1.7 }}>
+      {finding.detail}
+    </Typography>
+  );
+}
+
+function FindingCard({ finding }: { finding: Finding }) {
+  const tone = findingTone(finding.title);
+  const style = TONE[tone];
+  const Icon = findingIcon(finding.title);
+
+  return (
+    <Box
+      sx={{
+        borderRadius: "16px",
+        border: `1px solid ${DASHBOARD.borderLight}`,
+        backgroundColor: "#FFFFFF",
+        overflow: "hidden",
+      }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 1.5,
+          px: 2.25,
+          py: 1.75,
+          backgroundColor: style.bg,
+          borderBottom: `1px solid ${DASHBOARD.borderLight}`,
+        }}
+      >
+        <Box
+          sx={{
+            width: 36,
+            height: 36,
+            borderRadius: "10px",
+            backgroundColor: "#FFFFFF",
+            border: `1px solid ${style.color}33`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <Icon sx={{ fontSize: 18, color: style.color }} />
+        </Box>
+        <Typography sx={{ fontSize: "1rem", fontWeight: 800, color: DASHBOARD.textPrimary }}>
+          {finding.title}
+        </Typography>
+      </Box>
+      <Box sx={{ px: 2.25, py: 2 }}>
+        <FindingBody finding={finding} />
+      </Box>
+    </Box>
+  );
+}
 
 interface ExecutiveReportProps {
   report: ExecReport;
@@ -156,22 +423,14 @@ export default function ExecutiveReport({
             <Typography sx={{ fontSize: "0.625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: DASHBOARD.textMuted, mb: 0.5 }}>
               Recommendation
             </Typography>
-            <Typography sx={{ fontSize: "1.125rem", fontWeight: 700, color: rec.color, mb: 0.5 }}>
+            <Typography sx={{ fontSize: "1.125rem", fontWeight: 700, color: rec.color }}>
               {rec.label}
             </Typography>
-            {report.recommendation &&
-              report.recommendation !== "approve" &&
-              report.recommendation !== "reject" &&
-              report.recommendation !== "manual_review" && (
-                <Typography sx={{ fontSize: "0.875rem", color: DASHBOARD.textSecondary, lineHeight: 1.6 }}>
-                  {report.recommendation}
-                </Typography>
-              )}
           </Box>
         </Box>
 
         <Typography sx={{ fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: DASHBOARD.textMuted, mb: 1.5 }}>
-          Analysis Summary
+          In plain words
         </Typography>
         <Box
           sx={{
@@ -179,7 +438,7 @@ export default function ExecutiveReport({
             borderRadius: "12px",
             backgroundColor: "#F8FAFC",
             border: `1px solid ${DASHBOARD.borderLight}`,
-            mb: report.findings.length > 0 ? 3 : 0,
+            mb: report.findings.length > 0 ? 3.5 : 0,
           }}
         >
           <Typography sx={{ fontSize: "0.9375rem", color: DASHBOARD.textSecondary, lineHeight: 1.8 }}>
@@ -192,63 +451,9 @@ export default function ExecutiveReport({
             <Typography sx={{ fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: DASHBOARD.textMuted, mb: 2 }}>
               Key Findings
             </Typography>
-            <Box sx={{ position: "relative", pl: 3 }}>
-              <Box
-                sx={{
-                  position: "absolute",
-                  left: 11,
-                  top: 12,
-                  bottom: 12,
-                  width: 2,
-                  backgroundColor: DASHBOARD.borderLight,
-                }}
-              />
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.75 }}>
               {report.findings.map((finding, index) => (
-                <Box
-                  key={finding.title}
-                  sx={{
-                    position: "relative",
-                    pl: 3,
-                    pb: index < report.findings.length - 1 ? 2.5 : 0,
-                  }}
-                >
-                  <Box
-                    sx={{
-                      position: "absolute",
-                      left: -13,
-                      top: 4,
-                      width: 24,
-                      height: 24,
-                      borderRadius: "50%",
-                      backgroundColor: DASHBOARD.accent,
-                      border: "3px solid #FFFFFF",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      boxShadow: `0 0 0 2px ${DASHBOARD.accent}33`,
-                    }}
-                  >
-                    <Typography sx={{ fontSize: "0.5625rem", fontWeight: 800, color: "#FFFFFF" }}>
-                      {index + 1}
-                    </Typography>
-                  </Box>
-                  <Box
-                    sx={{
-                      p: 2.5,
-                      borderRadius: "12px",
-                      backgroundColor: "#FFFFFF",
-                      border: `1px solid ${DASHBOARD.borderLight}`,
-                      boxShadow: "0 1px 4px rgba(15,23,42,0.04)",
-                    }}
-                  >
-                    <Typography sx={{ fontSize: "0.9375rem", fontWeight: 700, color: DASHBOARD.textPrimary, mb: 0.75 }}>
-                      {finding.title}
-                    </Typography>
-                    <Typography sx={{ fontSize: "0.8125rem", color: DASHBOARD.textSecondary, lineHeight: 1.65 }}>
-                      {finding.detail}
-                    </Typography>
-                  </Box>
-                </Box>
+                <FindingCard key={`${finding.title}-${index}`} finding={finding} />
               ))}
             </Box>
           </>

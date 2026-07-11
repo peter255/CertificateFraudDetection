@@ -28,12 +28,9 @@ import VerdictCard from "../components/results/VerdictCard";
 import SignalsList from "../components/results/SignalsList";
 import ExecutiveReport from "../components/results/ExecutiveReport";
 import DocumentInfo from "../components/results/DocumentInfo";
-import TechnicalDetails from "../components/results/TechnicalDetails";
-import VendorAnalysis from "../components/results/VendorAnalysis";
 import ActionsPanel from "../components/results/ActionsPanel";
 import { InvestigationBanner } from "../components/results/shared/dashboardShell";
 import { verifyDocument } from "../api/verificationApi";
-import { ACTIVE_ENGINE_DISPLAY_NAME } from "../config/vendors";
 import type { DocumentInfoData, VerificationResult } from "../types/verification";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -361,7 +358,7 @@ export default function VerificationPage() {
           uploadTime: uploadTime ? formatUploadTime(uploadTime) : "—",
           processingTime:
             processingMs !== null ? formatProcessingTime(processingMs) : null,
-          vendorName: step === "results" ? ACTIVE_ENGINE_DISPLAY_NAME : null,
+          vendorName: null,
           verifiedAt:
             step === "results" && verificationResult
               ? formatVerifiedAt(verificationResult.verifiedAt)
@@ -376,7 +373,7 @@ export default function VerificationPage() {
       "Fraud detection",
       "Metadata analysis",
       "OCR validation",
-      "Multi-engine checks",
+      "Multi-layer checks",
       "Executive report",
     ];
 
@@ -546,7 +543,7 @@ export default function VerificationPage() {
             }}
           >
             {[
-              { label: "AI Engine", value: `${ACTIVE_ENGINE_DISPLAY_NAME} forensic model` },
+              { label: "Analysis", value: "AI forensic authenticity checks" },
               { label: "Security", value: "Encrypted in transit · no public sharing" },
               { label: "Output", value: "Executive risk & evidence pack" },
             ].map((item) => (
@@ -736,16 +733,11 @@ export default function VerificationPage() {
           confidence={verificationResult.confidence}
           riskScore={verificationResult.report.riskScore}
           signalCount={verificationResult.signals.length}
-          vendorCount={verificationResult.vendorFindings.length}
         />
         <VerdictCard
           verdict={verificationResult.verdict}
           confidence={verificationResult.confidence}
           riskScore={verificationResult.report.riskScore}
-          documentType={verificationResult.documentType}
-          issuingAuthority={verificationResult.issuingAuthority}
-          issueDate={verificationResult.issueDate}
-          holderName={verificationResult.holderName}
           riskLevel={verificationResult.report.riskLevel}
         />
 
@@ -759,10 +751,6 @@ export default function VerificationPage() {
         <SignalsList signals={verificationResult.signals} />
 
         {documentInfo && <DocumentInfo data={documentInfo} />}
-
-        <VendorAnalysis vendorFindings={verificationResult.vendorFindings} />
-
-        <TechnicalDetails signals={verificationResult.signals} />
 
         <ActionsPanel
           result={verificationResult}

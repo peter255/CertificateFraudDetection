@@ -276,7 +276,7 @@ export default function SignalsList({ signals }: SignalsListProps) {
         {sorted.length === 0 ? (
           <Box sx={{ px: 3, py: 4, textAlign: "center" }}>
             <Typography sx={{ fontSize: "0.875rem", color: DASHBOARD.textMuted }}>
-              Not Provided by Engine
+              Not Provided
             </Typography>
           </Box>
         ) : (

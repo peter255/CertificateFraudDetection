@@ -1,6 +1,6 @@
 /**
  * VerdictCard — Section 1: Verification Overview
- * Forensic command-center layout with SVG gauges and stat tiles.
+ * Forensic command-center layout with SVG gauges.
  */
 
 import Box from "@mui/material/Box";
@@ -9,10 +9,6 @@ import SecurityIcon from "@mui/icons-material/Security";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import CancelIcon from "@mui/icons-material/Cancel";
-import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
-import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
-import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
-import CalendarTodayOutlinedIcon from "@mui/icons-material/CalendarTodayOutlined";
 import type { VerdictType, RiskLevel } from "../../types/verification";
 import { CircularGauge } from "./shared/dashboardCharts";
 import { DASHBOARD, SectionBadge, SectionShell } from "./shared/dashboardShell";
@@ -56,82 +52,10 @@ const RISK_COLOR: Record<RiskLevel, string> = {
   high: "#C50F1F",
 };
 
-function StatTile({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof ArticleOutlinedIcon;
-  label: string;
-  value: string;
-}) {
-  return (
-    <Box
-      sx={{
-        flex: "1 1 140px",
-        minWidth: 0,
-        p: 2,
-        borderRadius: "12px",
-        backgroundColor: "#F8FAFC",
-        border: `1px solid ${DASHBOARD.borderLight}`,
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 1.5,
-      }}
-    >
-      <Box
-        sx={{
-          width: 36,
-          height: 36,
-          borderRadius: "10px",
-          backgroundColor: "#FFFFFF",
-          border: `1px solid ${DASHBOARD.borderLight}`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-        }}
-      >
-        <Icon sx={{ fontSize: 18, color: DASHBOARD.accent }} />
-      </Box>
-      <Box sx={{ minWidth: 0 }}>
-        <Typography
-          sx={{
-            fontSize: "0.5625rem",
-            fontWeight: 700,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: DASHBOARD.textMuted,
-            mb: 0.5,
-          }}
-        >
-          {label}
-        </Typography>
-        <Typography
-          sx={{
-            fontSize: "0.875rem",
-            fontWeight: 600,
-            color: DASHBOARD.textPrimary,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {value}
-        </Typography>
-      </Box>
-    </Box>
-  );
-}
-
 interface VerdictCardProps {
   verdict: VerdictType;
   confidence: number;
   riskScore: number;
-  documentType: string;
-  issuingAuthority: string;
-  issueDate: string;
-  holderName: string;
   riskLevel: RiskLevel;
 }
 
@@ -139,10 +63,6 @@ export default function VerdictCard({
   verdict,
   confidence,
   riskScore,
-  documentType,
-  issuingAuthority,
-  issueDate,
-  holderName,
   riskLevel,
 }: VerdictCardProps) {
   const cfg = VERDICT_CONFIG[verdict];
@@ -219,13 +139,12 @@ export default function VerdictCard({
           justifyContent: "center",
           gap: { xs: 3, sm: 6 },
           flexWrap: "wrap",
-          borderBottom: `1px solid ${DASHBOARD.borderLight}`,
           backgroundColor: "#FAFBFD",
         }}
       >
         <CircularGauge
           value={confidence}
-          label="Confidence Score"
+          label="Trust Score"
           color={cfg.color}
           size={150}
         />
@@ -237,13 +156,6 @@ export default function VerdictCard({
           color={riskColor}
           size={150}
         />
-      </Box>
-
-      <Box sx={{ px: 3, py: 3, display: "flex", gap: 1.5, flexWrap: "wrap" }}>
-        <StatTile icon={ArticleOutlinedIcon} label="Document Type" value={documentType} />
-        <StatTile icon={AccountBalanceOutlinedIcon} label="Issuing Authority" value={issuingAuthority} />
-        <StatTile icon={PersonOutlinedIcon} label="Holder" value={holderName} />
-        <StatTile icon={CalendarTodayOutlinedIcon} label="Issue Date" value={issueDate} />
       </Box>
     </SectionShell>
   );

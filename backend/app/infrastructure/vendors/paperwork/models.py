@@ -54,11 +54,34 @@ class PaperworkFraud(BaseModel):
     recommendation: str | None = None
 
 
+class PaperworkVisualEvidence(BaseModel):
+    """Visual evidence item with heavy binary payloads stripped."""
+
+    title: str | None = None
+    type: str | None = None
+    field: str | None = None
+    field_label: str | None = None
+    layer: str | None = None
+    location: str | None = None
+    severity: str | None = None
+    confidence: float | None = None
+    description: str | None = None
+    page: int | None = None
+    bbox: list[int] | None = None
+    image_width: int | None = None
+    image_height: int | None = None
+    bbox_source: str | None = None
+    has_image: bool = False
+    has_crop_image: bool = False
+    extras: dict[str, Any] = Field(default_factory=dict)
+
+
 class PaperworkVerifyResponse(BaseModel):
     """
     Engine V2 verification response.
 
     Exposes the full fraud-detection result surface — not a shared DTO.
+    Binary image payloads from visual_evidence are stripped.
     """
 
     vendor: str = "v2"
@@ -76,18 +99,30 @@ class PaperworkVerifyResponse(BaseModel):
     risk_level: str | None = None
     fraud_types: list[str] = Field(default_factory=list)
     recommendation: str | None = None
+    executive_summary: str | None = None
     is_scan: bool | None = None
     file_kind: str | None = None
     document_type: str | None = None
+    processing_time: float | None = None
+
+    # Extracted document identity (best-effort from OCR / field evidence).
+    holder_name: str | None = None
+    issuer_name: str | None = None
+    issue_date: str | None = None
 
     fraud: PaperworkFraud | None = None
     signals: list[PaperworkSignal] = Field(default_factory=list)
     field_evidence: list[PaperworkSignal] = Field(default_factory=list)
+    visual_evidence: list[PaperworkVisualEvidence] = Field(default_factory=list)
     analysis_flow: list[dict[str, Any]] = Field(default_factory=list)
+    layers_applied: list[str] = Field(default_factory=list)
     engine_scores: dict[str, Any] = Field(default_factory=dict)
+    evidence_groups: dict[str, Any] = Field(default_factory=dict)
     layer_details: dict[str, Any] = Field(default_factory=dict)
     classification: dict[str, Any] = Field(default_factory=dict)
     engine_results: dict[str, Any] = Field(default_factory=dict)
+    structural_profile: dict[str, Any] = Field(default_factory=dict)
+    pdf_fraud_subscores: dict[str, Any] = Field(default_factory=dict)
     raw_result: dict[str, Any] = Field(default_factory=dict)
 
     verified_at: datetime

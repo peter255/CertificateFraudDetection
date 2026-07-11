@@ -12,8 +12,8 @@ const ENGINE_PATHS: Record<VerificationEngineId, string> = {
 };
 
 const ENGINE_DISPLAY_NAMES: Record<VerificationEngineId, string> = {
-  v1: "Verification Engine V1",
-  v2: "Verification Engine V2",
+  v1: "Analysis V1",
+  v2: "Analysis V2",
 };
 
 const configured = (import.meta.env.VITE_VERIFICATION_ENGINE ?? "v1").toLowerCase();

@@ -164,7 +164,6 @@ interface InvestigationBannerProps {
   confidence?: number;
   riskScore?: number;
   signalCount?: number;
-  vendorCount?: number;
 }
 
 export function InvestigationBanner({
@@ -176,14 +175,12 @@ export function InvestigationBanner({
   confidence,
   riskScore,
   signalCount,
-  vendorCount,
 }: InvestigationBannerProps) {
   const metrics = [
-    { label: "Confidence", value: confidence != null ? `${confidence}%` : "—" },
+    { label: "Trust Score", value: confidence != null ? `${confidence}%` : "—" },
     { label: "Risk Score", value: riskScore != null ? `${riskScore}/100` : "—" },
     { label: "Signals", value: signalCount != null ? String(signalCount) : "—" },
-    { label: "Engines", value: vendorCount != null ? String(vendorCount) : "—" },
-  ];
+  ].filter((item) => item.value !== "—");
 
   return (
     <Box

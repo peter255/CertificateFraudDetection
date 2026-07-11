@@ -3,7 +3,6 @@
  */
 
 import type { VerificationResult } from "../types/verification";
-import { ACTIVE_ENGINE_DISPLAY_NAME } from "../config/vendors";
 
 function safeFileStem(name: string): string {
   const stem = name.replace(/\.[^.]+$/, "").trim() || "certificate";
@@ -18,7 +17,6 @@ function buildReportMarkdown(
     "# Certificate Verification Report",
     "",
     `Generated: ${new Date().toISOString()}`,
-    `Engine: ${ACTIVE_ENGINE_DISPLAY_NAME}`,
     "",
     "## Overview",
     "",
@@ -27,7 +25,7 @@ function buildReportMarkdown(
     `| File | ${fileName} |`,
     `| Certificate ID | ${result.certificateId || "—"} |`,
     `| Verdict | ${result.verdict} |`,
-    `| Confidence | ${result.confidence}% |`,
+    `| Trust Score | ${result.confidence}% |`,
     `| Document Type | ${result.documentType} |`,
     `| Holder | ${result.holderName} |`,
     `| Issuing Authority | ${result.issuingAuthority} |`,
@@ -44,16 +42,6 @@ function buildReportMarkdown(
     `- Recommendation: ${result.report.recommendation}`,
     "",
   ];
-
-  if (result.vendorFindings.length > 0) {
-    lines.push("## Engine Analysis", "");
-    for (const finding of result.vendorFindings) {
-      lines.push(
-        `- **${finding.vendor}** — status: ${finding.status}, confidence: ${Math.round(finding.confidenceScore * 1000) / 10}%`
-      );
-    }
-    lines.push("");
-  }
 
   if (result.report.findings.length > 0) {
     lines.push("## Findings", "");
