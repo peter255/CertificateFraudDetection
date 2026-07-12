@@ -1,8 +1,8 @@
 /**
- * DocumentViewer — fixed-height preview panel.
+ * DocumentViewer — fixed-height preview panel with optional forensic overlays.
  *
- * Zoom uses CSS transform (no re-layout / no PDF re-rasterize),
- * which eliminates the shake when a file loads or Fit width is clicked.
+ * Overlays (bboxes / heatmap) render only when the engine returned real data.
+ * Zoom uses CSS transform; page navigation works for PDFs.
  */
 
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
@@ -19,6 +19,7 @@ import NavigateNextIcon from "@mui/icons-material/NavigateNext";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import { Document, Page, pdfjs } from "react-pdf";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import type { TamperRegion } from "../../types/verification";
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
@@ -29,6 +30,13 @@ const ZOOM_FIT = 1.0;
 
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff"]);
 const PDF_EXTENSIONS = new Set(["pdf"]);
+
+const SEVERITY_COLOR: Record<TamperRegion["severity"], string> = {
+  critical: "#9F1239",
+  high: "#C50F1F",
+  medium: "#D97706",
+  low: "#CA8A04",
+};
 
 function clampZoom(z: number) {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100));
@@ -58,7 +66,24 @@ function resolveViewerMode(file: File | null): ViewerMode {
   return "pdf";
 }
 
-/** Shared scroll-area styles — stable gutter prevents width shake when scrollbar appears. */
+/** Accept only engine-returned regions with usable spatial data. */
+export function isValidOverlayRegion(region: TamperRegion): boolean {
+  if (!region?.bbox || region.bbox.length !== 4) return false;
+  const [x, y, w, h] = region.bbox;
+  if (![x, y, w, h, region.imageWidth, region.imageHeight].every((n) => Number.isFinite(n))) {
+    return false;
+  }
+  if (w <= 0 || h <= 0 || region.imageWidth <= 0 || region.imageHeight <= 0) return false;
+  if (region.page != null && (!Number.isFinite(region.page) || region.page < 1)) return false;
+  return true;
+}
+
+function resolveHeatmapUrl(url: string | null | undefined): string | null {
+  if (typeof url !== "string") return null;
+  const trimmed = url.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 const scrollAreaSx = {
   flex: 1,
   minHeight: 0,
@@ -66,6 +91,86 @@ const scrollAreaSx = {
   scrollbarGutter: "stable" as const,
   backgroundColor: "#EEF2F7",
 };
+
+interface OverlayLayerProps {
+  regions: TamperRegion[];
+  heatmapUrl: string | null;
+  selectedId: string | null;
+  onSelectRegion?: (id: string) => void;
+}
+
+function OverlayLayer({
+  regions,
+  heatmapUrl,
+  selectedId,
+  onSelectRegion,
+}: OverlayLayerProps) {
+  const hasRegions = regions.length > 0;
+  const hasHeatmap = Boolean(heatmapUrl) && !hasRegions;
+
+  if (!hasRegions && !hasHeatmap) {
+    return null;
+  }
+
+  return (
+    <Box
+      sx={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: hasRegions ? "auto" : "none",
+        zIndex: 2,
+      }}
+    >
+      {hasHeatmap && heatmapUrl && (
+        <Box
+          component="img"
+          src={heatmapUrl}
+          alt="Forensic heatmap"
+          sx={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "fill",
+            opacity: 0.55,
+            mixBlendMode: "multiply",
+            pointerEvents: "none",
+          }}
+        />
+      )}
+      {regions.map((region) => {
+        const color = SEVERITY_COLOR[region.severity] ?? SEVERITY_COLOR.medium;
+        const [x, y, w, h] = region.bbox;
+        const selected = region.id === selectedId;
+        return (
+          <Box
+            key={region.id}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelectRegion?.(region.id);
+            }}
+            title={region.label}
+            sx={{
+              position: "absolute",
+              left: `${(x / region.imageWidth) * 100}%`,
+              top: `${(y / region.imageHeight) * 100}%`,
+              width: `${(w / region.imageWidth) * 100}%`,
+              height: `${(h / region.imageHeight) * 100}%`,
+              border: `2px solid ${color}`,
+              backgroundColor: selected ? `${color}33` : `${color}22`,
+              borderRadius: "4px",
+              boxShadow: selected
+                ? `0 0 0 3px ${color}55, 0 8px 20px rgba(15,23,42,0.18)`
+                : `0 0 0 1px ${color}22`,
+              cursor: onSelectRegion ? "pointer" : "default",
+              zIndex: selected ? 3 : 2,
+            }}
+          />
+        );
+      })}
+    </Box>
+  );
+}
 
 interface ToolbarProps {
   zoom: number;
@@ -258,13 +363,25 @@ function EmptyState() {
   );
 }
 
-function ImageViewer({ objectUrl, zoom }: { objectUrl: string; zoom: number }) {
+interface ImageViewerProps {
+  objectUrl: string;
+  zoom: number;
+  pageRegions: TamperRegion[];
+  heatmapUrl: string | null;
+  selectedRegionId: string | null;
+  onSelectRegion?: (id: string) => void;
+}
+
+function ImageViewer({
+  objectUrl,
+  zoom,
+  pageRegions,
+  heatmapUrl,
+  selectedRegionId,
+  onSelectRegion,
+}: ImageViewerProps) {
   return (
     <Box sx={{ ...scrollAreaSx, p: 2.5 }}>
-      {/*
-        Outer box sizes to the scaled footprint so scrollbars stay correct.
-        Inner image stays at natural fit-width; zoom is pure transform — no reflow shake.
-      */}
       <Box
         sx={{
           width: `${zoom * 100}%`,
@@ -272,22 +389,36 @@ function ImageViewer({ objectUrl, zoom }: { objectUrl: string; zoom: number }) {
         }}
       >
         <Box
-          component="img"
-          src={objectUrl}
-          alt="Certificate preview"
           sx={{
             width: `${100 / zoom}%`,
-            maxWidth: "none",
-            height: "auto",
-            display: "block",
             transform: `scale(${zoom})`,
             transformOrigin: "top left",
-            borderRadius: "6px",
-            boxShadow: "0 4px 20px rgba(15,23,42,0.1)",
-            border: "1px solid #E2E8F0",
-            backgroundColor: "#FFFFFF",
+            position: "relative",
+            lineHeight: 0,
           }}
-        />
+        >
+          <Box
+            component="img"
+            src={objectUrl}
+            alt="Certificate preview"
+            sx={{
+              width: "100%",
+              maxWidth: "none",
+              height: "auto",
+              display: "block",
+              borderRadius: "6px",
+              boxShadow: "0 4px 20px rgba(15,23,42,0.1)",
+              border: "1px solid #E2E8F0",
+              backgroundColor: "#FFFFFF",
+            }}
+          />
+          <OverlayLayer
+            regions={pageRegions}
+            heatmapUrl={heatmapUrl}
+            selectedId={selectedRegionId}
+            onSelectRegion={onSelectRegion}
+          />
+        </Box>
       </Box>
     </Box>
   );
@@ -299,9 +430,23 @@ interface PdfViewerProps {
   currentPage: number;
   onLoadSuccess: (numPages: number) => void;
   onLoadError: () => void;
+  pageRegions: TamperRegion[];
+  heatmapUrl: string | null;
+  selectedRegionId: string | null;
+  onSelectRegion?: (id: string) => void;
 }
 
-function PdfViewer({ file, zoom, currentPage, onLoadSuccess, onLoadError }: PdfViewerProps) {
+function PdfViewer({
+  file,
+  zoom,
+  currentPage,
+  onLoadSuccess,
+  onLoadError,
+  pageRegions,
+  heatmapUrl,
+  selectedRegionId,
+  onSelectRegion,
+}: PdfViewerProps) {
   const measureRef = useRef<HTMLDivElement>(null);
   const [baseWidth, setBaseWidth] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -320,11 +465,8 @@ function PdfViewer({ file, zoom, currentPage, onLoadSuccess, onLoadError }: PdfV
     if (!el) return;
 
     const measure = () => {
-      // clientWidth excludes scrollbar; gutter:stable keeps this stable across load.
       const w = Math.floor(el.clientWidth - 40);
       if (w < 200) return;
-
-      // Lock after first solid measurement — ignore tiny scrollbar jitter.
       if (lockedWidth.current > 0 && Math.abs(w - lockedWidth.current) < 24) {
         return;
       }
@@ -332,7 +474,6 @@ function PdfViewer({ file, zoom, currentPage, onLoadSuccess, onLoadError }: PdfV
       setBaseWidth(w);
     };
 
-    // Defer one frame so layout/padding is final before measuring.
     const raf = requestAnimationFrame(measure);
     const obs = new ResizeObserver(() => measure());
     obs.observe(el);
@@ -418,6 +559,8 @@ function PdfViewer({ file, zoom, currentPage, onLoadSuccess, onLoadError }: PdfV
                     border: "1px solid #E2E8F0",
                     backgroundColor: "#FFFFFF",
                     width: baseWidth,
+                    position: "relative",
+                    lineHeight: 0,
                   }}
                 >
                   <Page
@@ -425,6 +568,12 @@ function PdfViewer({ file, zoom, currentPage, onLoadSuccess, onLoadError }: PdfV
                     width={baseWidth}
                     renderTextLayer={false}
                     renderAnnotationLayer={false}
+                  />
+                  <OverlayLayer
+                    regions={pageRegions}
+                    heatmapUrl={heatmapUrl}
+                    selectedId={selectedRegionId}
+                    onSelectRegion={onSelectRegion}
                   />
                 </Box>
               </Document>
@@ -573,24 +722,56 @@ interface DocumentViewerProps {
   file: File | null;
   onPageCountChange?: (count: number) => void;
   variant?: "default" | "dashboard";
+  /** Engine-returned tamper / highlight regions. Invalid entries are ignored. */
+  regions?: TamperRegion[];
+  /** Engine-returned heatmap URL. Empty / missing values hide the layer. */
+  heatmapUrl?: string | null;
+  selectedRegionId?: string | null;
+  onSelectRegion?: (id: string) => void;
+  /** Controlled page (optional). When omitted, viewer manages page state. */
+  currentPage?: number;
+  onPageChange?: (page: number) => void;
+  hideChrome?: boolean;
 }
 
-export default function DocumentViewer({ file, onPageCountChange }: DocumentViewerProps) {
+export default function DocumentViewer({
+  file,
+  onPageCountChange,
+  regions = [],
+  heatmapUrl = null,
+  selectedRegionId = null,
+  onSelectRegion,
+  currentPage: controlledPage,
+  onPageChange,
+  hideChrome = false,
+}: DocumentViewerProps) {
   const [zoom, setZoom] = useState(ZOOM_FIT);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [internalPage, setInternalPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const onPageCountChangeRef = useRef(onPageCountChange);
   onPageCountChangeRef.current = onPageCountChange;
 
   const mode = resolveViewerMode(file);
+  const currentPage = controlledPage ?? internalPage;
+
+  const validRegions = useMemo(
+    () => regions.filter(isValidOverlayRegion),
+    [regions]
+  );
+  const resolvedHeatmap = useMemo(() => resolveHeatmapUrl(heatmapUrl), [heatmapUrl]);
+  const pageRegions = useMemo(
+    () => validRegions.filter((region) => (region.page || 1) === currentPage),
+    [validRegions, currentPage]
+  );
 
   useEffect(() => {
     setZoom(ZOOM_FIT);
-    setCurrentPage(1);
-    setTotalPages(0);
-    onPageCountChangeRef.current?.(0);
-  }, [file]);
+    setInternalPage(1);
+    const pages = mode === "image" ? 1 : 0;
+    setTotalPages(pages);
+    onPageCountChangeRef.current?.(pages);
+  }, [file, mode]);
 
   useEffect(() => {
     if (!file || mode !== "image") {
@@ -601,6 +782,14 @@ export default function DocumentViewer({ file, onPageCountChange }: DocumentView
     setObjectUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [file, mode]);
+
+  const setPage = useCallback(
+    (page: number) => {
+      if (onPageChange) onPageChange(page);
+      else setInternalPage(page);
+    },
+    [onPageChange]
+  );
 
   const handleZoomIn = useCallback(() => setZoom((z) => clampZoom(z + ZOOM_STEP)), []);
   const handleZoomOut = useCallback(() => setZoom((z) => clampZoom(z - ZOOM_STEP)), []);
@@ -617,38 +806,39 @@ export default function DocumentViewer({ file, onPageCountChange }: DocumentView
   }, []);
 
   const handlePrevPage = useCallback(() => {
-    setCurrentPage((p) => Math.max(1, p - 1));
-  }, []);
+    setPage(Math.max(1, currentPage - 1));
+  }, [currentPage, setPage]);
 
   const handleNextPage = useCallback(() => {
-    setCurrentPage((p) => Math.min(totalPages, p + 1));
-  }, [totalPages]);
+    setPage(Math.min(totalPages || currentPage, currentPage + 1));
+  }, [currentPage, totalPages, setPage]);
 
   return (
     <Box
       sx={{
         backgroundColor: "#FFFFFF",
-        border: "1px solid #E2E8F0",
-        borderRadius: "12px",
+        border: hideChrome ? "none" : "1px solid #E2E8F0",
+        borderRadius: hideChrome ? 0 : "12px",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
         height: "100%",
         minHeight: 0,
         maxHeight: "100%",
-        boxShadow: "0 1px 2px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.04)",
+        boxShadow: hideChrome
+          ? "none"
+          : "0 1px 2px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.04)",
       }}
     >
-      <ViewerHeader file={file} />
+      {!hideChrome && <ViewerHeader file={file} />}
 
-      {/* Toolbar always mounted — avoids height jump when a file is selected. */}
       <Toolbar
         zoom={zoom}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onFitWidth={handleFitWidth}
         currentPage={currentPage}
-        totalPages={totalPages}
+        totalPages={mode === "image" ? Math.max(1, totalPages || 1) : totalPages}
         onPrevPage={handlePrevPage}
         onNextPage={handleNextPage}
         showPageNav={mode === "pdf" || mode === "empty"}
@@ -656,7 +846,16 @@ export default function DocumentViewer({ file, onPageCountChange }: DocumentView
       />
 
       {mode === "empty" && <EmptyState />}
-      {mode === "image" && objectUrl && <ImageViewer objectUrl={objectUrl} zoom={zoom} />}
+      {mode === "image" && objectUrl && (
+        <ImageViewer
+          objectUrl={objectUrl}
+          zoom={zoom}
+          pageRegions={pageRegions}
+          heatmapUrl={resolvedHeatmap}
+          selectedRegionId={selectedRegionId}
+          onSelectRegion={onSelectRegion}
+        />
+      )}
       {mode === "pdf" && file && (
         <PdfViewer
           file={file}
@@ -664,11 +863,14 @@ export default function DocumentViewer({ file, onPageCountChange }: DocumentView
           currentPage={currentPage}
           onLoadSuccess={handleLoadSuccess}
           onLoadError={handleLoadError}
+          pageRegions={pageRegions}
+          heatmapUrl={resolvedHeatmap}
+          selectedRegionId={selectedRegionId}
+          onSelectRegion={onSelectRegion}
         />
       )}
 
-      {/* Footer always mounted — same reason as toolbar. */}
-      <ViewerFooter file={file} />
+      {!hideChrome && <ViewerFooter file={file} />}
     </Box>
   );
 }

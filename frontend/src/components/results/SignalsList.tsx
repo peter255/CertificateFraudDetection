@@ -1,6 +1,6 @@
 /**
- * SignalsList — Section 3: Forgery Indicators
- * Donut chart + bar chart distribution with forensic evidence rows.
+ * SignalsList — Forensic Indicators
+ * Groups real engine-returned indicators by category. No placeholders.
  */
 
 import Box from "@mui/material/Box";
@@ -45,6 +45,91 @@ const STATUS_STYLE: Record<SignalStatus, StatusStyle> = {
   },
 };
 
+const PLACEHOLDER_TEXT = new Set([
+  "",
+  "-",
+  "—",
+  "pending",
+  "not provided",
+  "not available",
+  "n/a",
+  "na",
+  "none",
+  "unknown",
+]);
+
+/** Normalize engine category labels for display without inventing new groups. */
+function displayCategory(raw: string): string {
+  const key = raw.trim().toLowerCase();
+  const map: Record<string, string> = {
+    "ml model": "AI Generation",
+    "ai indicator": "AI Generation",
+    "ai review": "AI Review",
+    "ocr analysis": "OCR Consistency",
+    "ocr consistency": "OCR Consistency",
+    metadata: "Metadata Integrity",
+    "metadata integrity": "Metadata Integrity",
+    "visual pattern": "Visual Manipulation",
+    "visual / overlay": "Visual Manipulation",
+    "visual manipulation": "Visual Manipulation",
+    forensic: "Forensic Analysis",
+    perceptual: "Perceptual Analysis",
+    semantic: "Semantic Analysis",
+    "field evidence": "Field Evidence",
+    "detection pipeline": "Detection Pipeline",
+    "document validity": "Document Validity",
+    "engine signal": "Forensic Indicator",
+  };
+  if (map[key]) return map[key];
+  return raw.trim() || "Forensic Indicator";
+}
+
+function isRealSignal(signal: Signal): boolean {
+  const category = (signal.category || "").trim();
+  const description = (signal.description || "").trim();
+  if (!category && !description) return false;
+  if (PLACEHOLDER_TEXT.has(category.toLowerCase())) return false;
+  if (PLACEHOLDER_TEXT.has(description.toLowerCase())) return false;
+  if (category.toLowerCase() === "pending") return false;
+  return true;
+}
+
+interface SignalGroup {
+  category: string;
+  signals: Signal[];
+  worstStatus: SignalStatus;
+}
+
+function groupSignals(signals: Signal[]): SignalGroup[] {
+  const groups = new Map<string, Signal[]>();
+
+  for (const signal of signals) {
+    const category = displayCategory(signal.category);
+    const list = groups.get(category) ?? [];
+    list.push(signal);
+    groups.set(category, list);
+  }
+
+  const ranked = (status: SignalStatus) => STATUS_STYLE[status].sortOrder;
+
+  return [...groups.entries()]
+    .map(([category, items]) => {
+      const sortedItems = [...items].sort(
+        (a, b) => ranked(a.status) - ranked(b.status)
+      );
+      const worstStatus = sortedItems.reduce<SignalStatus>(
+        (worst, item) => (ranked(item.status) < ranked(worst) ? item.status : worst),
+        "pass"
+      );
+      return { category, signals: sortedItems, worstStatus };
+    })
+    .sort((a, b) => {
+      const byStatus = ranked(a.worstStatus) - ranked(b.worstStatus);
+      if (byStatus !== 0) return byStatus;
+      return a.category.localeCompare(b.category);
+    });
+}
+
 function DistributionPanel({ signals }: { signals: Signal[] }) {
   const total = signals.length;
   const counts = {
@@ -57,90 +142,41 @@ function DistributionPanel({ signals }: { signals: Signal[] }) {
     { label: "Failed", value: counts.fail, color: STATUS_STYLE.fail.color },
     { label: "Warning", value: counts.warning, color: STATUS_STYLE.warning.color },
     { label: "Passed", value: counts.pass, color: STATUS_STYLE.pass.color },
-  ];
+  ].filter((segment) => segment.value > 0);
 
   return (
     <Box
       sx={{
-        px: 3,
-        py: 3,
+        px: { xs: 2, sm: 2.75 },
+        py: { xs: 2, sm: 2.5 },
         borderBottom: `1px solid ${DASHBOARD.borderLight}`,
         backgroundColor: "#F8FAFC",
         display: "flex",
         alignItems: "center",
-        gap: 4,
+        gap: { xs: 2.5, sm: 3.5 },
         flexWrap: "wrap",
       }}
     >
       <DonutChart
         segments={segments}
-        size={130}
+        size={112}
         centerValue={String(total)}
         centerLabel="Checks"
       />
 
-      <Box sx={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 1.5 }}>
-        <BarChartRow
-          label="Failed"
-          value={counts.fail}
-          max={total}
-          color={STATUS_STYLE.fail.color}
-          count={counts.fail}
-        />
-        <BarChartRow
-          label="Warning"
-          value={counts.warning}
-          max={total}
-          color={STATUS_STYLE.warning.color}
-          count={counts.warning}
-        />
-        <BarChartRow
-          label="Passed"
-          value={counts.pass}
-          max={total}
-          color={STATUS_STYLE.pass.color}
-          count={counts.pass}
-        />
-      </Box>
-
-      <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-        {(["fail", "warning", "pass"] as SignalStatus[]).map((status) => {
-          const style = STATUS_STYLE[status];
-          const { Icon } = style;
-          return (
-            <Box
+      <Box sx={{ flex: 1, minWidth: 160, display: "flex", flexDirection: "column", gap: 1.25 }}>
+        {(["fail", "warning", "pass"] as SignalStatus[])
+          .filter((status) => counts[status] > 0)
+          .map((status) => (
+            <BarChartRow
               key={status}
-              sx={{
-                px: 1.75,
-                py: 1.25,
-                borderRadius: "10px",
-                backgroundColor: style.bgColor,
-                border: `1px solid ${style.color}33`,
-                display: "flex",
-                alignItems: "center",
-                gap: 1,
-              }}
-            >
-              <Icon sx={{ fontSize: 16, color: style.color }} />
-              <Box>
-                <Typography
-                  sx={{
-                    fontSize: "1.125rem",
-                    fontWeight: 800,
-                    color: style.color,
-                    lineHeight: 1,
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
-                  {counts[status]}
-                </Typography>
-                <Typography sx={{ fontSize: "0.625rem", fontWeight: 600, color: DASHBOARD.textMuted }}>
-                  {style.label}
-                </Typography>
-              </Box>
-            </Box>
-          );
-        })}
+              label={STATUS_STYLE[status].label}
+              value={counts[status]}
+              max={total}
+              color={STATUS_STYLE[status].color}
+              count={counts[status]}
+            />
+          ))}
       </Box>
     </Box>
   );
@@ -156,8 +192,7 @@ function SignalRow({ signal, index }: { signal: Signal; index: number }) {
         display: "flex",
         alignItems: "stretch",
         gap: 0,
-        mx: 3,
-        mb: 1.5,
+        mb: 1.25,
         borderRadius: "12px",
         overflow: "hidden",
         border: `1px solid ${DASHBOARD.borderLight}`,
@@ -196,18 +231,6 @@ function SignalRow({ signal, index }: { signal: Signal; index: number }) {
         </Typography>
       </Box>
       <Box sx={{ flex: 1, minWidth: 0, px: 2.5, py: 2 }}>
-        <Typography
-          sx={{
-            fontSize: "0.6875rem",
-            fontWeight: 700,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: DASHBOARD.accent,
-            mb: 0.5,
-          }}
-        >
-          {signal.category}
-        </Typography>
         <Typography
           sx={{ fontSize: "0.875rem", color: DASHBOARD.textSecondary, lineHeight: 1.55 }}
         >
@@ -252,38 +275,91 @@ function SignalRow({ signal, index }: { signal: Signal; index: number }) {
   );
 }
 
+function CategoryGroup({ group, startIndex }: { group: SignalGroup; startIndex: number }) {
+  const style = STATUS_STYLE[group.worstStatus];
+
+  return (
+    <Box sx={{ px: { xs: 2, sm: 2.75 }, mb: 2 }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 1.5,
+          mb: 1,
+        }}
+      >
+        <Typography
+          sx={{
+            fontSize: "0.75rem",
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: DASHBOARD.textPrimary,
+          }}
+        >
+          {group.category}
+        </Typography>
+        <Box
+          sx={{
+            px: 1,
+            py: 0.3,
+            borderRadius: "999px",
+            backgroundColor: style.bgColor,
+            color: style.color,
+            fontSize: "0.625rem",
+            fontWeight: 700,
+            letterSpacing: "0.04em",
+            textTransform: "uppercase",
+          }}
+        >
+          {group.signals.length}
+        </Box>
+      </Box>
+      {group.signals.map((signal, i) => (
+        <SignalRow key={signal.id || `${group.category}-${i}`} signal={signal} index={startIndex + i} />
+      ))}
+    </Box>
+  );
+}
+
 interface SignalsListProps {
   signals: Signal[];
 }
 
 export default function SignalsList({ signals }: SignalsListProps) {
-  const sorted = [...signals].sort(
-    (a, b) => STATUS_STYLE[a.status].sortOrder - STATUS_STYLE[b.status].sortOrder
-  );
+  const realSignals = signals.filter(isRealSignal);
+  const groups = groupSignals(realSignals);
+
+  if (groups.length === 0) {
+    return null;
+  }
+
+  let runningIndex = 0;
 
   return (
     <SectionShell
-      title="Forgery Indicators"
+      title="Forensic Indicators"
       icon={<BugReportIcon sx={{ fontSize: 18 }} />}
       accentColor={DASHBOARD.danger}
       emphasis="primary"
-      badge={<SectionBadge>{signals.length} checks</SectionBadge>}
+      badge={<SectionBadge>{realSignals.length} checks</SectionBadge>}
       noPadding
     >
-      {signals.length > 0 && <DistributionPanel signals={signals} />}
+      <DistributionPanel signals={realSignals} />
 
-      <Box sx={{ py: 2 }}>
-        {sorted.length === 0 ? (
-          <Box sx={{ px: 3, py: 4, textAlign: "center" }}>
-            <Typography sx={{ fontSize: "0.875rem", color: DASHBOARD.textMuted }}>
-              Not Provided
-            </Typography>
-          </Box>
-        ) : (
-          sorted.map((signal, i) => (
-            <SignalRow key={signal.id} signal={signal} index={i} />
-          ))
-        )}
+      <Box sx={{ py: 2.5 }}>
+        {groups.map((group) => {
+          const startIndex = runningIndex;
+          runningIndex += group.signals.length;
+          return (
+            <CategoryGroup
+              key={group.category}
+              group={group}
+              startIndex={startIndex}
+            />
+          );
+        })}
       </Box>
     </SectionShell>
   );

@@ -73,6 +73,9 @@ interface EngineV1ApiResponse {
     analysis_agreement?: string;
     vendor_recommendations?: string[];
     raw_score?: number;
+    detection_step?: unknown;
+    is_valid?: boolean | null;
+    analysis_status?: string;
   };
 }
 
@@ -96,12 +99,22 @@ interface EngineV2Signal {
   page?: number | null;
   image_width?: number | null;
   image_height?: number | null;
+  bbox_area_ratio?: number | null;
   location?: string | null;
+  related_bboxes?: Array<Record<string, unknown>> | null;
+  bbox_source?: string | null;
   field?: string | null;
   field_label?: string | null;
+  field_fit_score?: number | null;
+  field_importance?: number | null;
+  field_assignment_source?: string | null;
+  field_assignment_confidence?: number | null;
+  source?: string | null;
   fraud_type?: string | null;
+  score_role?: string | null;
   generator?: string | null;
   issuer_name?: string | null;
+  issuer_category?: string | null;
   extras?: Record<string, unknown>;
 }
 
@@ -128,6 +141,10 @@ interface EngineV2VisualEvidence {
   bbox?: number[] | null;
   image_width?: number | null;
   image_height?: number | null;
+  bbox_source?: string | null;
+  has_image?: boolean;
+  has_crop_image?: boolean;
+  extras?: Record<string, unknown>;
 }
 
 interface EngineV2ApiResponse {
@@ -166,6 +183,45 @@ interface EngineV2ApiResponse {
   duration_ms: number;
 }
 
+function emptyTechnical() {
+  return {
+    analysisStatus: null as string | null,
+    layersApplied: null as string[] | null,
+    analysisFlow: null as Array<Record<string, unknown>> | null,
+    evidenceGroups: null as Record<string, unknown> | null,
+    engineResults: null as Record<string, unknown> | null,
+    structuralProfile: null as Record<string, unknown> | null,
+    pdfFraudSubscores: null as Record<string, unknown> | null,
+    classification: null as Record<string, unknown> | null,
+    layerDetails: null as Record<string, unknown> | null,
+  };
+}
+
+function optionalString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function optionalRecord(value: unknown): Record<string, unknown> | null {
+  const rec = asRecord(value);
+  return Object.keys(rec).length > 0 ? rec : null;
+}
+
+function optionalRecordList(value: unknown): Array<Record<string, unknown>> | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const list = value.filter(
+    (item): item is Record<string, unknown> =>
+      !!item && typeof item === "object" && !Array.isArray(item)
+  );
+  return list.length > 0 ? list : null;
+}
+
+function optionalStringList(value: unknown): string[] | null {
+  const list = asStringList(value);
+  return list.length > 0 ? list : null;
+}
+
 const V1_STATUS_TO_PREDICTION: Record<string, EnginePredictionLabel> = {
   authentic: "authentic",
   trusted: "authentic",
@@ -200,13 +256,54 @@ const V2_VERDICT_TO_PREDICTION: Record<string, EnginePredictionLabel> = {
 
 function scrubEngineName(text: string): string {
   return text
-    .replace(/\bT[\w]*Scan\b/gi, "analysis")
-    .replace(/\bP[\w]*work(?:\.to)?\b/gi, "analysis")
-    .replace(/\bVerification\s+Engine\s*V?\d*\b/gi, "analysis")
+    .replace(/\bT[\w]*Scan\b/gi, "engine")
+    .replace(/\bP[\w]*work(?:\.to)?\b/gi, "engine")
+    .replace(/\bTruth\s*Scan\b/gi, "engine")
+    .replace(/\bPaper\s*work(?:\.to)?\b/gi, "engine")
     .replace(/\bLLM\s+trust\s+score\b/gi, "Model confidence")
     .replace(/\bTrust\s+Score\b/gi, "Model Confidence")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+function humanizeEngineValue(value: string | null | undefined): string | null {
+  const cleaned = optionalString(value);
+  if (!cleaned) return null;
+  return scrubEngineName(cleaned.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
+}
+
+function collectAdditionalFindings(
+  findings: Finding[],
+  signals: Signal[]
+): string[] | null {
+  const items: string[] = [];
+  const seen = new Set<string>();
+
+  for (const finding of findings) {
+    const title = scrubEngineName(finding.title || "").trim();
+    if (!title) continue;
+    const key = title.toLowerCase();
+    if (seen.has(key)) continue;
+    // Skip decision-engine notes already shown in executive summary.
+    if (key === "why this result") continue;
+    seen.add(key);
+    items.push(title);
+    if (items.length >= 6) break;
+  }
+
+  if (items.length < 6) {
+    for (const signal of signals) {
+      const category = scrubEngineName(signal.category || "").trim();
+      if (!category) continue;
+      const key = category.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push(category);
+      if (items.length >= 6) break;
+    }
+  }
+
+  return items.length > 0 ? items : null;
 }
 
 function clampScore100(n: number): number {
@@ -258,7 +355,10 @@ function applyUserDecision(
     },
     vendorFindings: base.vendorFindings.map((vf) => ({
       ...vf,
-      confidenceScore: decision.modelConfidence / 100,
+      confidenceScore:
+        typeof decision.modelConfidence === "number"
+          ? decision.modelConfidence / 100
+          : vf.confidenceScore,
     })),
   };
 }
@@ -314,17 +414,32 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
   const engineLabel =
     V1_STATUS_TO_PREDICTION[(data.overall_status || "").toLowerCase().trim()] ?? "inconclusive";
 
+  const analysisStatus = optionalString(analysis.analysis_status);
+  const engineVerdictLabel =
+    optionalString(analysis.verdict_label) ||
+    optionalString(data.final_result) ||
+    optionalString(data.overall_status);
+
   const base: VerificationResult = {
     certificateId: data.certificate_id || "",
     verdict: "suspicious",
     confidence: modelConfidence,
-    documentType: data.document_type || "Unknown",
-    issuingAuthority: data.issuer_name || "Unknown",
-    holderName: data.holder_name || "Unknown",
-    issueDate: "—",
+    documentType: optionalString(data.document_type),
+    issuingAuthority: optionalString(data.issuer_name),
+    holderName: optionalString(data.holder_name),
+    issueDate: null,
     verifiedAt: data.verified_at || "",
     aiSummary: summary,
-    signals: data.signals.map((s) => ({
+    signals: data.signals
+      .filter((s) => {
+        const description = (s.description || "").trim().toLowerCase();
+        const category = (s.category || "").trim().toLowerCase();
+        if (!description && !category) return false;
+        if (["pending", "not provided", "not available", "n/a"].includes(description)) return false;
+        if (category === "pending") return false;
+        return Boolean((s.description || "").trim());
+      })
+      .map((s) => ({
       id: s.id,
       category: s.category,
       description: scrubEngineName(s.description),
@@ -341,9 +456,16 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
     },
     vendorFindings: [
       {
-        vendor: "Analysis",
-        status: data.overall_status,
-        confidenceScore: modelConfidence / 100,
+        vendor: "Engine V1",
+        status: humanizeEngineValue(data.overall_status) || humanizeEngineValue(analysisStatus),
+        confidenceScore: Number.isFinite(modelConfidence) ? modelConfidence / 100 : null,
+        processingResult: humanizeEngineValue(data.final_result) || humanizeEngineValue(analysis.verdict_label),
+        additionalFindings: collectAdditionalFindings(findings, data.signals.map((s) => ({
+          id: s.id,
+          category: s.category,
+          description: scrubEngineName(s.description),
+          status: s.status as SignalStatus,
+        }))),
       },
     ],
     tamperRegions: [],
@@ -351,6 +473,20 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
       typeof analysis.heatmap_url === "string" && analysis.heatmap_url.trim()
         ? analysis.heatmap_url.trim()
         : null,
+    engineDurationMs:
+      typeof data.duration_ms === "number" && Number.isFinite(data.duration_ms)
+        ? data.duration_ms
+        : null,
+    engineVerdictLabel,
+    analysisStatus,
+    fraudScore: null,
+    fraudColor: null,
+    isScan: null,
+    fileKind: null,
+    technical: {
+      ...emptyTechnical(),
+      analysisStatus,
+    },
   };
 
   return applyUserDecision(base, {
@@ -391,6 +527,12 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
     imageWidth?: number | null;
     imageHeight?: number | null;
     location?: string | null;
+    layer?: string | null;
+    confidence?: number | null;
+    bboxSource?: string | null;
+    hasImage?: boolean | null;
+    hasCropImage?: boolean | null;
+    extras?: Record<string, unknown> | null;
   }) => {
     const bbox = asBBox(input.bbox);
     if (!bbox) return;
@@ -413,7 +555,16 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       page: input.page && input.page > 0 ? input.page : 1,
       imageWidth,
       imageHeight,
-      location: input.location || undefined,
+      location: optionalString(input.location),
+      layer: optionalString(input.layer),
+      confidence:
+        typeof input.confidence === "number" && Number.isFinite(input.confidence)
+          ? input.confidence
+          : null,
+      bboxSource: optionalString(input.bboxSource),
+      hasImage: typeof input.hasImage === "boolean" ? input.hasImage : null,
+      hasCropImage: typeof input.hasCropImage === "boolean" ? input.hasCropImage : null,
+      extras: optionalRecord(input.extras),
     });
   };
 
@@ -433,6 +584,12 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       imageWidth: signal.image_width,
       imageHeight: signal.image_height,
       location: signal.location,
+      layer: signal.layer,
+      confidence: signal.confidence,
+      bboxSource: signal.bbox_source,
+      hasImage: null,
+      hasCropImage: null,
+      extras: signal.extras ?? null,
     });
   }
 
@@ -447,6 +604,12 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       imageWidth: item.image_width,
       imageHeight: item.image_height,
       location: item.location,
+      layer: item.layer,
+      confidence: item.confidence,
+      bboxSource: item.bbox_source,
+      hasImage: typeof item.has_image === "boolean" ? item.has_image : null,
+      hasCropImage: typeof item.has_crop_image === "boolean" ? item.has_crop_image : null,
+      extras: item.extras ?? null,
     });
   }
 
@@ -471,6 +634,12 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
     imageWidth?: number | null;
     imageHeight?: number | null;
     location?: string | null;
+    layer?: string | null;
+    confidence?: number | null;
+    bboxSource?: string | null;
+    hasImage?: boolean | null;
+    hasCropImage?: boolean | null;
+    extras?: Record<string, unknown> | null;
   }) => {
     const bbox = asBBox(input.bbox);
     if (!bbox) return;
@@ -495,7 +664,16 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       page,
       imageWidth,
       imageHeight,
-      location: input.location || undefined,
+      location: optionalString(input.location),
+      layer: optionalString(input.layer),
+      confidence:
+        typeof input.confidence === "number" && Number.isFinite(input.confidence)
+          ? input.confidence
+          : null,
+      bboxSource: optionalString(input.bboxSource),
+      hasImage: typeof input.hasImage === "boolean" ? input.hasImage : null,
+      hasCropImage: typeof input.hasCropImage === "boolean" ? input.hasCropImage : null,
+      extras: optionalRecord(input.extras),
     });
   };
 
@@ -510,6 +688,12 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       imageWidth: item.image_width,
       imageHeight: item.image_height,
       location: item.location,
+      layer: item.layer,
+      confidence: item.confidence,
+      bboxSource: item.bbox_source,
+      hasImage: typeof item.has_image === "boolean" ? item.has_image : null,
+      hasCropImage: typeof item.has_crop_image === "boolean" ? item.has_crop_image : null,
+      extras: item.extras ?? null,
     });
   }
 
@@ -537,31 +721,79 @@ function v2SignalCategory(signal: EngineV2Signal): string {
   const layer = (signal.layer || "").toLowerCase();
   const engine = (signal.engine || "").toLowerCase();
   const detector = (signal.detector || "").toLowerCase();
+  const type = (signal.type || signal.check || signal.fraud_type || "").toLowerCase();
+  const field = (signal.field_label || signal.field || "").toLowerCase();
+  const desc = (signal.description || "").toLowerCase();
+  const blob = `${layer} ${engine} ${detector} ${type} ${field} ${desc}`;
 
-  if (layer.includes("c2pa") || detector.includes("c2pa") || signal.type?.includes("provenance")) {
-    return "Provenance / C2PA";
+  if (
+    blob.includes("ai_generated") ||
+    blob.includes("ai-generated") ||
+    blob.includes("generative") ||
+    type.includes("ai_gen") ||
+    detector.includes("ai_gen")
+  ) {
+    return "AI Generation";
   }
-  if (layer.includes("overlay") || signal.type?.includes("overlap") || signal.type?.includes("copy_move")) {
-    return "Visual / Overlay";
+  if (
+    blob.includes("digitally edited") ||
+    blob.includes("digital_edit") ||
+    blob.includes("photoshop") ||
+    type.includes("edit")
+  ) {
+    return "Digital Editing";
   }
+  if (
+    blob.includes("copy_move") ||
+    blob.includes("clone") ||
+    blob.includes("duplicat")
+  ) {
+    return "Clone Detection";
+  }
+  if (
+    blob.includes("compression") ||
+    blob.includes("jpeg_ghost") ||
+    blob.includes("ela") ||
+    blob.includes("artifact")
+  ) {
+    return "Compression Artifacts";
+  }
+  if (blob.includes("signature") || blob.includes("c2pa") || blob.includes("provenance")) {
+    return blob.includes("signature") && !blob.includes("c2pa")
+      ? "Signature Analysis"
+      : "Provenance / C2PA";
+  }
+  if (blob.includes("font")) return "Font Consistency";
+  if (blob.includes("layout") || blob.includes("template") || blob.includes("alignment")) {
+    return "Layout Consistency";
+  }
+  if (blob.includes("ocr") || blob.includes("text_consist")) return "OCR Consistency";
+  if (
+    blob.includes("overlay") ||
+    blob.includes("overlap") ||
+    blob.includes("visual") ||
+    blob.includes("manipulat")
+  ) {
+    return "Visual Manipulation";
+  }
+  if (blob.includes("exif") || blob.includes("metadata")) return "Metadata Integrity";
+  if (engine.includes("forensic")) return "Forensic Analysis";
+  if (engine.includes("perceptual")) return "Perceptual Analysis";
+  if (engine.includes("semantic")) return "Semantic Analysis";
   if (layer.includes("llm") || engine.includes("ai_review") || detector.includes("visual_review")) {
     return "AI Review";
   }
-  if (layer.includes("exif") || detector.includes("metadata") || layer.includes("metadata")) {
-    return "Metadata";
-  }
-  if (engine.includes("forensic")) return "Forensic";
-  if (engine.includes("perceptual")) return "Perceptual";
-  if (engine.includes("semantic")) return "Semantic";
   if (signal.field_label || signal.field) return "Field Evidence";
 
-  return (
-    signal.engine_label ||
-    signal.detector_label ||
-    signal.layer ||
-    signal.engine ||
-    "Engine Signal"
-  );
+  const label =
+    optionalString(signal.engine_label) ||
+    optionalString(signal.detector_label) ||
+    optionalString(signal.layer) ||
+    optionalString(signal.engine) ||
+    optionalString(signal.type) ||
+    optionalString(signal.check);
+
+  return label ? humanizeKey(label) : "Forensic Indicator";
 }
 
 function v2SignalDescription(signal: EngineV2Signal): string {
@@ -586,9 +818,84 @@ function v2SignalDescription(signal: EngineV2Signal): string {
   if (signal.fraud_type) meta.push(`Fraud type: ${signal.fraud_type}`);
   if (signal.generator) meta.push(`Generator: ${signal.generator}`);
   if (signal.issuer_name) meta.push(`Issuer: ${signal.issuer_name}`);
+  if (signal.issuer_category) meta.push(`Issuer category: ${signal.issuer_category}`);
+  if (signal.stage) meta.push(`Stage: ${signal.stage}`);
+  if (signal.source) meta.push(`Source: ${signal.source}`);
+  if (signal.score_role) meta.push(`Score role: ${signal.score_role}`);
+  if (signal.bbox_source) meta.push(`BBox source: ${signal.bbox_source}`);
+  if (signal.bbox_area_ratio != null) {
+    meta.push(`BBox area ratio: ${signal.bbox_area_ratio}`);
+  }
+  if (signal.field_fit_score != null) meta.push(`Field fit: ${signal.field_fit_score}`);
+  if (signal.field_importance != null) {
+    meta.push(`Field importance: ${signal.field_importance}`);
+  }
+  if (signal.field_assignment_source) {
+    meta.push(`Field assignment: ${signal.field_assignment_source}`);
+  }
+  if (signal.field_assignment_confidence != null) {
+    meta.push(
+      `Assignment confidence: ${Math.round(signal.field_assignment_confidence * 1000) / 10}%`
+    );
+  }
+  if (signal.related_bboxes?.length) {
+    meta.push(`Related bboxes: ${signal.related_bboxes.length}`);
+  }
+  if (signal.extras && Object.keys(signal.extras).length) {
+    meta.push(
+      Object.entries(signal.extras)
+        .map(([k, v]) => `${humanizeKey(k)}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+        .join(" · ")
+    );
+  }
 
   if (meta.length) parts.push(meta.join(" · "));
-  return scrubEngineName(parts.filter(Boolean).join(" — ") || "Signal reported by engine.");
+  return scrubEngineName(parts.filter(Boolean).join(" — "));
+}
+
+function mapV2SignalFields(signal: EngineV2Signal): Omit<Signal, "id" | "category" | "description" | "status"> {
+  return {
+    check: optionalString(signal.check),
+    layer: optionalString(signal.layer),
+    stage: optionalString(signal.stage),
+    engine: optionalString(signal.engine_label) || optionalString(signal.engine),
+    detector: optionalString(signal.detector_label) || optionalString(signal.detector),
+    severity: optionalString(signal.severity),
+    confidence:
+      typeof signal.confidence === "number" && Number.isFinite(signal.confidence)
+        ? signal.confidence
+        : null,
+    evidenceClass: optionalString(signal.evidence_class),
+    field: optionalString(signal.field),
+    fieldLabel: optionalString(signal.field_label),
+    fraudType: optionalString(signal.fraud_type),
+    generator: optionalString(signal.generator),
+    issuerName: optionalString(signal.issuer_name),
+    issuerCategory: optionalString(signal.issuer_category),
+    source: optionalString(signal.source),
+    scoreRole: optionalString(signal.score_role),
+    bboxSource: optionalString(signal.bbox_source),
+    bboxAreaRatio:
+      typeof signal.bbox_area_ratio === "number" && Number.isFinite(signal.bbox_area_ratio)
+        ? signal.bbox_area_ratio
+        : null,
+    relatedBboxes: optionalRecordList(signal.related_bboxes),
+    fieldFitScore:
+      typeof signal.field_fit_score === "number" && Number.isFinite(signal.field_fit_score)
+        ? signal.field_fit_score
+        : null,
+    fieldImportance:
+      typeof signal.field_importance === "number" && Number.isFinite(signal.field_importance)
+        ? signal.field_importance
+        : null,
+    fieldAssignmentSource: optionalString(signal.field_assignment_source),
+    fieldAssignmentConfidence:
+      typeof signal.field_assignment_confidence === "number" &&
+      Number.isFinite(signal.field_assignment_confidence)
+        ? signal.field_assignment_confidence
+        : null,
+    extras: optionalRecord(signal.extras),
+  };
 }
 
 function mapV2Signals(data: EngineV2ApiResponse): Signal[] {
@@ -601,11 +908,15 @@ function mapV2Signals(data: EngineV2ApiResponse): Signal[] {
     if (seen.has(key)) return;
     seen.add(key);
 
+    const description = v2SignalDescription(signal);
+    if (!description.trim()) return;
+
     out.push({
       id: String(signal.id || index + 1),
       category: v2SignalCategory(signal),
-      description: v2SignalDescription(signal),
+      description,
       status: v2SignalStatus(signal),
+      ...mapV2SignalFields(signal),
     });
   });
 
@@ -614,24 +925,36 @@ function mapV2Signals(data: EngineV2ApiResponse): Signal[] {
     const key = `visual-${item.type || "item"}-${item.field || ""}-${item.description || item.title || index}`;
     if (seen.has(key)) return;
     seen.add(key);
+    const description = scrubEngineName(
+      [
+        item.title || item.type || "",
+        item.description,
+        item.field_label || item.field ? `Field: ${item.field_label || item.field}` : "",
+        item.location ? `Location: ${item.location}` : "",
+        item.severity ? `Severity: ${item.severity}` : "",
+      ]
+        .filter(Boolean)
+        .join(" — ")
+    );
+    if (!description.trim()) return;
     out.push({
       id: `visual-${index + 1}`,
-      category: "Visual / Overlay",
-      description: scrubEngineName(
-        [
-          item.title || item.type || "Visual evidence",
-          item.description,
-          item.field_label || item.field ? `Field: ${item.field_label || item.field}` : "",
-          item.location ? `Location: ${item.location}` : "",
-          item.severity ? `Severity: ${item.severity}` : "",
-        ]
-          .filter(Boolean)
-          .join(" — ")
-      ),
+      category: "Visual Manipulation",
+      description,
       status: v2SignalStatus({
         severity: item.severity,
         evidence_class: "review",
       }),
+      layer: optionalString(item.layer),
+      severity: optionalString(item.severity),
+      confidence:
+        typeof item.confidence === "number" && Number.isFinite(item.confidence)
+          ? item.confidence
+          : null,
+      field: optionalString(item.field),
+      fieldLabel: optionalString(item.field_label),
+      bboxSource: optionalString(item.bbox_source),
+      extras: optionalRecord(item.extras),
     });
   });
 
@@ -794,6 +1117,16 @@ function mapV2Findings(data: EngineV2ApiResponse): Finding[] {
     });
   }
 
+  if (data.pdf_fraud_subscores && Object.keys(data.pdf_fraud_subscores).length) {
+    const scores = Object.entries(data.pdf_fraud_subscores)
+      .map(([key, value]) => `${humanizeKey(key)}: ${formatScore(value)}`)
+      .join(" · ");
+    findings.push({
+      title: "PDF fraud subscores",
+      detail: scores,
+    });
+  }
+
   return findings;
 }
 
@@ -879,25 +1212,42 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
 
   const classification = asRecord(data.classification);
   const documentType =
-    data.document_type ||
-    (typeof classification.document_type === "string" ? classification.document_type : null) ||
-    (typeof classification.detected_document_type === "string"
-      ? classification.detected_document_type
-      : null) ||
-    "Unknown";
+    optionalString(data.document_type) ||
+    optionalString(classification.document_type) ||
+    optionalString(classification.detected_document_type);
 
-  const holderName =
-    (typeof data.holder_name === "string" && data.holder_name.trim()) || "Unknown";
-  const issuingAuthority =
-    (typeof data.issuer_name === "string" && data.issuer_name.trim()) || "Unknown";
-  const issueDate =
-    (typeof data.issue_date === "string" && data.issue_date.trim()) || "—";
+  const holderName = optionalString(data.holder_name);
+  const issuingAuthority = optionalString(data.issuer_name);
+  const issueDate = optionalString(data.issue_date);
+
+  // Prefer processing_time when it looks like seconds; otherwise duration_ms.
+  let resolvedDurationMs: number | null = null;
+  if (typeof data.processing_time === "number" && Number.isFinite(data.processing_time)) {
+    resolvedDurationMs =
+      data.processing_time > 0 && data.processing_time < 1000
+        ? Math.round(data.processing_time * 1000)
+        : Math.round(data.processing_time);
+  } else if (typeof data.duration_ms === "number" && Number.isFinite(data.duration_ms)) {
+    resolvedDurationMs = data.duration_ms;
+  }
+
+  const technical = {
+    analysisStatus: null as string | null,
+    layersApplied: optionalStringList(data.layers_applied),
+    analysisFlow: optionalRecordList(data.analysis_flow),
+    evidenceGroups: optionalRecord(data.evidence_groups),
+    engineResults: optionalRecord(data.engine_results),
+    structuralProfile: optionalRecord(data.structural_profile),
+    pdfFraudSubscores: optionalRecord(data.pdf_fraud_subscores),
+    classification: optionalRecord(data.classification),
+    layerDetails: optionalRecord(data.layer_details),
+  };
 
   const base: VerificationResult = {
     certificateId: data.job_id || "",
     verdict: "suspicious",
     confidence: modelConfidence,
-    documentType: String(documentType).replace(/_/g, " "),
+    documentType: documentType ? String(documentType).replace(/_/g, " ") : null,
     issuingAuthority,
     holderName,
     issueDate,
@@ -915,13 +1265,25 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
     },
     vendorFindings: [
       {
-        vendor: "Analysis",
-        status: (data.verdict || engineLabel).toLowerCase(),
-        confidenceScore: modelConfidence / 100,
+        vendor: "Engine V2",
+        status: humanizeEngineValue(data.status) || humanizeEngineValue(data.risk_level),
+        confidenceScore: Number.isFinite(modelConfidence) ? modelConfidence / 100 : null,
+        processingResult:
+          humanizeEngineValue(data.verdict) || humanizeEngineValue(data.fraud?.verdict),
+        additionalFindings: collectAdditionalFindings(findings, signals),
       },
     ],
     tamperRegions: mapTamperRegions(data),
     heatmapUrl: null,
+    engineDurationMs: resolvedDurationMs,
+    engineVerdictLabel:
+      optionalString(data.verdict) || optionalString(data.fraud?.verdict) || null,
+    analysisStatus: null,
+    fraudScore,
+    fraudColor: optionalString(data.fraud_color) || optionalString(data.fraud?.color),
+    isScan: typeof data.is_scan === "boolean" ? data.is_scan : null,
+    fileKind: optionalString(data.file_kind),
+    technical,
   };
 
   return applyUserDecision(base, {

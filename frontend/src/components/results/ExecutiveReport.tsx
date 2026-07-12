@@ -320,25 +320,29 @@ function FindingCard({ finding }: { finding: Finding }) {
 
 interface ExecutiveReportProps {
   report: ExecReport;
-  fileName: string;
-  aiSummary: string;
-  verifiedAt: string;
 }
 
-export default function ExecutiveReport({
-  report,
-  fileName,
-  aiSummary,
-  verifiedAt,
-}: ExecutiveReportProps) {
+export default function ExecutiveReport({ report }: ExecutiveReportProps) {
   const risk = RISK_STYLE[report.riskLevel];
   const rec =
     RECOMMENDATION_STYLE[report.recommendation as RecommendationType] ?? DEFAULT_REC;
   const { Icon: RecIcon } = rec;
+  const findings = report.findings.filter((f) => {
+    const title = (f.title || "").trim();
+    const detail = (f.detail || "").trim();
+    if (!title && !detail) return false;
+    // Avoid repeating the executive narrative already shown above.
+    if (title.toLowerCase() === "why this result") return false;
+    return true;
+  });
+
+  if (!report.recommendation && findings.length === 0) {
+    return null;
+  }
 
   return (
     <SectionShell
-      title="AI Executive Summary"
+      title="Recommendation & Findings"
       icon={<AutoAwesomeIcon sx={{ fontSize: 18 }} />}
       accentColor={DASHBOARD.accent}
       emphasis="primary"
@@ -351,46 +355,17 @@ export default function ExecutiveReport({
       }
       noPadding
     >
-      <Box
-        sx={{
-          px: 3,
-          py: 1.75,
-          backgroundColor: "#F1F5F9",
-          borderBottom: `1px solid ${DASHBOARD.borderLight}`,
-          display: "flex",
-          gap: 3,
-          flexWrap: "wrap",
-        }}
-      >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <Typography sx={{ fontSize: "0.6875rem", fontWeight: 700, color: DASHBOARD.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-            File
-          </Typography>
-          <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, color: DASHBOARD.textPrimary, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {fileName}
-          </Typography>
-        </Box>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <Typography sx={{ fontSize: "0.6875rem", fontWeight: 700, color: DASHBOARD.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-            Verified
-          </Typography>
-          <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, color: verifiedAt ? DASHBOARD.textPrimary : DASHBOARD.textMuted }}>
-            {verifiedAt || "—"}
-          </Typography>
-        </Box>
-      </Box>
-
-      <Box sx={{ px: 3, py: 3 }}>
+      <Box sx={{ px: { xs: 2, sm: 2.75 }, py: { xs: 2.25, sm: 2.75 } }}>
         <Box
           sx={{
             display: "flex",
             alignItems: "flex-start",
-            gap: 2,
-            p: 3,
+            gap: 1.75,
+            p: { xs: 2, sm: 2.5 },
             background: rec.bgGradient,
             border: `1px solid ${rec.color}33`,
-            borderRadius: "14px",
-            mb: 3,
+            borderRadius: "12px",
+            mb: findings.length > 0 ? 2.5 : 0,
             position: "relative",
             overflow: "hidden",
             "&::before": {
@@ -399,16 +374,16 @@ export default function ExecutiveReport({
               left: 0,
               top: 0,
               bottom: 0,
-              width: 5,
+              width: 4,
               backgroundColor: rec.color,
             },
           }}
         >
           <Box
             sx={{
-              width: 44,
-              height: 44,
-              borderRadius: "12px",
+              width: 40,
+              height: 40,
+              borderRadius: "10px",
               backgroundColor: "#FFFFFF",
               border: `1px solid ${rec.color}33`,
               display: "flex",
@@ -417,42 +392,43 @@ export default function ExecutiveReport({
               flexShrink: 0,
             }}
           >
-            <RecIcon sx={{ fontSize: 24, color: rec.color }} />
+            <RecIcon sx={{ fontSize: 22, color: rec.color }} />
           </Box>
-          <Box>
-            <Typography sx={{ fontSize: "0.625rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: DASHBOARD.textMuted, mb: 0.5 }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              sx={{
+                fontSize: "0.625rem",
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: DASHBOARD.textMuted,
+                mb: 0.35,
+              }}
+            >
               Recommendation
             </Typography>
-            <Typography sx={{ fontSize: "1.125rem", fontWeight: 700, color: rec.color }}>
+            <Typography sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, fontWeight: 700, color: rec.color }}>
               {rec.label}
             </Typography>
           </Box>
         </Box>
 
-        <Typography sx={{ fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: DASHBOARD.textMuted, mb: 1.5 }}>
-          In plain words
-        </Typography>
-        <Box
-          sx={{
-            p: 2.5,
-            borderRadius: "12px",
-            backgroundColor: "#F8FAFC",
-            border: `1px solid ${DASHBOARD.borderLight}`,
-            mb: report.findings.length > 0 ? 3.5 : 0,
-          }}
-        >
-          <Typography sx={{ fontSize: "0.9375rem", color: DASHBOARD.textSecondary, lineHeight: 1.8 }}>
-            {aiSummary || report.summary || "—"}
-          </Typography>
-        </Box>
-
-        {report.findings.length > 0 && (
+        {findings.length > 0 && (
           <>
-            <Typography sx={{ fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: DASHBOARD.textMuted, mb: 2 }}>
+            <Typography
+              sx={{
+                fontSize: "0.6875rem",
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: DASHBOARD.textMuted,
+                mb: 1.5,
+              }}
+            >
               Key Findings
             </Typography>
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.75 }}>
-              {report.findings.map((finding, index) => (
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+              {findings.map((finding, index) => (
                 <FindingCard key={`${finding.title}-${index}`} finding={finding} />
               ))}
             </Box>

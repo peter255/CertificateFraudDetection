@@ -44,18 +44,18 @@ export default function ActionsPanel({
         borderRadius: "12px",
         backgroundColor: DASHBOARD.cardBg,
         border: `1px solid ${DASHBOARD.border}`,
-        px: 3.5,
-        py: 3.25,
+        px: { xs: 2, sm: 2.75 },
+        py: { xs: 2.25, sm: 2.75 },
       }}
     >
       <Typography
         sx={{
           fontSize: "0.6875rem",
           fontWeight: 600,
-          letterSpacing: "0.1em",
+          letterSpacing: "0.08em",
           textTransform: "uppercase",
           color: DASHBOARD.textPrimary,
-          mb: 1,
+          mb: 0.75,
         }}
       >
         Actions
@@ -64,14 +64,14 @@ export default function ActionsPanel({
         sx={{
           fontSize: "0.875rem",
           color: DASHBOARD.textSecondary,
-          mb: 2.75,
-          lineHeight: 1.65,
+          mb: 2.25,
+          lineHeight: 1.6,
         }}
       >
-        Export a professional PDF investigation report or start a new verification session.
+        Download the investigation report or verify another document.
       </Typography>
 
-      <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
+      <Box sx={{ display: "flex", gap: 1.25, flexDirection: { xs: "column", sm: "row" } }}>
         <Button
           variant="outlined"
           startIcon={<DownloadOutlinedIcon />}
@@ -79,8 +79,8 @@ export default function ActionsPanel({
           disabled={downloading}
           sx={{
             flex: 1,
-            minWidth: 180,
-            height: 46,
+            minWidth: 0,
+            height: 44,
             borderRadius: "8px",
           }}
         >
@@ -92,8 +92,8 @@ export default function ActionsPanel({
           onClick={onVerifyAnother}
           sx={{
             flex: 1,
-            minWidth: 180,
-            height: 46,
+            minWidth: 0,
+            height: 44,
             borderRadius: "8px",
           }}
         >

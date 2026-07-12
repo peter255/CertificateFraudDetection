@@ -59,7 +59,6 @@ export function SectionShell({
         overflow: "hidden",
         boxShadow: isPrimary ? DASHBOARD.cardShadow : "none",
         position: "relative",
-        transition: "box-shadow 180ms ease",
       }}
     >
       {isPrimary && (
@@ -83,9 +82,9 @@ export function SectionShell({
           display: "flex",
           alignItems: "center",
           gap: 1.25,
-          px: 3,
-          py: 2,
-          pl: isPrimary ? 3.5 : 3,
+          px: { xs: 2, sm: 2.75 },
+          py: { xs: 1.5, sm: 1.75 },
+          pl: isPrimary ? { xs: 2.5, sm: 3.25 } : { xs: 2, sm: 2.75 },
         }}
       >
         <Box
@@ -107,10 +106,11 @@ export function SectionShell({
           sx={{
             fontSize: "0.6875rem",
             fontWeight: 600,
-            letterSpacing: "0.1em",
+            letterSpacing: "0.08em",
             textTransform: "uppercase",
             color: DASHBOARD.textPrimary,
             flex: 1,
+            lineHeight: 1.3,
           }}
         >
           {title}
@@ -118,7 +118,14 @@ export function SectionShell({
         {badge}
       </Box>
 
-      <Box sx={{ px: noPadding ? 0 : 3.5, py: noPadding ? 0 : 3.5 }}>{children}</Box>
+      <Box
+        sx={{
+          px: noPadding ? 0 : { xs: 2, sm: 2.75 },
+          py: noPadding ? 0 : { xs: 2, sm: 2.5 },
+        }}
+      >
+        {children}
+      </Box>
     </Box>
   );
 }
@@ -133,20 +140,22 @@ export function SectionBadge({
   return (
     <Box
       sx={{
-        px: 1.25,
-        py: 0.375,
+        px: 1.1,
+        py: 0.35,
         borderRadius: "6px",
         backgroundColor: color,
-        border: `1px solid ${DASHBOARD.border}`,
+        border: `1px solid ${DASHBOARD.borderLight}`,
+        flexShrink: 0,
       }}
     >
       <Typography
         sx={{
           fontSize: "0.625rem",
           fontWeight: 600,
-          letterSpacing: "0.06em",
+          letterSpacing: "0.05em",
           textTransform: "uppercase",
           color: DASHBOARD.textSecondary,
+          lineHeight: 1.2,
         }}
       >
         {children}
@@ -161,9 +170,6 @@ interface InvestigationBannerProps {
   verdictColor: string;
   verifiedAt: string;
   certificateId?: string;
-  confidence?: number;
-  trustScore?: number;
-  signalCount?: number;
 }
 
 export function InvestigationBanner({
@@ -172,15 +178,11 @@ export function InvestigationBanner({
   verdictColor,
   verifiedAt,
   certificateId,
-  confidence,
-  trustScore,
-  signalCount,
 }: InvestigationBannerProps) {
-  const metrics = [
-    { label: "Model Confidence", value: confidence != null ? `${confidence}%` : "—" },
-    { label: "Trust Score", value: trustScore != null ? `${trustScore}/100` : "—" },
-    { label: "Signals", value: signalCount != null ? String(signalCount) : "—" },
-  ].filter((item) => item.value !== "—");
+  const showVerified =
+    Boolean(verifiedAt?.trim()) &&
+    verifiedAt.trim() !== "—" &&
+    verifiedAt.trim().toLowerCase() !== "unknown";
 
   return (
     <Box
@@ -188,11 +190,8 @@ export function InvestigationBanner({
         backgroundColor: DASHBOARD.navy,
         borderRadius: "12px",
         border: "1px solid rgba(255,255,255,0.06)",
-        boxShadow: "0 8px 28px rgba(15,41,66,0.18)",
-        px: { xs: 2.5, sm: 3.5 },
-        py: { xs: 2.75, sm: 3.25 },
-        position: "relative",
-        overflow: "hidden",
+        px: { xs: 2.25, sm: 3 },
+        py: { xs: 2.25, sm: 2.75 },
       }}
     >
       <Box
@@ -202,7 +201,6 @@ export function InvestigationBanner({
           justifyContent: "space-between",
           gap: 2,
           flexWrap: "wrap",
-          mb: 3,
         }}
       >
         <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -210,44 +208,46 @@ export function InvestigationBanner({
             sx={{
               fontSize: "0.625rem",
               fontWeight: 600,
-              letterSpacing: "0.12em",
+              letterSpacing: "0.1em",
               textTransform: "uppercase",
-              color: "rgba(255,255,255,0.55)",
-              mb: 1,
+              color: "rgba(255,255,255,0.5)",
+              mb: 0.75,
             }}
           >
-            Investigation Summary
+            Investigation
           </Typography>
           <Typography
             sx={{
-              fontSize: { xs: "1.25rem", sm: "1.5rem" },
+              fontSize: { xs: "1.125rem", sm: "1.35rem" },
               fontWeight: 700,
-              letterSpacing: "-0.025em",
+              letterSpacing: "-0.02em",
               color: "#FFFFFF",
-              mb: 1,
+              mb: 0.75,
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
-              maxWidth: 560,
-              lineHeight: 1.25,
+              maxWidth: { xs: "100%", sm: 520 },
+              lineHeight: 1.3,
             }}
           >
             {fileName}
           </Typography>
-          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-            <Typography sx={{ fontSize: "0.8125rem", color: "rgba(255,255,255,0.5)", lineHeight: 1.5 }}>
-              Verified {verifiedAt}
-            </Typography>
-            {certificateId && (
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: { xs: 1, sm: 2 } }}>
+            {showVerified && (
+              <Typography sx={{ fontSize: "0.8125rem", color: "rgba(255,255,255,0.55)", lineHeight: 1.45 }}>
+                Verified {verifiedAt}
+              </Typography>
+            )}
+            {certificateId?.trim() && (
               <Typography
                 sx={{
                   fontSize: "0.8125rem",
                   color: "rgba(255,255,255,0.65)",
                   fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                  lineHeight: 1.5,
+                  lineHeight: 1.45,
                 }}
               >
-                Case ID {certificateId.slice(0, 8).toUpperCase()}
+                ID {certificateId.slice(0, 8).toUpperCase()}
               </Typography>
             )}
           </Box>
@@ -258,11 +258,11 @@ export function InvestigationBanner({
             display: "inline-flex",
             alignItems: "center",
             gap: 1,
-            px: 2,
-            py: 1,
+            px: 1.75,
+            py: 0.875,
             borderRadius: "8px",
             backgroundColor: "rgba(255,255,255,0.06)",
-            border: `1px solid ${verdictColor}55`,
+            border: `1px solid ${verdictColor}44`,
           }}
         >
           <Box
@@ -271,13 +271,14 @@ export function InvestigationBanner({
               height: 8,
               borderRadius: "50%",
               backgroundColor: verdictColor,
+              flexShrink: 0,
             }}
           />
           <Typography
             sx={{
               fontSize: "0.75rem",
               fontWeight: 700,
-              letterSpacing: "0.06em",
+              letterSpacing: "0.05em",
               textTransform: "uppercase",
               color: verdictColor,
             }}
@@ -285,54 +286,6 @@ export function InvestigationBanner({
             {verdict}
           </Typography>
         </Box>
-      </Box>
-
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: {
-            xs: "repeat(2, minmax(0, 1fr))",
-            sm: "repeat(4, minmax(0, 1fr))",
-          },
-          gap: 1.5,
-        }}
-      >
-        {metrics.map((metric) => (
-          <Box
-            key={metric.label}
-            sx={{
-              px: 2,
-              py: 1.75,
-              borderRadius: "10px",
-              backgroundColor: "rgba(255,255,255,0.05)",
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            <Typography
-              sx={{
-                fontSize: "0.5625rem",
-                fontWeight: 600,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "rgba(255,255,255,0.45)",
-                mb: 0.75,
-              }}
-            >
-              {metric.label}
-            </Typography>
-            <Typography
-              sx={{
-                fontSize: "1.125rem",
-                fontWeight: 700,
-                color: "#FFFFFF",
-                fontVariantNumeric: "tabular-nums",
-                lineHeight: 1.2,
-              }}
-            >
-              {metric.value}
-            </Typography>
-          </Box>
-        ))}
       </Box>
     </Box>
   );

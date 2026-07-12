@@ -11,9 +11,79 @@ import ScienceIcon from "@mui/icons-material/Science";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import CancelIcon from "@mui/icons-material/Cancel";
-import type { Signal } from "../../types/verification";
+import type { EngineTechnicalDetails, Signal } from "../../types/verification";
 import { CircularGauge } from "./shared/dashboardCharts";
 import { DASHBOARD, SectionBadge, SectionShell } from "./shared/dashboardShell";
+
+function humanizeKey(key: string): string {
+  return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function summarizeValue(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "";
+    if (value.every((item) => typeof item === "string" || typeof item === "number")) {
+      return value.map(String).join(", ");
+    }
+    return `${value.length} items`;
+  }
+  if (typeof value === "object") {
+    const keys = Object.keys(value as object);
+    if (keys.length === 0) return "";
+    return keys
+      .slice(0, 12)
+      .map((key) => {
+        const nested = (value as Record<string, unknown>)[key];
+        if (
+          typeof nested === "string" ||
+          typeof nested === "number" ||
+          typeof nested === "boolean"
+        ) {
+          return `${humanizeKey(key)}: ${nested}`;
+        }
+        if (Array.isArray(nested)) return `${humanizeKey(key)}: ${nested.length} items`;
+        if (nested && typeof nested === "object") {
+          return `${humanizeKey(key)}: ${Object.keys(nested).length} fields`;
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join(" · ");
+  }
+  return "";
+}
+
+function extrasFromTechnical(technical?: EngineTechnicalDetails | null): ResolvedModule[] {
+  if (!technical) return [];
+  const modules: ResolvedModule[] = [];
+
+  const push = (key: string, label: string, detail: string) => {
+    if (!detail.trim()) return;
+    modules.push({ key, label, detail, status: "warning" });
+  };
+
+  if (technical.analysisStatus) {
+    push("analysis-status", "Analysis Status", technical.analysisStatus);
+  }
+  if (technical.layersApplied?.length) {
+    push("layers-applied", "Layers Applied", technical.layersApplied.join(", "));
+  }
+  if (technical.classification) {
+    push("classification", "Classification", summarizeValue(technical.classification));
+  }
+  if (technical.pdfFraudSubscores) {
+    push("pdf-fraud-subscores", "PDF Fraud Subscores", summarizeValue(technical.pdfFraudSubscores));
+  }
+  if (technical.structuralProfile) {
+    push("structural-profile", "Structural Profile", summarizeValue(technical.structuralProfile));
+  }
+
+  return modules;
+}
 
 interface AnalysisCategory {
   key: string;
@@ -214,39 +284,23 @@ function AnalysisTile({ module }: { module: ResolvedModule }) {
 
 interface TechnicalDetailsProps {
   signals: Signal[];
+  technical?: EngineTechnicalDetails | null;
 }
 
-export default function TechnicalDetails({ signals }: TechnicalDetailsProps) {
+export default function TechnicalDetails({
+  signals,
+  technical = null,
+}: TechnicalDetailsProps) {
   const [isOpen, setIsOpen] = useState(true);
-  const modules = useMemo(() => resolveReportedModules(signals), [signals]);
+  const modules = useMemo(() => {
+    const fromSignals = resolveReportedModules(signals);
+    const fromExtras = extrasFromTechnical(technical);
+    const seen = new Set(fromSignals.map((m) => m.key));
+    return [...fromSignals, ...fromExtras.filter((m) => !seen.has(m.key))];
+  }, [signals, technical]);
 
   if (modules.length === 0) {
-    return (
-      <SectionShell
-        title="Technical Analysis"
-        icon={<ScienceIcon sx={{ fontSize: 18 }} />}
-        badge={<SectionBadge>Not Available</SectionBadge>}
-      >
-        <Box
-          sx={{
-            py: 3.5,
-            px: 2,
-            textAlign: "center",
-            borderRadius: "12px",
-            backgroundColor: "#F8FAFC",
-            border: `1px solid ${DASHBOARD.borderLight}`,
-            mt: -1,
-          }}
-        >
-          <Typography sx={{ fontSize: "0.875rem", color: DASHBOARD.textMuted }}>
-            Not Provided by Engine
-          </Typography>
-          <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted, mt: 0.75 }}>
-            This verification engine did not return module-level technical findings.
-          </Typography>
-        </Box>
-      </SectionShell>
-    );
+    return null;
   }
 
   const passedCount = modules.filter((m) => m.status === "passed").length;

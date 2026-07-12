@@ -15,6 +15,8 @@ interface CircularGaugeProps {
   max?: number;
   label: string;
   sublabel?: string;
+  /** One-sentence explanation shown under the metric label. */
+  description?: string;
   color: string;
   size?: number;
   trackColor?: string;
@@ -25,6 +27,7 @@ export function CircularGauge({
   max = 100,
   label,
   sublabel,
+  description,
   color,
   size = 140,
   trackColor = "rgba(148,163,184,0.2)",
@@ -37,7 +40,14 @@ export function CircularGauge({
   const center = size / 2;
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        maxWidth: size + 48,
+      }}
+    >
       <Box sx={{ position: "relative", width: size, height: size }}>
         <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
           <circle
@@ -106,10 +116,25 @@ export function CircularGauge({
           textTransform: "uppercase",
           color: "#64748B",
           mt: 1.25,
+          textAlign: "center",
         }}
       >
         {label}
       </Typography>
+      {description && (
+        <Typography
+          sx={{
+            fontSize: "0.75rem",
+            color: "#94A3B8",
+            lineHeight: 1.4,
+            mt: 0.75,
+            textAlign: "center",
+            px: 0.5,
+          }}
+        >
+          {description}
+        </Typography>
+      )}
     </Box>
   );
 }

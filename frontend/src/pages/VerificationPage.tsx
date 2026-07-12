@@ -25,13 +25,20 @@ import UploadZone from "../components/upload/UploadZone";
 import AnalysisProgress from "../components/analysis/AnalysisProgress";
 import DocumentViewer from "../components/viewer/DocumentViewer";
 import VerdictCard from "../components/results/VerdictCard";
+import ExecutiveSummaryCard, {
+  resolveAiProbability,
+  resolveEngineTrustScore,
+} from "../components/results/ExecutiveSummaryCard";
 import SignalsList from "../components/results/SignalsList";
 import ExecutiveReport from "../components/results/ExecutiveReport";
 import DocumentInfo from "../components/results/DocumentInfo";
 import AnnotatedDocumentSection from "../components/results/AnnotatedDocumentSection";
+import TechnicalDetails from "../components/results/TechnicalDetails";
+import VendorAnalysis from "../components/results/VendorAnalysis";
 import ActionsPanel from "../components/results/ActionsPanel";
 import { InvestigationBanner } from "../components/results/shared/dashboardShell";
 import { verifyDocument } from "../api/verificationApi";
+import { buildDocumentInfoData } from "../utils/documentMetadata";
 import type { DocumentInfoData, VerificationResult } from "../types/verification";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -348,24 +355,17 @@ export default function VerificationPage() {
     }
   }, [step]);
 
-  // Build DocumentInfoData from real available values.
-  const documentInfo: DocumentInfoData | null =
-    file
-      ? {
-          fileName: file.name,
-          documentType: step === "results" && verificationResult ? verificationResult.documentType : null,
-          fileSize: formatFileSize(file.size),
-          pages: pageCount !== null && pageCount > 0 ? String(pageCount) : null,
-          uploadTime: uploadTime ? formatUploadTime(uploadTime) : "—",
-          processingTime:
-            processingMs !== null ? formatProcessingTime(processingMs) : null,
-          vendorName: null,
-          verifiedAt:
-            step === "results" && verificationResult
-              ? formatVerifiedAt(verificationResult.verifiedAt)
-              : null,
-        }
-      : null;
+  // Build DocumentInfoData from real available file + engine metadata only.
+  const documentInfo: DocumentInfoData | null = buildDocumentInfoData({
+    file,
+    result: step === "results" ? verificationResult : null,
+    pageCount,
+    uploadTime,
+    processingMs,
+    formatUploadTime,
+    formatProcessingTime,
+    formatVerifiedAt,
+  });
 
   // ── Idle state: premium investigation landing ──────────────────────────────
   if (step === "idle") {
@@ -729,7 +729,7 @@ export default function VerificationPage() {
           sx={{
             display: "flex",
             flexDirection: "column",
-            gap: 3.5,
+            gap: { xs: 2.25, sm: 2.75 },
           }}
         >
           <InvestigationBanner
@@ -738,15 +738,15 @@ export default function VerificationPage() {
             verdictColor={verdictDisplay.color}
             verifiedAt={verifiedAtDisplay}
             certificateId={verificationResult.certificateId}
-            confidence={verificationResult.confidence}
-            trustScore={verificationResult.report.trustScore}
-            signalCount={verificationResult.signals.length}
           />
+
+          <ExecutiveSummaryCard result={verificationResult} />
 
           <VerdictCard
             verdict={verificationResult.verdict}
             confidence={verificationResult.confidence}
-            trustScore={verificationResult.report.trustScore}
+            trustScore={resolveEngineTrustScore(verificationResult)}
+            aiProbability={resolveAiProbability(verificationResult)}
             riskLevel={verificationResult.report.riskLevel}
           />
 
@@ -758,14 +758,16 @@ export default function VerificationPage() {
             />
           )}
 
-          <ExecutiveReport
-            report={verificationResult.report}
-            fileName={file?.name ?? "certificate.pdf"}
-            aiSummary={verificationResult.aiSummary}
-            verifiedAt={verifiedAtDisplay}
-          />
+          <ExecutiveReport report={verificationResult.report} />
 
           <SignalsList signals={verificationResult.signals} />
+
+          <TechnicalDetails
+            signals={verificationResult.signals}
+            technical={verificationResult.technical}
+          />
+
+          <VendorAnalysis vendorFindings={verificationResult.vendorFindings} />
 
           {documentInfo && <DocumentInfo data={documentInfo} />}
 
