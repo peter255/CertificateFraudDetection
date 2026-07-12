@@ -13,14 +13,8 @@ import ReportProblemOutlinedIcon from "@mui/icons-material/ReportProblemOutlined
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import VerifiedUserOutlinedIcon from "@mui/icons-material/VerifiedUserOutlined";
 import SpeedOutlinedIcon from "@mui/icons-material/SpeedOutlined";
-import type { ExecReport, Finding, RiskLevel } from "../../types/verification";
-import { DASHBOARD, SectionBadge, SectionShell } from "./shared/dashboardShell";
-
-const RISK_STYLE: Record<RiskLevel, { label: string; color: string }> = {
-  low: { label: "Low Risk", color: "#107C10" },
-  medium: { label: "Medium Risk", color: "#D97706" },
-  high: { label: "High Risk", color: "#C50F1F" },
-};
+import type { ExecReport, Finding } from "../../types/verification";
+import { DASHBOARD, SectionShell } from "./shared/dashboardShell";
 
 type RecommendationType = "approve" | "reject" | "manual_review";
 
@@ -323,7 +317,6 @@ interface ExecutiveReportProps {
 }
 
 export default function ExecutiveReport({ report }: ExecutiveReportProps) {
-  const risk = RISK_STYLE[report.riskLevel];
   const rec =
     RECOMMENDATION_STYLE[report.recommendation as RecommendationType] ?? DEFAULT_REC;
   const { Icon: RecIcon } = rec;
@@ -331,8 +324,6 @@ export default function ExecutiveReport({ report }: ExecutiveReportProps) {
     const title = (f.title || "").trim();
     const detail = (f.detail || "").trim();
     if (!title && !detail) return false;
-    // Avoid repeating the executive narrative already shown above.
-    if (title.toLowerCase() === "why this result") return false;
     return true;
   });
 
@@ -346,13 +337,6 @@ export default function ExecutiveReport({ report }: ExecutiveReportProps) {
       icon={<AutoAwesomeIcon sx={{ fontSize: 18 }} />}
       accentColor={DASHBOARD.accent}
       emphasis="primary"
-      badge={
-        <SectionBadge color={`${risk.color}18`}>
-          <Box component="span" sx={{ color: risk.color }}>
-            {risk.label}
-          </Box>
-        </SectionBadge>
-      }
       noPadding
     >
       <Box sx={{ px: { xs: 2, sm: 2.75 }, py: { xs: 2.25, sm: 2.75 } }}>

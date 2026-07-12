@@ -1,6 +1,6 @@
 /**
- * TechnicalDetails — Section 6: Technical Analysis
- * Shows only modules that returned real findings after verification.
+ * TechnicalDetails — engine technical payloads only.
+ * Forensic indicators live in SignalsList; this section does not re-list them.
  */
 
 import { useMemo, useState } from "react";
@@ -8,10 +8,8 @@ import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Collapse from "@mui/material/Collapse";
 import ScienceIcon from "@mui/icons-material/Science";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
-import CancelIcon from "@mui/icons-material/Cancel";
-import type { EngineTechnicalDetails, Signal } from "../../types/verification";
+import type { EngineTechnicalDetails } from "../../types/verification";
 import { CircularGauge } from "./shared/dashboardCharts";
 import { DASHBOARD, SectionBadge, SectionShell } from "./shared/dashboardShell";
 
@@ -57,13 +55,19 @@ function summarizeValue(value: unknown): string {
   return "";
 }
 
+interface ResolvedModule {
+  key: string;
+  label: string;
+  detail: string;
+}
+
 function extrasFromTechnical(technical?: EngineTechnicalDetails | null): ResolvedModule[] {
   if (!technical) return [];
   const modules: ResolvedModule[] = [];
 
   const push = (key: string, label: string, detail: string) => {
     if (!detail.trim()) return;
-    modules.push({ key, label, detail, status: "warning" });
+    modules.push({ key, label, detail });
   };
 
   if (technical.analysisStatus) {
@@ -81,158 +85,33 @@ function extrasFromTechnical(technical?: EngineTechnicalDetails | null): Resolve
   if (technical.structuralProfile) {
     push("structural-profile", "Structural Profile", summarizeValue(technical.structuralProfile));
   }
-
-  return modules;
-}
-
-interface AnalysisCategory {
-  key: string;
-  label: string;
-  description: string;
-  signalCategories: string[];
-}
-
-/** Known forensic modules. Only rendered when the engine returns matching signals. */
-const ANALYSIS_CATEGORIES: AnalysisCategory[] = [
-  {
-    key: "metadata",
-    label: "Metadata",
-    description: "Properties & modification history",
-    signalCategories: ["Metadata Integrity", "Metadata"],
-  },
-  {
-    key: "provenance",
-    label: "Provenance",
-    description: "C2PA / digital provenance checks",
-    signalCategories: ["Provenance / C2PA", "Provenance"],
-  },
-  {
-    key: "qr",
-    label: "QR Code",
-    description: "Detection & payload validation",
-    signalCategories: ["QR Analysis", "QR Code"],
-  },
-  {
-    key: "signature",
-    label: "Signature",
-    description: "Digital & handwritten validity",
-    signalCategories: ["Signature Analysis", "Signature"],
-  },
-  {
-    key: "structure",
-    label: "Structure",
-    description: "Layout & format integrity",
-    signalCategories: ["Visual Pattern", "Structure Analysis", "Structure", "Visual / Overlay"],
-  },
-  {
-    key: "ocr",
-    label: "OCR",
-    description: "Text extraction & consistency",
-    signalCategories: ["OCR Analysis", "OCR"],
-  },
-  {
-    key: "forensic",
-    label: "Forensic",
-    description: "Forensic engine checks",
-    signalCategories: ["Forensic"],
-  },
-  {
-    key: "perceptual",
-    label: "Perceptual",
-    description: "Perceptual / visual consistency",
-    signalCategories: ["Perceptual"],
-  },
-  {
-    key: "field",
-    label: "Field Evidence",
-    description: "Field-assigned anomalies",
-    signalCategories: ["Field Evidence"],
-  },
-  {
-    key: "ai",
-    label: "AI Forensics",
-    description: "Deep learning classification",
-    signalCategories: [
-      "AI Analysis",
-      "AI Indicator",
-      "AI Review",
-      "ML Model",
-      "Detection Pipeline",
-      "Document Validity",
-      "Semantic",
-    ],
-  },
-];
-
-type ResolvedStatus = "passed" | "warning" | "failed";
-
-const STATUS_STYLE: Record<
-  ResolvedStatus,
-  { label: string; color: string; bgColor: string; Icon: typeof CheckCircleIcon }
-> = {
-  passed: { label: "Passed", color: "#107C10", bgColor: "#ECFDF5", Icon: CheckCircleIcon },
-  warning: { label: "Warning", color: "#D97706", bgColor: "#FFFBEB", Icon: WarningAmberIcon },
-  failed: { label: "Failed", color: "#C50F1F", bgColor: "#FEF2F2", Icon: CancelIcon },
-};
-
-interface ResolvedModule {
-  key: string;
-  label: string;
-  detail: string;
-  status: ResolvedStatus;
-}
-
-function statusFromSignals(matching: Signal[]): ResolvedStatus {
-  if (matching.some((s) => s.status === "fail")) return "failed";
-  if (matching.some((s) => s.status === "warning")) return "warning";
-  return "passed";
-}
-
-function resolveReportedModules(signals: Signal[]): ResolvedModule[] {
-  const claimed = new Set<string>();
-  const modules: ResolvedModule[] = [];
-
-  for (const category of ANALYSIS_CATEGORIES) {
-    const matching = signals.filter((s) =>
-      category.signalCategories.some((cat) => cat.toLowerCase() === s.category.toLowerCase())
+  if (technical.engineResults) {
+    push("engine-results", "Engine Results", summarizeValue(technical.engineResults));
+  }
+  if (technical.layerDetails) {
+    push("layer-details", "Layer Details", summarizeValue(technical.layerDetails));
+  }
+  if (technical.evidenceGroups) {
+    push("evidence-groups", "Evidence Groups", summarizeValue(technical.evidenceGroups));
+  }
+  if (technical.analysisFlow?.length) {
+    push(
+      "analysis-flow",
+      "Analysis Flow",
+      technical.analysisFlow
+        .map((step, index) => {
+          const summary = summarizeValue(step);
+          return summary ? `${index + 1}. ${summary}` : "";
+        })
+        .filter(Boolean)
+        .join(" · ")
     );
-    if (matching.length === 0) continue;
-
-    matching.forEach((s) => claimed.add(s.id));
-    modules.push({
-      key: category.key,
-      label: category.label,
-      detail: matching.map((s) => s.description).join(" · "),
-      status: statusFromSignals(matching),
-    });
-  }
-
-  // Surface any engine-specific categories that are not in the known map.
-  const leftovers = new Map<string, Signal[]>();
-  for (const signal of signals) {
-    if (claimed.has(signal.id)) continue;
-    const key = signal.category.trim() || "Additional Findings";
-    const list = leftovers.get(key) ?? [];
-    list.push(signal);
-    leftovers.set(key, list);
-  }
-
-  for (const [label, matching] of leftovers) {
-    modules.push({
-      key: `extra-${label.toLowerCase().replace(/\s+/g, "-")}`,
-      label,
-      detail: matching.map((s) => s.description).join(" · "),
-      status: statusFromSignals(matching),
-    });
   }
 
   return modules;
 }
 
 function AnalysisTile({ module }: { module: ResolvedModule }) {
-  const style = STATUS_STYLE[module.status];
-  const { Icon } = style;
-
   return (
     <Box
       sx={{
@@ -240,7 +119,7 @@ function AnalysisTile({ module }: { module: ResolvedModule }) {
         borderRadius: "14px",
         backgroundColor: "#FFFFFF",
         border: `1px solid ${DASHBOARD.borderLight}`,
-        borderTop: `3px solid ${style.color}`,
+        borderTop: `3px solid ${DASHBOARD.accent}`,
         minHeight: 130,
         display: "flex",
         flexDirection: "column",
@@ -255,56 +134,37 @@ function AnalysisTile({ module }: { module: ResolvedModule }) {
             width: 28,
             height: 28,
             borderRadius: "8px",
-            backgroundColor: style.bgColor,
+            backgroundColor: "rgba(0,120,212,0.08)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <Icon sx={{ fontSize: 16, color: style.color }} />
+          <WarningAmberIcon sx={{ fontSize: 16, color: DASHBOARD.accent }} />
         </Box>
       </Box>
       <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted, mb: 1, flex: 1, lineHeight: 1.45 }}>
         {module.detail}
-      </Typography>
-      <Typography
-        sx={{
-          fontSize: "0.5625rem",
-          fontWeight: 700,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: style.color,
-        }}
-      >
-        {style.label}
       </Typography>
     </Box>
   );
 }
 
 interface TechnicalDetailsProps {
-  signals: Signal[];
+  /** @deprecated Signals belong in SignalsList; ignored here. */
+  signals?: unknown;
   technical?: EngineTechnicalDetails | null;
 }
 
 export default function TechnicalDetails({
-  signals,
   technical = null,
 }: TechnicalDetailsProps) {
   const [isOpen, setIsOpen] = useState(true);
-  const modules = useMemo(() => {
-    const fromSignals = resolveReportedModules(signals);
-    const fromExtras = extrasFromTechnical(technical);
-    const seen = new Set(fromSignals.map((m) => m.key));
-    return [...fromSignals, ...fromExtras.filter((m) => !seen.has(m.key))];
-  }, [signals, technical]);
+  const modules = useMemo(() => extrasFromTechnical(technical), [technical]);
 
   if (modules.length === 0) {
     return null;
   }
-
-  const passedCount = modules.filter((m) => m.status === "passed").length;
-  const coveragePct = Math.round((passedCount / modules.length) * 100);
 
   return (
     <SectionShell
@@ -337,7 +197,7 @@ export default function TechnicalDetails({
       >
         <Box sx={{ display: "flex", alignItems: "center", gap: 3 }}>
           <CircularGauge
-            value={coveragePct}
+            value={Math.min(100, modules.length * 12)}
             label=""
             color={DASHBOARD.accent}
             size={80}
@@ -345,10 +205,10 @@ export default function TechnicalDetails({
           />
           <Box>
             <Typography sx={{ fontSize: "0.875rem", fontWeight: 700, color: DASHBOARD.textPrimary }}>
-              Module Results
+              Engine Technical Payloads
             </Typography>
             <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted }}>
-              {passedCount} of {modules.length} reported modules passed
+              {modules.length} technical module{modules.length !== 1 ? "s" : ""} from the API
             </Typography>
           </Box>
         </Box>

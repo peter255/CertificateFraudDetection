@@ -305,6 +305,28 @@ export function buildDocumentInfoData(input: {
   const extras: Array<{ label: string; value: string }> = [];
   const usedLabels = new Set<string>();
 
+  const metadataNotes = result?.technical.engineResults?.metadata_notes;
+  if (Array.isArray(metadataNotes)) {
+    metadataNotes.forEach((note, index) => {
+      const cleaned = cleanString(note);
+      if (!cleaned) return;
+      const label = metadataNotes.length === 1 ? "Metadata Note" : `Metadata Note ${index + 1}`;
+      usedLabels.add(label.toLowerCase());
+      extras.push({ label, value: cleaned });
+    });
+  }
+
+  const mlLabel = cleanString(result?.technical.engineResults?.ml_label);
+  if (mlLabel) {
+    usedLabels.add("ml label");
+    extras.push({ label: "ML Label", value: mlLabel });
+  }
+  const ocrLabel = cleanString(result?.technical.engineResults?.ocr_label);
+  if (ocrLabel) {
+    usedLabels.add("ocr label");
+    extras.push({ label: "OCR Label", value: ocrLabel });
+  }
+
   for (const key of KNOWN_EXTRA_KEYS) {
     const value = cleanString(findFirst(pools, [key]));
     if (!value) continue;

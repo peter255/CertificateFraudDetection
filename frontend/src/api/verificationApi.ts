@@ -260,8 +260,6 @@ function scrubEngineName(text: string): string {
     .replace(/\bP[\w]*work(?:\.to)?\b/gi, "engine")
     .replace(/\bTruth\s*Scan\b/gi, "engine")
     .replace(/\bPaper\s*work(?:\.to)?\b/gi, "engine")
-    .replace(/\bLLM\s+trust\s+score\b/gi, "Model confidence")
-    .replace(/\bTrust\s+Score\b/gi, "Model Confidence")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
@@ -334,19 +332,15 @@ function applyUserDecision(
     });
   }
 
+  // Keep engine executive narrative in aiSummary / report.summary.
+  // Decision note belongs only under Recommendation & Findings.
   return {
     ...base,
     verdict: decision.verdict,
     /** Model confidence in the engine prediction (0–100). Not document trust. */
     confidence: decision.modelConfidence,
-    aiSummary: decision.decisionNote
-      ? scrubEngineName(decision.decisionNote)
-      : base.aiSummary,
     report: {
       ...base.report,
-      summary: decision.decisionNote
-        ? scrubEngineName(decision.decisionNote)
-        : base.report.summary,
       findings,
       riskLevel: decision.riskLevel,
       riskScore: decision.riskScore,
@@ -420,10 +414,62 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
     optionalString(data.final_result) ||
     optionalString(data.overall_status);
 
+  const aiProbability = toScore100(
+    typeof analysis.ml_score === "number" ? analysis.ml_score : null
+  );
+
+  // V1 has no native fraud_score / trust_score — derive from prediction intensity.
+  // fraudulent → fraud ≈ confidence in that call; authentic → trust ≈ confidence.
+  const rawScore100 = toScore100(
+    typeof analysis.raw_score === "number" ? analysis.raw_score : null,
+    typeof data.raw_score === "number" ? data.raw_score : null,
+    modelConfidence
+  );
+  const engineRiskScore =
+    typeof data.report?.risk_score === "number" && Number.isFinite(data.report.risk_score)
+      ? data.report.risk_score
+      : null;
+
+  let fraudScore: number | null = null;
+  let engineTrustScore: number | null = null;
+  if (engineLabel === "fraudulent") {
+    fraudScore = rawScore100;
+    engineTrustScore = rawScore100 != null ? clampScore100(100 - rawScore100) : null;
+  } else if (engineLabel === "authentic") {
+    engineTrustScore = rawScore100;
+    fraudScore = rawScore100 != null ? clampScore100(100 - rawScore100) : null;
+  } else {
+    fraudScore = toScore100(engineRiskScore) ?? 50;
+    engineTrustScore = clampScore100(100 - fraudScore);
+  }
+
+  const engineResults: Record<string, unknown> = {
+    ml_score: analysis.ml_score ?? null,
+    ml_label: analysis.ml_label ?? null,
+    ocr_score: analysis.ocr_score ?? null,
+    ocr_label: analysis.ocr_label ?? null,
+    metadata_notes: analysis.metadata_notes ?? [],
+    key_indicators: analysis.key_indicators ?? [],
+    visual_patterns: analysis.visual_patterns ?? [],
+    reasoning: analysis.reasoning ?? null,
+    heatmap_url: analysis.heatmap_url ?? null,
+    analysis_agreement: analysis.analysis_agreement ?? null,
+    vendor_recommendations: analysis.vendor_recommendations ?? [],
+    verdict_label: analysis.verdict_label ?? null,
+    raw_score: analysis.raw_score ?? data.raw_score ?? null,
+    detection_step: analysis.detection_step ?? null,
+    is_valid: analysis.is_valid ?? null,
+    analysis_status: analysisStatus,
+    fraud_score: fraudScore,
+    trust_score: engineTrustScore,
+  };
+
   const base: VerificationResult = {
     certificateId: data.certificate_id || "",
     verdict: "suspicious",
     confidence: modelConfidence,
+    aiProbability,
+    engineTrustScore,
     documentType: optionalString(data.document_type),
     issuingAuthority: optionalString(data.issuer_name),
     holderName: optionalString(data.holder_name),
@@ -479,13 +525,14 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
         : null,
     engineVerdictLabel,
     analysisStatus,
-    fraudScore: null,
+    fraudScore,
     fraudColor: null,
     isScan: null,
     fileKind: null,
     technical: {
       ...emptyTechnical(),
       analysisStatus,
+      engineResults,
     },
   };
 
@@ -508,68 +555,52 @@ function normalizeSeverity(raw: string | null | undefined): TamperRegion["severi
 function asBBox(value: unknown): [number, number, number, number] | null {
   if (!Array.isArray(value) || value.length !== 4) return null;
   const nums = value.map((n) => Number(n));
-  if (nums.some((n) => !Number.isFinite(n) || n < 0)) return null;
-  if (nums[2] <= 0 || nums[3] <= 0) return null;
-  return [nums[0], nums[1], nums[2], nums[3]];
+  if (nums.some((n) => !Number.isFinite(n))) return null;
+
+  const [a, b, c, d] = nums;
+
+  // xywh: x, y, width, height (width/height positive)
+  if (c > 0 && d > 0 && a >= 0 && b >= 0) {
+    return [a, b, c, d];
+  }
+
+  // xyxy: x1, y1, x2, y2 → convert to xywh
+  if (c > a && d > b && a >= 0 && b >= 0) {
+    return [a, b, c - a, d - b];
+  }
+
+  return null;
 }
 
+function toConfidenceRatio(value: unknown): number | null {
+  const score = toScore100(typeof value === "number" ? value : null);
+  if (score == null) return null;
+  return score / 100;
+}
+
+type TamperRegionInput = {
+  id?: string | null;
+  label: string;
+  description: string;
+  severity?: string | null;
+  bbox?: number[] | null;
+  page?: number | null;
+  imageWidth?: number | null;
+  imageHeight?: number | null;
+  location?: string | null;
+  layer?: string | null;
+  confidence?: number | null;
+  bboxSource?: string | null;
+  hasImage?: boolean | null;
+  hasCropImage?: boolean | null;
+  extras?: Record<string, unknown> | null;
+};
+
 function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
-  const out: TamperRegion[] = [];
-  const seen = new Set<string>();
-
-  const push = (input: {
-    id?: string | null;
-    label: string;
-    description: string;
-    severity?: string | null;
-    bbox?: number[] | null;
-    page?: number | null;
-    imageWidth?: number | null;
-    imageHeight?: number | null;
-    location?: string | null;
-    layer?: string | null;
-    confidence?: number | null;
-    bboxSource?: string | null;
-    hasImage?: boolean | null;
-    hasCropImage?: boolean | null;
-    extras?: Record<string, unknown> | null;
-  }) => {
-    const bbox = asBBox(input.bbox);
-    if (!bbox) return;
-    const imageWidth = Number(input.imageWidth);
-    const imageHeight = Number(input.imageHeight);
-    if (!Number.isFinite(imageWidth) || !Number.isFinite(imageHeight) || imageWidth <= 0 || imageHeight <= 0) {
-      return;
-    }
-
-    const key = `${input.page || 1}-${bbox.join(",")}-${input.label}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-
-    out.push({
-      id: String(input.id || key),
-      label: input.label,
-      description: scrubEngineName(input.description || input.label),
-      severity: normalizeSeverity(input.severity),
-      bbox,
-      page: input.page && input.page > 0 ? input.page : 1,
-      imageWidth,
-      imageHeight,
-      location: optionalString(input.location),
-      layer: optionalString(input.layer),
-      confidence:
-        typeof input.confidence === "number" && Number.isFinite(input.confidence)
-          ? input.confidence
-          : null,
-      bboxSource: optionalString(input.bboxSource),
-      hasImage: typeof input.hasImage === "boolean" ? input.hasImage : null,
-      hasCropImage: typeof input.hasCropImage === "boolean" ? input.hasCropImage : null,
-      extras: optionalRecord(input.extras),
-    });
-  };
+  const candidates: TamperRegionInput[] = [];
 
   for (const signal of [...(data.signals || []), ...(data.field_evidence || [])]) {
-    push({
+    candidates.push({
       id: signal.id,
       label:
         signal.field_label ||
@@ -594,7 +625,7 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
   }
 
   for (const item of data.visual_evidence || []) {
-    push({
+    candidates.push({
       id: item.type,
       label: item.title || item.field_label || item.field || item.type || "Visual evidence",
       description: item.description || item.location || item.title || "Visual evidence",
@@ -613,49 +644,38 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
     });
   }
 
-  // Prefer higher severity first for legend ordering.
-  const rank = { critical: 0, high: 1, medium: 2, low: 3 } as const;
-
-  // Fill missing canvas size from sibling regions on the same page when possible.
   const dimsByPage = new Map<number, { w: number; h: number }>();
-  for (const region of out) {
-    dimsByPage.set(region.page, { w: region.imageWidth, h: region.imageHeight });
+  for (const input of candidates) {
+    const page = input.page && input.page > 0 ? input.page : 1;
+    const w = Number(input.imageWidth);
+    const h = Number(input.imageHeight);
+    if (Number.isFinite(w) && w > 0 && Number.isFinite(h) && h > 0) {
+      dimsByPage.set(page, { w, h });
+    }
   }
 
-  // Re-scan sources that lacked dims using page fallbacks — rebuild lightly.
-  const withFallback: TamperRegion[] = [...out];
-  const tryFallback = (input: {
-    id?: string | null;
-    label: string;
-    description: string;
-    severity?: string | null;
-    bbox?: number[] | null;
-    page?: number | null;
-    imageWidth?: number | null;
-    imageHeight?: number | null;
-    location?: string | null;
-    layer?: string | null;
-    confidence?: number | null;
-    bboxSource?: string | null;
-    hasImage?: boolean | null;
-    hasCropImage?: boolean | null;
-    extras?: Record<string, unknown> | null;
-  }) => {
+  const out: TamperRegion[] = [];
+  const seen = new Set<string>();
+
+  for (const input of candidates) {
     const bbox = asBBox(input.bbox);
-    if (!bbox) return;
+    if (!bbox) continue;
+
     const page = input.page && input.page > 0 ? input.page : 1;
     let imageWidth = Number(input.imageWidth);
     let imageHeight = Number(input.imageHeight);
     if (!Number.isFinite(imageWidth) || imageWidth <= 0 || !Number.isFinite(imageHeight) || imageHeight <= 0) {
       const fallback = dimsByPage.get(page);
-      if (!fallback) return;
+      if (!fallback) continue;
       imageWidth = fallback.w;
       imageHeight = fallback.h;
     }
+
     const key = `${page}-${bbox.join(",")}-${input.label}`;
-    if (seen.has(key)) return;
+    if (seen.has(key)) continue;
     seen.add(key);
-    withFallback.push({
+
+    out.push({
       id: String(input.id || key),
       label: input.label,
       description: scrubEngineName(input.description || input.label),
@@ -666,39 +686,17 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       imageHeight,
       location: optionalString(input.location),
       layer: optionalString(input.layer),
-      confidence:
-        typeof input.confidence === "number" && Number.isFinite(input.confidence)
-          ? input.confidence
-          : null,
+      confidence: toConfidenceRatio(input.confidence),
       bboxSource: optionalString(input.bboxSource),
       hasImage: typeof input.hasImage === "boolean" ? input.hasImage : null,
       hasCropImage: typeof input.hasCropImage === "boolean" ? input.hasCropImage : null,
       extras: optionalRecord(input.extras),
     });
-  };
-
-  for (const item of data.visual_evidence || []) {
-    tryFallback({
-      id: item.type,
-      label: item.title || item.field_label || item.field || item.type || "Visual evidence",
-      description: item.description || item.location || item.title || "Visual evidence",
-      severity: item.severity,
-      bbox: item.bbox,
-      page: item.page,
-      imageWidth: item.image_width,
-      imageHeight: item.image_height,
-      location: item.location,
-      layer: item.layer,
-      confidence: item.confidence,
-      bboxSource: item.bbox_source,
-      hasImage: typeof item.has_image === "boolean" ? item.has_image : null,
-      hasCropImage: typeof item.has_crop_image === "boolean" ? item.has_crop_image : null,
-      extras: item.extras ?? null,
-    });
   }
 
-  withFallback.sort((a, b) => rank[a.severity] - rank[b.severity]);
-  return withFallback;
+  const rank = { critical: 0, high: 1, medium: 2, low: 3 } as const;
+  out.sort((a, b) => rank[a.severity] - rank[b.severity]);
+  return out;
 }
 
 function v2SignalStatus(signal: EngineV2Signal): SignalStatus {
@@ -1146,29 +1144,74 @@ function toScore100(...candidates: Array<number | null | undefined>): number | n
   return null;
 }
 
+const AI_PROBABILITY_KEYS = [
+  "ai_probability",
+  "ai_prob",
+  "ai_generation_probability",
+  "generative_ai_probability",
+  "generative_probability",
+  "ml_score",
+];
+
+const ENGINE_TRUST_KEYS = ["trust_score", "trustScore", "document_trust_score"];
+
+function findNestedScore(
+  pools: Array<Record<string, unknown> | null | undefined>,
+  keys: string[],
+  depthLimit = 4
+): number | null {
+  const keySet = new Set(keys.map((k) => k.toLowerCase()));
+
+  const walk = (node: unknown, depth: number): number | null => {
+    if (depth > depthLimit || node == null) return null;
+    const rec = asRecord(node);
+    if (!Object.keys(rec).length) return null;
+
+    for (const [key, value] of Object.entries(rec)) {
+      if (keySet.has(key.toLowerCase())) {
+        const score = toScore100(typeof value === "number" ? value : null);
+        if (score != null) return score;
+      }
+    }
+    for (const value of Object.values(rec)) {
+      if (value && typeof value === "object") {
+        const nested = walk(value, depth + 1);
+        if (nested != null) return nested;
+      }
+    }
+    return null;
+  };
+
+  for (const pool of pools) {
+    if (!pool) continue;
+    const score = walk(pool, 0);
+    if (score != null) return score;
+  }
+  return null;
+}
+
+/**
+ * Model confidence from prediction strength only — never engine trust_score.
+ */
 function resolveV2ModelConfidence(
   label: EnginePredictionLabel,
-  trustScore: number | null,
-  fraudScore: number | null
+  fraudScore: number | null,
+  explicitConfidence: number | null
 ): number {
-  // Prefer an explicit positive trust/confidence from the engine.
-  if (trustScore != null && trustScore > 0) {
-    return trustScore;
+  if (explicitConfidence != null && explicitConfidence > 0) {
+    return explicitConfidence;
   }
 
   if (label === "fraudulent") {
-    // Fraud intensity as confidence in the fraud call — never treat 0 as "sure".
     if (fraudScore != null && fraudScore > 0) return fraudScore;
     return DECISION_THRESHOLDS.DEFAULT_MODEL_CONFIDENCE;
   }
 
   if (label === "authentic") {
-    // Low fraud ⇒ high confidence in authenticity.
     if (fraudScore != null) return clampScore100(100 - fraudScore);
     return DECISION_THRESHOLDS.DEFAULT_MODEL_CONFIDENCE;
   }
 
-  // suspicious / inconclusive — fraud intensity only when > 0; never map 0 → 0%.
   if (fraudScore != null && fraudScore > 0) return fraudScore;
   return DECISION_THRESHOLDS.DEFAULT_MODEL_CONFIDENCE;
 }
@@ -1189,11 +1232,29 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
 
   const layerDetails = asRecord(data.layer_details);
   const llmReport = asRecord(layerDetails.llm_report);
-  const trustScore = toScore100(
-    typeof llmReport.trust_score === "number" ? llmReport.trust_score : null
+  const classification = asRecord(data.classification);
+  const engineResults = asRecord(data.engine_results);
+  const pdfFraudSubscores = asRecord(data.pdf_fraud_subscores);
+
+  const engineTrustScore = findNestedScore(
+    [layerDetails, engineResults, classification, llmReport],
+    ENGINE_TRUST_KEYS
   );
 
-  const modelConfidence = resolveV2ModelConfidence(engineLabel, trustScore, fraudScore);
+  // Explicit prediction confidence only — never llm_report.trust_score.
+  const explicitConfidence = toScore100(
+    typeof llmReport.model_confidence === "number" ? llmReport.model_confidence : null,
+    typeof llmReport.confidence === "number" ? llmReport.confidence : null,
+    typeof classification.confidence === "number" ? classification.confidence : null,
+    typeof classification.model_confidence === "number" ? classification.model_confidence : null
+  );
+
+  const modelConfidence = resolveV2ModelConfidence(engineLabel, fraudScore, explicitConfidence);
+
+  const aiProbability = findNestedScore(
+    [layerDetails, engineResults, classification, pdfFraudSubscores],
+    AI_PROBABILITY_KEYS
+  );
 
   const signals = mapV2Signals(data);
   const findings = mapV2Findings(data);
@@ -1210,7 +1271,6 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
         (fraudScore != null ? ` (fraud score ${fraudScore}/100).` : ".")
   );
 
-  const classification = asRecord(data.classification);
   const documentType =
     optionalString(data.document_type) ||
     optionalString(classification.document_type) ||
@@ -1247,6 +1307,8 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
     certificateId: data.job_id || "",
     verdict: "suspicious",
     confidence: modelConfidence,
+    aiProbability,
+    engineTrustScore,
     documentType: documentType ? String(documentType).replace(/_/g, " ") : null,
     issuingAuthority,
     holderName,

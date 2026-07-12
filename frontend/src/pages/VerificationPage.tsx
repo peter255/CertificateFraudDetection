@@ -25,10 +25,7 @@ import UploadZone from "../components/upload/UploadZone";
 import AnalysisProgress from "../components/analysis/AnalysisProgress";
 import DocumentViewer from "../components/viewer/DocumentViewer";
 import VerdictCard from "../components/results/VerdictCard";
-import ExecutiveSummaryCard, {
-  resolveAiProbability,
-  resolveEngineTrustScore,
-} from "../components/results/ExecutiveSummaryCard";
+import ExecutiveSummaryCard from "../components/results/ExecutiveSummaryCard";
 import SignalsList from "../components/results/SignalsList";
 import ExecutiveReport from "../components/results/ExecutiveReport";
 import DocumentInfo from "../components/results/DocumentInfo";
@@ -46,6 +43,10 @@ import type { DocumentInfoData, VerificationResult } from "../types/verification
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Step = "idle" | "uploaded" | "analyzing" | "results";
+
+interface VerificationPageProps {
+  onOpenBatch?: () => void;
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -270,7 +271,7 @@ function SplitLayout({
 // VerificationPage
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function VerificationPage() {
+export default function VerificationPage({ onOpenBatch }: VerificationPageProps) {
   const [step, setStep] = useState<Step>("idle");
   const [file, setFile] = useState<File | null>(null);
   const [progress, setProgress] = useState(0);
@@ -485,6 +486,18 @@ export default function VerificationPage() {
           </Box>
 
           <UploadZone onFileSelected={handleFileSelected} />
+
+          {onOpenBatch && (
+            <Box sx={{ mt: 2, textAlign: "center" }}>
+              <Button
+                variant="text"
+                onClick={onOpenBatch}
+                sx={{ textTransform: "none", fontWeight: 600, color: "#0078D4" }}
+              >
+                Or verify a batch of certificates
+              </Button>
+            </Box>
+          )}
 
           <Box
             sx={{
@@ -745,8 +758,8 @@ export default function VerificationPage() {
           <VerdictCard
             verdict={verificationResult.verdict}
             confidence={verificationResult.confidence}
-            trustScore={resolveEngineTrustScore(verificationResult)}
-            aiProbability={resolveAiProbability(verificationResult)}
+            trustScore={verificationResult.engineTrustScore}
+            aiProbability={verificationResult.aiProbability}
             riskLevel={verificationResult.report.riskLevel}
           />
 

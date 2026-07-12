@@ -107,6 +107,17 @@ export interface VerificationResult {
    * Display as "Model Confidence" — not document authenticity / trust.
    */
   confidence: number;
+  /**
+   * Likelihood of AI-generated or AI-altered content (0–100).
+   * Null when the engine does not return a usable score.
+   */
+  aiProbability: number | null;
+  /**
+   * Engine-assessed document trustworthiness (0–100).
+   * Distinct from Model Confidence and from decision-derived report.trustScore.
+   * Null when the engine does not return a trust score.
+   */
+  engineTrustScore: number | null;
   documentType: string | null;
   issuingAuthority: string | null;
   holderName: string | null;

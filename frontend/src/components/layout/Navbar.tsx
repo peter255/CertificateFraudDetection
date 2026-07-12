@@ -1,4 +1,5 @@
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
 
 function BrandMark() {
@@ -23,7 +24,12 @@ function BrandMark() {
   );
 }
 
-export default function Navbar() {
+interface NavbarProps {
+  activeView?: "single" | "batch";
+  onNavigate?: (view: "single" | "batch") => void;
+}
+
+export default function Navbar({ activeView = "single", onNavigate }: NavbarProps) {
   return (
     <Box
       component="header"
@@ -69,36 +75,69 @@ export default function Navbar() {
         </Box>
       </Box>
 
-      <Box
-        sx={{
-          display: { xs: "none", sm: "inline-flex" },
-          alignItems: "center",
-          gap: 1,
-          px: 1.5,
-          py: 0.625,
-          borderRadius: "6px",
-          border: "1px solid #DCFCE7",
-          backgroundColor: "#F0FDF4",
-        }}
-      >
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+        {onNavigate && (
+          <>
+            <Button
+              size="small"
+              onClick={() => onNavigate("single")}
+              sx={{
+                textTransform: "none",
+                fontWeight: 600,
+                fontSize: "0.8125rem",
+                color: activeView === "single" ? "#0078D4" : "#64748B",
+                backgroundColor: activeView === "single" ? "rgba(0,120,212,0.08)" : "transparent",
+              }}
+            >
+              Single
+            </Button>
+            <Button
+              size="small"
+              onClick={() => onNavigate("batch")}
+              sx={{
+                textTransform: "none",
+                fontWeight: 600,
+                fontSize: "0.8125rem",
+                color: activeView === "batch" ? "#0078D4" : "#64748B",
+                backgroundColor: activeView === "batch" ? "rgba(0,120,212,0.08)" : "transparent",
+              }}
+            >
+              Batch verify
+            </Button>
+          </>
+        )}
+
         <Box
           sx={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            backgroundColor: "#107C10",
-          }}
-        />
-        <Typography
-          sx={{
-            fontSize: "0.6875rem",
-            fontWeight: 600,
-            letterSpacing: "0.04em",
-            color: "#166534",
+            display: { xs: "none", sm: "inline-flex" },
+            alignItems: "center",
+            gap: 1,
+            px: 1.5,
+            py: 0.625,
+            borderRadius: "6px",
+            border: "1px solid #DCFCE7",
+            backgroundColor: "#F0FDF4",
           }}
         >
-          Systems Online
-        </Typography>
+          <Box
+            sx={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              backgroundColor: "#107C10",
+            }}
+          />
+          <Typography
+            sx={{
+              fontSize: "0.6875rem",
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+              color: "#166534",
+            }}
+          >
+            Systems Online
+          </Typography>
+        </Box>
       </Box>
     </Box>
   );

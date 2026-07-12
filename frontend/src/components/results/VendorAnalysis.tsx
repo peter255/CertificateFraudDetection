@@ -1,6 +1,7 @@
 /**
  * Engine Analysis — active verification engine results.
  * Displays only Engine V1 / Engine V2 — never vendor or implementation names.
+ * Model Confidence lives in Verification Overview (not repeated here).
  */
 
 import Box from "@mui/material/Box";
@@ -11,7 +12,6 @@ import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import CancelIcon from "@mui/icons-material/Cancel";
 import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
 import type { VendorFinding } from "../../types/verification";
-import { RadialMeter } from "./shared/dashboardCharts";
 import { DASHBOARD, SectionBadge, SectionShell } from "./shared/dashboardShell";
 
 interface StatusStyle {
@@ -88,7 +88,6 @@ function engineDisplayName(raw: string): string {
   if (key === "v2" || key.includes("engine v2") || key === "analysis v2") return "Engine V2";
   if (key === "engine v1") return "Engine V1";
   if (key === "engine v2") return "Engine V2";
-  // Never surface vendor / implementation labels.
   if (key === "analysis" || key === "vendor") return "Engine V1";
   return raw.startsWith("Engine V") ? raw : "Engine V1";
 }
@@ -136,18 +135,11 @@ function EngineCard({ finding }: { finding: VendorFinding }) {
   const engineName = engineDisplayName(finding.vendor);
   const hasStatus = isRealText(finding.status);
   const hasResult = isRealText(finding.processingResult);
-  const hasConfidence =
-    finding.confidenceScore != null && Number.isFinite(finding.confidenceScore);
-  const confidencePct = hasConfidence
-    ? Math.round((finding.confidenceScore as number) * 1000) / 10
-    : null;
-  const additional =
-    finding.additionalFindings?.map((item) => item.trim()).filter(isRealText) ?? [];
 
   const style = resolveStatusStyle(finding.status);
   const { Icon } = style;
 
-  if (!hasStatus && !hasResult && !hasConfidence && additional.length === 0) {
+  if (!hasStatus && !hasResult) {
     return null;
   }
 
@@ -163,18 +155,7 @@ function EngineCard({ finding }: { finding: VendorFinding }) {
         border: `1px solid ${DASHBOARD.borderLight}`,
       }}
     >
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          gap: 2.5,
-          flexWrap: "wrap",
-        }}
-      >
-        {hasConfidence && confidencePct != null && (
-          <RadialMeter value={confidencePct} color={style.color} size={72} />
-        )}
-
+      <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
         <Box sx={{ flex: 1, minWidth: 160 }}>
           <Typography sx={{ fontSize: "1rem", fontWeight: 700, color: DASHBOARD.textPrimary, mb: 0.25 }}>
             {engineName}
@@ -208,60 +189,10 @@ function EngineCard({ finding }: { finding: VendorFinding }) {
             </Box>
           )}
         </Box>
-
-        {hasConfidence && confidencePct != null && (
-          <Typography
-            sx={{
-              fontSize: "0.8125rem",
-              fontWeight: 700,
-              color: style.color,
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {confidencePct}%
-          </Typography>
-        )}
       </Box>
 
       {hasResult && (
         <DetailRow label="Processing Result" value={finding.processingResult!} />
-      )}
-
-      {additional.length > 0 && (
-        <Box>
-          <Typography
-            sx={{
-              fontSize: "0.5625rem",
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: DASHBOARD.textMuted,
-              mb: 1,
-            }}
-          >
-            Additional Findings
-          </Typography>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-            {additional.map((item) => (
-              <Box
-                key={item}
-                sx={{
-                  px: 1.75,
-                  py: 1,
-                  borderRadius: "8px",
-                  backgroundColor: "#FFFFFF",
-                  border: `1px solid ${DASHBOARD.borderLight}`,
-                  fontSize: "0.8125rem",
-                  fontWeight: 500,
-                  color: DASHBOARD.textSecondary,
-                  lineHeight: 1.45,
-                }}
-              >
-                {item}
-              </Box>
-            ))}
-          </Box>
-        </Box>
       )}
     </Box>
   );
@@ -277,11 +208,7 @@ export default function VendorAnalysis({ vendorFindings }: VendorAnalysisProps) 
     .filter(({ finding }) => {
       const hasStatus = isRealText(finding.status);
       const hasResult = isRealText(finding.processingResult);
-      const hasConfidence =
-        finding.confidenceScore != null && Number.isFinite(finding.confidenceScore);
-      const additional =
-        finding.additionalFindings?.map((item) => item.trim()).filter(isRealText) ?? [];
-      return hasStatus || hasResult || hasConfidence || additional.length > 0;
+      return hasStatus || hasResult;
     });
 
   if (cards.length === 0) {

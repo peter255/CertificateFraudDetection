@@ -261,6 +261,12 @@ function buildAssessmentRows(result: VerificationResult): TableRow[] {
   if (Number.isFinite(result.confidence)) {
     rows.push(["Model Confidence", `${result.confidence}%`]);
   }
+  if (result.aiProbability != null && Number.isFinite(result.aiProbability)) {
+    rows.push(["AI Probability", `${result.aiProbability}%`]);
+  }
+  if (result.engineTrustScore != null && Number.isFinite(result.engineTrustScore)) {
+    rows.push(["Trust Score", `${result.engineTrustScore}/100`]);
+  }
   if (result.fraudScore != null && Number.isFinite(result.fraudScore)) {
     rows.push(["Fraud Score", `${result.fraudScore}/100`]);
   }
@@ -270,6 +276,10 @@ function buildAssessmentRows(result: VerificationResult): TableRow[] {
   if (isKnownValue(result.analysisStatus)) {
     rows.push(["Analysis Status", result.analysisStatus]);
   }
+  rows.push([
+    "Score glossary",
+    "Model Confidence = certainty in the prediction. Trust Score = engine document trust. AI Probability = likelihood of AI-generated content.",
+  ]);
   return rows;
 }
 

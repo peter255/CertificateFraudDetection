@@ -226,17 +226,17 @@ def _build_signals(status: str, analysis: TruthScanAnalysisDetails) -> list[Trut
         score_txt = f" (score {analysis.ocr_score})" if analysis.ocr_score is not None else ""
         add("OCR Analysis", f"{analysis.ocr_label}{score_txt}.", ocr_status)
 
-    for note in analysis.metadata_notes[:4]:
+    for note in analysis.metadata_notes:
         note_l = str(note).lower()
         meta_status = "warning" if "no information" in note_l or "could not" in note_l else "pass"
         add("Metadata Integrity", str(note), meta_status)
 
     indicator_status = "pass" if status == "authentic" else "fail"
-    for indicator in analysis.key_indicators[:5]:
+    for indicator in analysis.key_indicators:
         add("AI Indicator", indicator, indicator_status)
 
     pattern_status = "warning" if status == "authentic" else "fail"
-    for pattern in analysis.visual_patterns[:4]:
+    for pattern in analysis.visual_patterns:
         add("Visual Pattern", pattern, pattern_status)
 
     if analysis.detection_step is not None:
@@ -275,7 +275,7 @@ def _build_findings(analysis: TruthScanAnalysisDetails) -> list[TruthScanFinding
         findings.append(
             TruthScanFinding(
                 title="Issues detected",
-                detail="\n".join(f"• {i}" for i in analysis.key_indicators[:8]),
+                detail="\n".join(f"• {i}" for i in analysis.key_indicators),
             )
         )
 
@@ -284,7 +284,7 @@ def _build_findings(analysis: TruthScanAnalysisDetails) -> list[TruthScanFinding
         findings.append(
             TruthScanFinding(
                 title="Evidence on the document",
-                detail="\n".join(f"• {p}" for p in analysis.visual_patterns[:8]),
+                detail="\n".join(f"• {p}" for p in analysis.visual_patterns),
             )
         )
 
@@ -295,7 +295,7 @@ def _build_findings(analysis: TruthScanAnalysisDetails) -> list[TruthScanFinding
         if analysis.ocr_score is not None:
             ocr += f" (score {analysis.ocr_score})"
         risk_bits.append(ocr)
-    for note in analysis.metadata_notes[:4]:
+    for note in analysis.metadata_notes:
         risk_bits.append(str(note))
     if risk_bits:
         findings.append(
@@ -330,7 +330,7 @@ def _build_findings(analysis: TruthScanAnalysisDetails) -> list[TruthScanFinding
         findings.append(
             TruthScanFinding(
                 title="Review notes",
-                detail="\n".join(f"• {r}" for r in analysis.vendor_recommendations[:6]),
+                detail="\n".join(f"• {r}" for r in analysis.vendor_recommendations),
             )
         )
 

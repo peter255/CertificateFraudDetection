@@ -106,7 +106,7 @@ function OverlayLayer({
   onSelectRegion,
 }: OverlayLayerProps) {
   const hasRegions = regions.length > 0;
-  const hasHeatmap = Boolean(heatmapUrl) && !hasRegions;
+  const hasHeatmap = Boolean(heatmapUrl);
 
   if (!hasRegions && !hasHeatmap) {
     return null;
@@ -131,8 +131,8 @@ function OverlayLayer({
             inset: 0,
             width: "100%",
             height: "100%",
-            objectFit: "fill",
-            opacity: 0.55,
+            objectFit: "contain",
+            opacity: hasRegions ? 0.4 : 0.55,
             mixBlendMode: "multiply",
             pointerEvents: "none",
           }}
@@ -491,11 +491,16 @@ function PdfViewer({
     [onLoadSuccess]
   );
 
+  const hasOverlays = pageRegions.length > 0 || Boolean(heatmapUrl);
+
   const handleLoadError = useCallback(() => {
     setIsLoading(false);
-    setUseNativeFallback(true);
+    // Prefer react-pdf path when overlays exist — native iframe cannot draw them.
+    if (!hasOverlays) {
+      setUseNativeFallback(true);
+    }
     onLoadError();
-  }, [onLoadError]);
+  }, [onLoadError, hasOverlays]);
 
   return (
     <Box ref={measureRef} sx={{ ...scrollAreaSx, p: useNativeFallback ? 0 : 2.5, position: "relative" }}>
@@ -523,6 +528,25 @@ function PdfViewer({
             }}
           >
             Loading document…
+          </Typography>
+        </Box>
+      )}
+
+      {!isLoading && !useNativeFallback && baseWidth === 0 && hasOverlays && (
+        <Box
+          sx={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "#EEF2F7",
+            zIndex: 1,
+            px: 3,
+          }}
+        >
+          <Typography sx={{ fontSize: "0.8125rem", color: "#64748B", textAlign: "center" }}>
+            Document preview unavailable — overlays cannot be shown in fallback mode.
           </Typography>
         </Box>
       )}

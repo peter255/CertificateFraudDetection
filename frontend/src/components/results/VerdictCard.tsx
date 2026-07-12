@@ -52,9 +52,11 @@ const RISK_COLOR: Record<RiskLevel, string> = {
 };
 
 const SCORE_COPY = {
-  modelConfidence: "Confidence in the model prediction.",
-  aiProbability: "Likelihood of AI-generated or AI-altered content.",
-  trustScore: "Engine-assessed document trustworthiness.",
+  modelConfidence:
+    "How sure the model is about its own prediction — not how trustworthy the document is.",
+  aiProbability: "Likelihood the content was AI-generated or AI-altered.",
+  trustScore:
+    "Engine-assessed document trustworthiness — independent of model confidence.",
 } as const;
 
 interface VerdictCardProps {

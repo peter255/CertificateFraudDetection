@@ -22,35 +22,25 @@ Verification Engine V1 / V2
 
 Engines return a **technical** classification. The Decision Engine owns the **business** decision shown to the user. UI never reads raw engine status for the final badge.
 
-## 2. Why the previous behavior was confusing
+## 2. Three score concepts (do not conflate)
 
-Previously the UI could show:
+| Score | Meaning | Source |
+|---|---|---|
+| **Model Confidence** | How sure the model is about its own prediction | V1 `confidence_score`; V2 fraud-derived / explicit confidence — never `trust_score` |
+| **Engine Trust Score** | Engine-assessed document trustworthiness | V2 `llm_report.trust_score` (and similar keys) → `result.engineTrustScore` |
+| **Decision trust / risk** | Business mapping from verdict (`report.trustScore` 100/50/0 + risk level) | Decision Engine only — used for risk badge, not the Trust Score gauge |
 
-- Status: **Authentic**
-- Confidence: **8%**
-- Risk: **Medium**
-
-Users read “8%” as “only 8% authentic.” That is incorrect.
-
-The score is the **model’s confidence in its own prediction**, not a measure of how authentic the document is. Showing Authentic next to 8% mixed two different concepts and produced contradictory risk messaging.
-
-## 3. Why “Model Confidence” is more accurate
-
-| Old label | Problem |
+| Related | Meaning |
 |---|---|
-| Trust Score | Sounds like “how much we trust this certificate” |
+| **AI Probability** | Likelihood of AI-generated / AI-altered content | V1 `ml_score`; V2 nested generative / AI probability keys → `result.aiProbability` |
 
-| New label | Meaning |
-|---|---|
-| **Model Confidence** | How confident the AI model is in the prediction it made |
+Example: engine predicts authentic with 8% model confidence → the app does **not** show Trusted. It shows **Suspicious**, Medium Risk, and Model Confidence 8%.
 
-Example: engine predicts authentic with 8% model confidence → the app does **not** show Authentic. It shows **Suspicious**, Medium Risk, and Model Confidence 8%.
-
-## 4. Decision rules
+## 3. Decision rules
 
 Thresholds live only in `thresholds.ts` (`DECISION_THRESHOLDS`, `USER_DECISION_RISK`).
 
-| Engine prediction | Model confidence | User status | Trust / Risk |
+| Engine prediction | Model confidence | User status | Decision trust / Risk |
 |---|---|---|---|
 | Authentic | ≥ `AUTHENTIC_MIN_CONFIDENCE` (40) | Trusted | Trust 100 / Low Risk |
 | Authentic | < 40 | Suspicious | Trust 50 / Medium Risk |
@@ -69,7 +59,7 @@ Combinations that must never appear:
 - Trusted + High Risk
 - Fraudulent + Low Risk
 
-## 5. Files modified / added
+## 4. Files
 
 **Added**
 
@@ -81,12 +71,10 @@ Combinations that must never appear:
 
 **Updated**
 
-- `frontend/src/api/verificationApi.ts` — V1/V2 adapters call Decision Engine
-- `frontend/src/types/verification.ts` — documents `confidence` as model confidence
-- `frontend/src/components/results/VerdictCard.tsx` — Model Confidence label
-- `frontend/src/components/results/shared/dashboardShell.tsx` — banner label
-- `frontend/src/components/results/VendorAnalysis.tsx` — label
-- `frontend/src/utils/downloadReport.ts` — PDF label
+- `frontend/src/api/verificationApi.ts` — V1/V2 adapters call Decision Engine; map `aiProbability` / `engineTrustScore`
+- `frontend/src/types/verification.ts` — documents score fields
+- `frontend/src/components/results/VerdictCard.tsx` — Model Confidence / AI Probability / Trust Score gauges
+- `frontend/src/utils/downloadReport.ts` — PDF labels + glossary
 
 **Not changed**
 
