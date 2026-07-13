@@ -587,21 +587,84 @@ type TamperRegionInput = {
   extras?: Record<string, unknown> | null;
 };
 
+function relatedBBoxCandidate(
+  related: Record<string, unknown>,
+  parent: {
+    id?: string | null;
+    label: string;
+    description: string;
+    severity?: string | null;
+    page?: number | null;
+    imageWidth?: number | null;
+    imageHeight?: number | null;
+    location?: string | null;
+    layer?: string | null;
+    confidence?: number | null;
+    bboxSource?: string | null;
+  },
+  index: number
+): TamperRegionInput | null {
+  const bboxRaw = related.bbox ?? related.bounding_box ?? related.box;
+  if (!asBBox(bboxRaw)) return null;
+
+  const page =
+    typeof related.page === "number" && related.page > 0
+      ? related.page
+      : parent.page;
+  const imageWidth =
+    typeof related.image_width === "number"
+      ? related.image_width
+      : typeof related.imageWidth === "number"
+        ? related.imageWidth
+        : parent.imageWidth;
+  const imageHeight =
+    typeof related.image_height === "number"
+      ? related.image_height
+      : typeof related.imageHeight === "number"
+        ? related.imageHeight
+        : parent.imageHeight;
+
+  return {
+    id: `${parent.id || parent.label}-related-${index}`,
+    label: parent.label,
+    description: parent.description,
+    severity:
+      (typeof related.severity === "string" ? related.severity : null) || parent.severity,
+    bbox: Array.isArray(bboxRaw) ? (bboxRaw as number[]) : null,
+    page,
+    imageWidth,
+    imageHeight,
+    location:
+      (typeof related.location === "string" ? related.location : null) || parent.location,
+    layer: (typeof related.layer === "string" ? related.layer : null) || parent.layer,
+    confidence:
+      typeof related.confidence === "number" ? related.confidence : parent.confidence,
+    bboxSource:
+      (typeof related.bbox_source === "string" ? related.bbox_source : null) ||
+      (typeof related.bboxSource === "string" ? related.bboxSource : null) ||
+      parent.bboxSource,
+    hasImage: null,
+    hasCropImage: null,
+    extras: related,
+  };
+}
+
 function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
   const candidates: TamperRegionInput[] = [];
 
   for (const signal of [...(data.signals || []), ...(data.field_evidence || [])]) {
-    candidates.push({
+    const label =
+      signal.field_label ||
+      signal.field ||
+      signal.type ||
+      signal.check ||
+      "Anomaly";
+    const description = signal.description || signal.type || "Tamper indicator";
+    const parent = {
       id: signal.id,
-      label:
-        signal.field_label ||
-        signal.field ||
-        signal.type ||
-        signal.check ||
-        "Anomaly",
-      description: signal.description || signal.type || "Tamper indicator",
+      label,
+      description,
       severity: signal.severity,
-      bbox: signal.bbox,
       page: signal.page,
       imageWidth: signal.image_width,
       imageHeight: signal.image_height,
@@ -609,9 +672,21 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       layer: signal.layer,
       confidence: signal.confidence,
       bboxSource: signal.bbox_source,
+    };
+
+    candidates.push({
+      ...parent,
+      bbox: signal.bbox,
       hasImage: null,
       hasCropImage: null,
       extras: signal.extras ?? null,
+    });
+
+    // Secondary localization returned by the engine — draw exact boxes only.
+    (signal.related_bboxes || []).forEach((related, index) => {
+      if (!related || typeof related !== "object") return;
+      const candidate = relatedBBoxCandidate(related, parent, index);
+      if (candidate) candidates.push(candidate);
     });
   }
 

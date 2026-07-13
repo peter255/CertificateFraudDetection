@@ -524,12 +524,19 @@ export async function downloadVerificationReport(
     }
   }
 
-  // 6) Evidence (spatial only)
+  // 6) Evidence (spatial only — never invent boxes)
   const regions = (result.tamperRegions || []).filter(
     (r) => Array.isArray(r.bbox) && r.bbox.length === 4 && r.imageWidth > 0 && r.imageHeight > 0
   );
-  if (regions.length || heatmapDataUrl) {
-    y = drawSectionTitle(doc, "Evidence", y);
+  y = drawSectionTitle(doc, "Evidence", y);
+  if (!regions.length && !heatmapDataUrl) {
+    y = ensureSpace(doc, y, 14);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...COLORS.muted);
+    doc.text("No suspicious regions were provided by the verification engine.", 16, y + 4);
+    y += 14;
+  } else if (regions.length || heatmapDataUrl) {
 
     if (regions.length) {
       autoTable(doc, {

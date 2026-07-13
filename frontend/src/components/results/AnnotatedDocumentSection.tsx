@@ -96,18 +96,36 @@ export default function AnnotatedDocumentSection({
             borderBottom: hasOverlays
               ? { xs: `1px solid ${DASHBOARD.border}`, lg: "none" }
               : "none",
+            display: "flex",
+            flexDirection: "column",
           }}
         >
-          <DocumentViewer
-            file={file}
-            regions={validRegions}
-            heatmapUrl={resolvedHeatmap}
-            selectedRegionId={selectedId}
-            onSelectRegion={setSelectedId}
-            currentPage={activePage}
-            onPageChange={setActivePage}
-            hideChrome
-          />
+          {!hasOverlays && (
+            <Box
+              sx={{
+                px: 2.5,
+                py: 1.75,
+                borderBottom: `1px solid ${DASHBOARD.borderLight}`,
+                backgroundColor: "#FAFBFD",
+              }}
+            >
+              <Typography sx={{ fontSize: "0.875rem", color: DASHBOARD.textSecondary, lineHeight: 1.5 }}>
+                No suspicious regions were provided by the verification engine.
+              </Typography>
+            </Box>
+          )}
+          <Box sx={{ flex: 1, minHeight: 0 }}>
+            <DocumentViewer
+              file={file}
+              regions={validRegions}
+              heatmapUrl={resolvedHeatmap}
+              selectedRegionId={selectedId}
+              onSelectRegion={setSelectedId}
+              currentPage={activePage}
+              onPageChange={setActivePage}
+              hideChrome
+            />
+          </Box>
         </Box>
 
         {hasOverlays && (
