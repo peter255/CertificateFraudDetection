@@ -1,10 +1,11 @@
 /**
- * Shared visual shell for investigation dashboard sections.
+ * Shared visual shell for VERISCAN investigation dashboard sections.
  */
 
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import type { ReactNode } from "react";
+import { VS } from "../../../theme";
 import {
   ORGANIZATION_NAME,
   PRODUCT_NAME,
@@ -12,25 +13,26 @@ import {
 } from "../../../branding/constants";
 
 export const DASHBOARD = {
-  accent: "#0078D4",
-  accentGlow: "rgba(0,120,212,0.12)",
-  navy: "#0F2942",
-  navyMid: "#163A5F",
-  slate: "#334155",
-  cardBg: "#FFFFFF",
-  panelBg: "#F4F7FB",
-  border: "#E2E8F0",
-  borderLight: "#EEF2F7",
-  textPrimary: "#0F172A",
-  textSecondary: "#64748B",
-  textMuted: "#94A3B8",
-  success: "#107C10",
-  warning: "#D97706",
-  danger: "#C50F1F",
-  cardShadow: "0 1px 2px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.04)",
-  cardShadowHover: "0 2px 4px rgba(15,23,42,0.05), 0 8px 24px rgba(15,23,42,0.06)",
-  headerGradient: "linear-gradient(180deg, #0F2942 0%, #163A5F 100%)",
-  accentStripe: "#0078D4",
+  accent: VS.accent,
+  accentGlow: VS.accentDim,
+  navy: VS.bgElevated,
+  navyMid: VS.bgCard,
+  slate: VS.textSecondary,
+  cardBg: VS.bgCard,
+  panelBg: VS.bgPanel,
+  border: VS.border,
+  borderLight: VS.border,
+  textPrimary: VS.text,
+  textSecondary: VS.textSecondary,
+  textMuted: VS.textMuted,
+  success: VS.success,
+  warning: VS.warning,
+  danger: VS.danger,
+  cardShadow: "none",
+  cardShadowHover: `0 0 24px ${VS.accentGlow}`,
+  headerGradient: `linear-gradient(180deg, ${VS.bgElevated} 0%, ${VS.bgCard} 100%)`,
+  accentStripe: VS.accent,
+  mono: VS.mono,
 } as const;
 
 interface SectionShellProps {
@@ -40,7 +42,6 @@ interface SectionShellProps {
   accentColor?: string;
   children: ReactNode;
   noPadding?: boolean;
-  /** Primary sections keep a soft left accent; secondary stay quieter. */
   emphasis?: "primary" | "secondary";
 }
 
@@ -62,7 +63,7 @@ export function SectionShell({
         border: `1px solid ${DASHBOARD.border}`,
         borderRadius: "12px",
         overflow: "hidden",
-        boxShadow: isPrimary ? DASHBOARD.cardShadow : "none",
+        boxShadow: "none",
         position: "relative",
       }}
     >
@@ -82,8 +83,8 @@ export function SectionShell({
 
       <Box
         sx={{
-          backgroundColor: isPrimary ? "#F8FAFC" : "#FFFFFF",
-          borderBottom: `1px solid ${DASHBOARD.borderLight}`,
+          backgroundColor: isPrimary ? "rgba(255,255,255,0.02)" : DASHBOARD.cardBg,
+          borderBottom: `1px solid ${DASHBOARD.border}`,
           display: "flex",
           alignItems: "center",
           gap: 1.25,
@@ -97,11 +98,11 @@ export function SectionShell({
             width: 28,
             height: 28,
             borderRadius: "7px",
-            backgroundColor: isPrimary ? "rgba(0,120,212,0.08)" : "#F1F5F9",
+            backgroundColor: isPrimary ? `${accentColor}22` : "rgba(255,255,255,0.04)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: isPrimary ? DASHBOARD.accent : DASHBOARD.textSecondary,
+            color: isPrimary ? accentColor : DASHBOARD.textSecondary,
             flexShrink: 0,
           }}
         >
@@ -137,10 +138,12 @@ export function SectionShell({
 
 export function SectionBadge({
   children,
-  color = "#F1F5F9",
+  color = "rgba(255,255,255,0.06)",
+  textColor,
 }: {
   children: ReactNode;
   color?: string;
+  textColor?: string;
 }) {
   return (
     <Box
@@ -149,7 +152,7 @@ export function SectionBadge({
         py: 0.35,
         borderRadius: "6px",
         backgroundColor: color,
-        border: `1px solid ${DASHBOARD.borderLight}`,
+        border: `1px solid ${DASHBOARD.border}`,
         flexShrink: 0,
       }}
     >
@@ -159,7 +162,7 @@ export function SectionBadge({
           fontWeight: 600,
           letterSpacing: "0.05em",
           textTransform: "uppercase",
-          color: DASHBOARD.textSecondary,
+          color: textColor ?? DASHBOARD.textSecondary,
           lineHeight: 1.2,
         }}
       >
@@ -207,7 +210,7 @@ export function InvestigationBanner({
       sx={{
         backgroundColor: DASHBOARD.navy,
         borderRadius: "12px",
-        border: "1px solid rgba(255,255,255,0.06)",
+        border: `1px solid ${DASHBOARD.border}`,
         overflow: "hidden",
         position: "relative",
       }}
@@ -215,7 +218,7 @@ export function InvestigationBanner({
       <Box
         sx={{
           height: 3,
-          background: "linear-gradient(90deg, #0078D4 0%, rgba(255,255,255,0.35) 100%)",
+          background: `linear-gradient(90deg, ${VS.accent} 0%, rgba(255,255,255,0.2) 100%)`,
         }}
       />
 
@@ -237,11 +240,12 @@ export function InvestigationBanner({
               fontWeight: 600,
               letterSpacing: "0.12em",
               textTransform: "uppercase",
-              color: "rgba(255,255,255,0.5)",
+              color: VS.accent,
+              fontFamily: VS.mono,
               mb: 0.75,
             }}
           >
-            Official Investigation Document
+            Forensic Analysis Report
           </Typography>
           <Typography
             sx={{
@@ -264,62 +268,18 @@ export function InvestigationBanner({
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
               maxWidth: { xs: "100%", sm: 560 },
+              fontFamily: VS.mono,
             }}
           >
             {fileName}
           </Typography>
-        </Box>
-
-        {/* Verification seal — decorative */}
-        <Box
-          aria-hidden
-          sx={{
-            width: 56,
-            height: 56,
-            flexShrink: 0,
-            borderRadius: "50%",
-            border: "1.5px solid rgba(255,255,255,0.22)",
-            display: { xs: "none", sm: "flex" },
-            alignItems: "center",
-            justifyContent: "center",
-            background:
-              "radial-gradient(circle at 40% 35%, rgba(255,255,255,0.12) 0%, transparent 70%)",
-          }}
-        >
-          <Box
-            sx={{
-              width: 40,
-              height: 40,
-              borderRadius: "50%",
-              border: "1px dashed rgba(255,255,255,0.28)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Typography
-              sx={{
-                fontSize: "0.5rem",
-                fontWeight: 700,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: "rgba(255,255,255,0.7)",
-                textAlign: "center",
-                lineHeight: 1.2,
-              }}
-            >
-              Verified
-              <br />
-              Seal
-            </Typography>
-          </Box>
         </Box>
       </Box>
 
       <Box
         sx={{
           mx: { xs: 2.25, sm: 3 },
-          borderTop: "1px solid rgba(255,255,255,0.1)",
+          borderTop: `1px solid ${DASHBOARD.border}`,
         }}
       />
 
@@ -360,9 +320,7 @@ export function InvestigationBanner({
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
                 fontFamily:
-                  row.label === "Verification ID"
-                    ? "ui-monospace, SFMono-Regular, Menlo, monospace"
-                    : "inherit",
+                  row.label === "Verification ID" ? VS.mono : "inherit",
               }}
               title={row.value}
             >

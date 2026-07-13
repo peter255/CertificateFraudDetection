@@ -1,10 +1,7 @@
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
-import {
-  ORGANIZATION_NAME,
-  PRODUCT_NAME,
-  PRODUCT_PILLARS,
-} from "../../branding/constants";
+import { PRODUCT_NAME, PRODUCT_PILLARS } from "../../branding/constants";
+import { VS } from "../../theme";
 
 export default function Footer() {
   return (
@@ -13,29 +10,20 @@ export default function Footer() {
       sx={{
         position: "relative",
         zIndex: 1,
-        py: 3.5,
-        borderTop: "1px solid #E2E8F0",
-        backgroundColor: "#FFFFFF",
+        py: 2.5,
+        borderTop: `1px solid ${VS.border}`,
+        backgroundColor: "transparent",
         textAlign: "center",
       }}
     >
-      <Box
-        sx={{
-          width: 48,
-          height: 2,
-          mx: "auto",
-          mb: 2,
-          background: "linear-gradient(90deg, transparent, #0F2942, transparent)",
-          opacity: 0.35,
-        }}
-      />
       <Typography
         sx={{
-          fontSize: "0.75rem",
+          fontSize: "0.6875rem",
           fontWeight: 600,
-          letterSpacing: "0.06em",
+          letterSpacing: "0.14em",
           textTransform: "uppercase",
-          color: "#0F172A",
+          color: VS.textMuted,
+          fontFamily: VS.mono,
           mb: 0.5,
         }}
       >
@@ -43,12 +31,13 @@ export default function Footer() {
       </Typography>
       <Typography
         sx={{
-          fontSize: "0.8125rem",
-          color: "#64748B",
-          lineHeight: 1.6,
+          fontSize: "0.6875rem",
+          color: VS.textMuted,
+          letterSpacing: "0.04em",
+          fontFamily: VS.mono,
         }}
       >
-        {ORGANIZATION_NAME} · {PRODUCT_PILLARS}
+        {PRODUCT_PILLARS}
       </Typography>
     </Box>
   );

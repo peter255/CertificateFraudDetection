@@ -24,22 +24,22 @@ interface StatusStyle {
 const STATUS_STYLE: Record<SignalStatus, StatusStyle> = {
   fail: {
     label: "Failed",
-    color: "#C50F1F",
-    bgColor: "#FEF2F2",
+    color: "#FF4B6B",
+    bgColor: "rgba(255,75,107,0.12)",
     Icon: CancelIcon,
     sortOrder: 0,
   },
   warning: {
     label: "Warning",
-    color: "#D97706",
-    bgColor: "#FFFBEB",
+    color: "#F5A524",
+    bgColor: "rgba(245,165,36,0.12)",
     Icon: WarningAmberIcon,
     sortOrder: 1,
   },
   pass: {
     label: "Passed",
-    color: "#107C10",
-    bgColor: "#ECFDF5",
+    color: "#00E676",
+    bgColor: "rgba(0,230,118,0.12)",
     Icon: CheckCircleIcon,
     sortOrder: 2,
   },

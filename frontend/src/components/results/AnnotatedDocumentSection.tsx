@@ -69,6 +69,7 @@ export default function AnnotatedDocumentSection({
   }, [validRegions, selectedId]);
 
   const selected = validRegions.find((r) => r.id === selectedId) ?? null;
+  void selected;
 
   // Jump to the region's page when selection changes. Do not depend on
   // activePage — that fought toolbar prev/next and always snapped back.

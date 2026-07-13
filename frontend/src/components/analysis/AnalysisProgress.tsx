@@ -1,93 +1,37 @@
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
-import LinearProgress from "@mui/material/LinearProgress";
-import { PRODUCT_NAME } from "../../branding/constants";
+import CircularProgress from "@mui/material/CircularProgress";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
+import { VS } from "../../theme";
 
-const ANALYSIS_STEPS = [
-  "Uploading document",
-  "Reading document structure",
-  "Inspecting metadata",
-  "Verifying authenticity",
-  "Generating AI report",
-];
+export const ANALYSIS_STAGES = [
+  {
+    title: "OCR Text Extraction",
+    description: "Parsing glyphs, layout, and metadata",
+  },
+  {
+    title: "LLM Logic Consistency",
+    description: "Cross-checking dates, IDs, and grades",
+  },
+  {
+    title: "Text Manipulation API",
+    description: "Detecting edits and font substitutions",
+  },
+  {
+    title: "Image Manipulation API",
+    description: "Copy-move, splicing, resampling",
+  },
+  {
+    title: "File Structure Verification",
+    description: "XMP, incremental saves, embedded fonts",
+  },
+  {
+    title: "LLM Consolidation",
+    description: "Synthesizing evidence into a verdict",
+  },
+] as const;
 
 type StepStatus = "complete" | "active" | "pending";
-
-function CompleteDot() {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      width="16"
-      height="16"
-      fill="none"
-      style={{ flexShrink: 0 }}
-    >
-      <circle cx="8" cy="8" r="8" fill="#16A34A" />
-      <path
-        d="M4.5 8L7 10.5L11.5 5.5"
-        stroke="white"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function StepDot({ status }: { status: StepStatus }) {
-  if (status === "complete") return <CompleteDot />;
-
-  if (status === "active") {
-    return (
-      <Box
-        sx={{
-          width: 16,
-          height: 16,
-          borderRadius: "50%",
-          border: "2px solid #0078D4",
-          flexShrink: 0,
-          position: "relative",
-          "@keyframes activePulse": {
-            "0%, 100%": { opacity: 1 },
-            "50%": { opacity: 0.35 },
-          },
-          animation: "activePulse 1.6s ease-in-out infinite",
-        }}
-      />
-    );
-  }
-
-  return (
-    <Box
-      sx={{
-        width: 16,
-        height: 16,
-        borderRadius: "50%",
-        border: "1.5px solid #D1D5DB",
-        flexShrink: 0,
-      }}
-    />
-  );
-}
-
-function LiveIndicator() {
-  return (
-    <Box
-      sx={{
-        width: 7,
-        height: 7,
-        borderRadius: "50%",
-        backgroundColor: "#0078D4",
-        flexShrink: 0,
-        "@keyframes liveBlink": {
-          "0%, 100%": { opacity: 1 },
-          "50%": { opacity: 0.15 },
-        },
-        animation: "liveBlink 1.4s ease-in-out infinite",
-      }}
-    />
-  );
-}
 
 interface AnalysisProgressProps {
   currentStep: number;
@@ -96,144 +40,146 @@ interface AnalysisProgressProps {
 
 export default function AnalysisProgress({
   currentStep,
-  progress,
 }: AnalysisProgressProps) {
-  const activeIndex = Math.min(currentStep, ANALYSIS_STEPS.length - 1);
-  const currentLabel = ANALYSIS_STEPS[activeIndex];
-  const isFinishing = currentStep >= ANALYSIS_STEPS.length;
-
   return (
     <Box
       sx={{
-        backgroundColor: "background.paper",
-        border: "1px solid",
-        borderColor: "divider",
-        borderRadius: "14px",
-        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        gap: 1.25,
         "@keyframes apFadeUp": {
-          from: { opacity: 0, transform: "translateY(14px)" },
+          from: { opacity: 0, transform: "translateY(10px)" },
           to: { opacity: 1, transform: "translateY(0)" },
         },
         animation: "apFadeUp 0.35s ease-out",
       }}
     >
-      {/* Live status header */}
-      <Box
+      <Typography
         sx={{
-          px: { xs: 3, sm: 4 },
-          pt: 3.5,
-          pb: 3,
-          borderBottom: "1px solid",
-          borderColor: "divider",
+          fontSize: "0.8125rem",
+          color: VS.textSecondary,
+          mb: 0.75,
+          lineHeight: 1.5,
         }}
       >
-        <Typography
-          sx={{
-            fontSize: "0.625rem",
-            fontWeight: 700,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "#94A3B8",
-            mb: 1.25,
-          }}
-        >
-          {PRODUCT_NAME}
-        </Typography>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            mb: 0.75,
-          }}
-        >
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
-            {!isFinishing && <LiveIndicator />}
-            <Typography
-              sx={{
-                fontSize: "0.9375rem",
-                fontWeight: 600,
-                color: "text.primary",
-                letterSpacing: "-0.01em",
-              }}
-            >
-              {isFinishing ? "Analysis complete" : currentLabel}
-            </Typography>
-          </Box>
-          <Typography
-            sx={{
-              fontSize: "0.75rem",
-              fontWeight: 500,
-              color: "text.secondary",
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {Math.min(currentStep, ANALYSIS_STEPS.length)} of{" "}
-            {ANALYSIS_STEPS.length}
-          </Typography>
-        </Box>
-        <LinearProgress
-          variant="determinate"
-          value={progress}
-          sx={{
-            height: 2,
-            borderRadius: 1,
-            mt: 1.5,
-            backgroundColor: "#F1F5F9",
-            "& .MuiLinearProgress-bar": {
-              borderRadius: 1,
-              backgroundColor: "#0078D4",
-              transition: "transform 0.6s ease",
-            },
-          }}
-        />
-      </Box>
+        Six stages, executed in sequence. Do not close this window.
+      </Typography>
 
-      {/* Steps list */}
-      <Box
-        sx={{
-          px: { xs: 3, sm: 4 },
-          py: 3,
-          display: "flex",
-          flexDirection: "column",
-          gap: 2.25,
-        }}
-      >
-        {ANALYSIS_STEPS.map((step, index) => {
-          const status: StepStatus =
-            index < currentStep
-              ? "complete"
-              : index === currentStep
+      {ANALYSIS_STAGES.map((stage, index) => {
+        const status: StepStatus =
+          index < currentStep
+            ? "complete"
+            : index === currentStep
               ? "active"
               : "pending";
 
-          return (
+        return (
+          <Box
+            key={stage.title}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1.75,
+              px: 2,
+              py: 1.75,
+              borderRadius: "10px",
+              border: "1px solid",
+              borderColor:
+                status === "active"
+                  ? VS.accent
+                  : status === "complete"
+                    ? "rgba(255,255,255,0.08)"
+                    : "rgba(255,255,255,0.05)",
+              backgroundColor:
+                status === "active"
+                  ? VS.accentDim
+                  : status === "complete"
+                    ? "rgba(255,255,255,0.03)"
+                    : "rgba(255,255,255,0.015)",
+              opacity: status === "pending" ? 0.45 : 1,
+              transition: "border-color 0.3s ease, opacity 0.3s ease, background-color 0.3s ease",
+              boxShadow:
+                status === "active" ? `0 0 20px ${VS.accentGlow}` : "none",
+            }}
+          >
             <Box
-              key={step}
               sx={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
                 display: "flex",
                 alignItems: "center",
-                gap: 1.75,
-                opacity: status === "pending" ? 0.3 : 1,
-                transition: "opacity 0.4s ease",
+                justifyContent: "center",
+                flexShrink: 0,
+                backgroundColor:
+                  status === "complete" ? VS.accent : "transparent",
+                border:
+                  status === "active"
+                    ? `2px solid ${VS.accent}`
+                    : status === "pending"
+                      ? "1.5px solid rgba(255,255,255,0.2)"
+                      : "none",
               }}
             >
-              <StepDot status={status} />
+              {status === "complete" && (
+                <CheckRoundedIcon sx={{ fontSize: 16, color: VS.bg }} />
+              )}
+              {status === "active" && (
+                <CircularProgress
+                  size={14}
+                  thickness={5}
+                  sx={{ color: VS.accent }}
+                />
+              )}
+            </Box>
+
+            <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography
                 sx={{
-                  fontSize: "0.875rem",
-                  fontWeight: status === "complete" ? 400 : status === "active" ? 500 : 400,
-                  color: status === "complete" ? "text.secondary" : "text.primary",
-                  transition: "color 0.3s ease",
-                  textDecoration: status === "complete" ? "none" : "none",
+                  fontSize: "0.9375rem",
+                  fontWeight: 600,
+                  color: VS.text,
+                  lineHeight: 1.3,
+                  mb: 0.25,
                 }}
               >
-                {step}
+                {stage.title}
+              </Typography>
+              <Typography
+                sx={{
+                  fontSize: "0.8125rem",
+                  color: VS.textSecondary,
+                  lineHeight: 1.4,
+                }}
+              >
+                {stage.description}
               </Typography>
             </Box>
-          );
-        })}
-      </Box>
+
+            <Typography
+              sx={{
+                fontSize: "0.6875rem",
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+                color:
+                  status === "active"
+                    ? VS.accent
+                    : status === "complete"
+                      ? VS.textMuted
+                      : VS.textMuted,
+                fontFamily: VS.mono,
+                flexShrink: 0,
+              }}
+            >
+              {status === "complete"
+                ? "COMPLETE"
+                : status === "active"
+                  ? "PROCESSING"
+                  : "PENDING"}
+            </Typography>
+          </Box>
+        );
+      })}
     </Box>
   );
 }

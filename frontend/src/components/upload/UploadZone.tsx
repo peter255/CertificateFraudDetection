@@ -2,6 +2,7 @@ import { useRef, useState, useCallback } from "react";
 import type { DragEvent, ChangeEvent } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
+import { VS } from "../../theme";
 
 const ACCEPTED_TYPES = [
   "application/pdf",
@@ -14,33 +15,21 @@ interface UploadZoneProps {
   onFileSelected: (file: File) => void;
 }
 
-function UploadIcon({ active }: { active: boolean }) {
+function CloudUploadIcon({ active }: { active: boolean }) {
+  const stroke = active ? VS.accent : "#C5CCD3";
   return (
-    <svg
-      viewBox="0 0 48 48"
-      width="48"
-      height="48"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      style={{ transition: "transform 180ms ease", transform: active ? "translateY(-2px)" : "none" }}
-    >
-      <rect
-        x="8"
-        y="6"
-        width="24"
-        height="30"
-        rx="3"
-        fill={active ? "rgba(0,120,212,0.08)" : "#F8FAFC"}
-        stroke={active ? "#0078D4" : "#CBD5E1"}
-        strokeWidth="1.5"
-      />
-      <rect x="13" y="10" width="14" height="2" rx="1" fill={active ? "#0078D4" : "#94A3B8"} />
-      <rect x="13" y="15" width="10" height="2" rx="1" fill={active ? "#2B88D8" : "#CBD5E1"} />
-      <circle cx="35" cy="35" r="10" fill="#0078D4" />
+    <svg width="40" height="40" viewBox="0 0 48 48" fill="none">
       <path
-        d="M35 31v8M35 31l-3 3M35 31l3 3"
-        stroke="white"
-        strokeWidth="1.75"
+        d="M16 32h-1.5A8.5 8.5 0 0116 15.1 12 12 0 0138.4 18 7.5 7.5 0 0136.5 32H32"
+        stroke={stroke}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M24 34V20M24 20l-5 5M24 20l5 5"
+        stroke={stroke}
+        strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -111,81 +100,54 @@ export default function UploadZone({ onFileSelected }: UploadZoneProps) {
         onDragLeave={handleDragLeave}
         sx={{
           cursor: "pointer",
-          borderRadius: "14px",
+          borderRadius: "12px",
           border: "1.5px dashed",
-          borderColor: isDragging ? "#0078D4" : "#C5D3E0",
-          backgroundColor: isDragging ? "rgba(0,120,212,0.04)" : "#FFFFFF",
-          boxShadow: isDragging
-            ? "0 0 0 3px rgba(0,120,212,0.1), 0 8px 24px rgba(15,23,42,0.06)"
-            : "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px rgba(15,23,42,0.04)",
+          borderColor: isDragging ? VS.accent : "rgba(255,255,255,0.18)",
+          backgroundColor: isDragging
+            ? VS.accentDim
+            : "rgba(255,255,255,0.02)",
           px: { xs: 3, sm: 5 },
-          py: { xs: 4.5, sm: 5.5 },
+          py: { xs: 5, sm: 6 },
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          gap: 2,
-          transition: "border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease",
+          gap: 1.75,
+          transition:
+            "border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease",
           "&:hover": {
-            borderColor: "#0078D4",
-            transform: "translateY(-1px)",
-            boxShadow: "0 2px 4px rgba(15,23,42,0.04), 0 12px 28px rgba(15,23,42,0.06)",
+            borderColor: VS.accent,
+            backgroundColor: VS.accentDim,
           },
         }}
       >
-        <UploadIcon active={isDragging} />
+        <CloudUploadIcon active={isDragging} />
 
         <Box sx={{ textAlign: "center" }}>
           <Typography
             sx={{
               fontSize: "1.0625rem",
               fontWeight: 600,
-              color: "#0F172A",
-              mb: 0.75,
+              color: VS.text,
+              mb: 1,
               lineHeight: 1.4,
             }}
           >
-            {isDragging ? "Release to upload" : "Drag & drop a certificate"}
+            {isDragging
+              ? "Release to upload"
+              : "Drop PDF or high-resolution JPEG / PNG"}
           </Typography>
-          <Typography sx={{ fontSize: "0.875rem", color: "#64748B", lineHeight: 1.6 }}>
-            or{" "}
-            <Box
-              component="span"
-              sx={{
-                color: "#0078D4",
-                fontWeight: 600,
-                textDecoration: "underline",
-                textUnderlineOffset: "3px",
-              }}
-            >
-              browse files
-            </Box>
+          <Typography
+            sx={{
+              fontSize: "0.6875rem",
+              fontWeight: 500,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: VS.textMuted,
+              fontFamily: VS.mono,
+            }}
+          >
+            MAX 50MB · ENCRYPTED IN TRANSIT
           </Typography>
-        </Box>
-
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          {["PDF", "JPG", "PNG"].map((fmt) => (
-            <Box
-              key={fmt}
-              sx={{
-                px: 1.25,
-                py: 0.375,
-                borderRadius: "6px",
-                border: "1px solid #E2E8F0",
-                backgroundColor: "#F8FAFC",
-              }}
-            >
-              <Typography
-                sx={{
-                  fontSize: "0.625rem",
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  color: "#64748B",
-                }}
-              >
-                {fmt}
-              </Typography>
-            </Box>
-          ))}
         </Box>
       </Box>
     </>

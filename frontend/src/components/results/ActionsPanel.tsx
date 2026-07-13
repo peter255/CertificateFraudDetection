@@ -9,6 +9,7 @@ import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import ReplayIcon from "@mui/icons-material/Replay";
 import { useState } from "react";
 import { DASHBOARD } from "./shared/dashboardShell";
+import { VS } from "../../theme";
 import type { VerificationResult } from "../../types/verification";
 import { downloadVerificationReport } from "../../utils/downloadReport";
 
@@ -68,12 +69,12 @@ export default function ActionsPanel({
           lineHeight: 1.6,
         }}
       >
-        Download the fraud detection report or verify another document.
+        Download the forensic report or start a new analysis.
       </Typography>
 
       <Box sx={{ display: "flex", gap: 1.25, flexDirection: { xs: "column", sm: "row" } }}>
         <Button
-          variant="outlined"
+          variant="contained"
           startIcon={<DownloadOutlinedIcon />}
           onClick={handleDownload}
           disabled={downloading}
@@ -82,12 +83,15 @@ export default function ActionsPanel({
             minWidth: 0,
             height: 44,
             borderRadius: "8px",
+            backgroundColor: VS.danger,
+            color: "#fff",
+            "&:hover": { backgroundColor: "#E03555" },
           }}
         >
-          {downloading ? "Preparing PDF..." : "Download Fraud Detection Report"}
+          {downloading ? "Preparing PDF..." : "Export Full Report"}
         </Button>
         <Button
-          variant="contained"
+          variant="outlined"
           startIcon={<ReplayIcon />}
           onClick={onVerifyAnother}
           sx={{
@@ -97,7 +101,7 @@ export default function ActionsPanel({
             borderRadius: "8px",
           }}
         >
-          Verify Another
+          New Analysis
         </Button>
       </Box>
     </Box>

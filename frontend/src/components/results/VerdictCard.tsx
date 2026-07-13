@@ -25,31 +25,31 @@ const VERDICT_CONFIG: Record<VerdictType, VerdictConfig> = {
   authentic: {
     label: "Trusted",
     description: "Analysis supports authenticity.",
-    color: "#107C10",
-    bgGradient: "linear-gradient(180deg, #F0FDF4 0%, #FFFFFF 100%)",
+    color: "#00E676",
+    bgGradient: "linear-gradient(180deg, rgba(0,230,118,0.08) 0%, #14181b 100%)",
     Icon: CheckCircleIcon,
   },
   suspicious: {
     label: "Suspicious",
     description: "Result is uncertain — manual review recommended.",
-    color: "#D97706",
-    bgGradient: "linear-gradient(180deg, #FFFBEB 0%, #FFFFFF 100%)",
+    color: "#F5A524",
+    bgGradient: "linear-gradient(180deg, rgba(245,165,36,0.08) 0%, #14181b 100%)",
     Icon: WarningAmberIcon,
   },
   fraudulent: {
     label: "Potentially Fraudulent",
     description: "Strong indicators of tampering or forgery.",
-    color: "#C50F1F",
-    bgGradient: "linear-gradient(180deg, #FEF2F2 0%, #FFFFFF 100%)",
+    color: "#FF4B6B",
+    bgGradient: "linear-gradient(180deg, rgba(255,75,107,0.08) 0%, #14181b 100%)",
     Icon: CancelIcon,
   },
 };
 
 const RISK_LABEL: Record<RiskLevel, string> = { low: "Low", medium: "Medium", high: "High" };
 const RISK_COLOR: Record<RiskLevel, string> = {
-  low: "#107C10",
-  medium: "#D97706",
-  high: "#C50F1F",
+  low: "#00E676",
+  medium: "#F5A524",
+  high: "#FF4B6B",
 };
 
 const SCORE_COPY = {

@@ -370,10 +370,10 @@ function Toolbar({
 }: ToolbarProps) {
   const isFit = Math.abs(zoom - ZOOM_FIT) < 0.001;
   const btnSx = {
-    color: "#475569",
+    color: "#9AA3AD",
     borderRadius: "7px",
-    "&:hover": { backgroundColor: "#E8EEF5" },
-    "&.Mui-disabled": { color: "#CBD5E1" },
+    "&:hover": { backgroundColor: "rgba(255,255,255,0.06)" },
+    "&.Mui-disabled": { color: "#4A525A" },
   };
 
   return (
@@ -384,8 +384,8 @@ function Toolbar({
         gap: 0.25,
         px: 1.5,
         py: 0.875,
-        borderBottom: "1px solid #E2E8F0",
-        backgroundColor: "#F8FAFC",
+        borderBottom: "1px solid rgba(255,255,255,0.08)",
+        backgroundColor: "#111416",
         flexShrink: 0,
         minHeight: 44,
       }}
@@ -407,7 +407,7 @@ function Toolbar({
         sx={{
           fontSize: "0.6875rem",
           fontWeight: 600,
-          color: "#334155",
+          color: "#F4F7FA",
           fontVariantNumeric: "tabular-nums",
           minWidth: 36,
           textAlign: "center",
@@ -438,8 +438,8 @@ function Toolbar({
             disabled={disabled}
             sx={{
               ...btnSx,
-              color: isFit ? "#0078D4" : btnSx.color,
-              backgroundColor: isFit ? "rgba(0,120,212,0.08)" : "transparent",
+              color: isFit ? "#00FFA3" : btnSx.color,
+              backgroundColor: isFit ? "rgba(0,255,163,0.12)" : "transparent",
             }}
           >
             <FitScreenIcon sx={{ fontSize: 18 }} />
@@ -449,7 +449,7 @@ function Toolbar({
 
       {showPageNav && (
         <>
-          <Box sx={{ width: "1px", height: 16, backgroundColor: "#E2E8F0", mx: 0.75, flexShrink: 0 }} />
+          <Box sx={{ width: "1px", height: 16, backgroundColor: "rgba(255,255,255,0.12)", mx: 0.75, flexShrink: 0 }} />
           <Tooltip title="Previous page">
             <span>
               <IconButton
@@ -466,7 +466,7 @@ function Toolbar({
             sx={{
               fontSize: "0.6875rem",
               fontWeight: 600,
-              color: "#475569",
+              color: "#9AA3AD",
               fontVariantNumeric: "tabular-nums",
               userSelect: "none",
               whiteSpace: "nowrap",
@@ -500,8 +500,8 @@ function Toolbar({
               onClick={onToggleDebug}
               sx={{
                 ...btnSx,
-                color: debug ? "#16A34A" : btnSx.color,
-                backgroundColor: debug ? "rgba(22,163,74,0.12)" : "transparent",
+                color: debug ? "#00FFA3" : btnSx.color,
+                backgroundColor: debug ? "rgba(0,255,163,0.12)" : "transparent",
               }}
             >
               <BugReportIcon sx={{ fontSize: 18 }} />
@@ -524,7 +524,7 @@ function EmptyState() {
         justifyContent: "center",
         gap: 1.75,
         px: 4,
-        backgroundColor: "#F8FAFC",
+        backgroundColor: "#0e1113",
       }}
     >
       <Box
@@ -532,20 +532,20 @@ function EmptyState() {
           width: 64,
           height: 64,
           borderRadius: "14px",
-          backgroundColor: "#FFFFFF",
-          border: "1px solid #E2E8F0",
+          backgroundColor: "#14181b",
+          border: "1px solid rgba(255,255,255,0.08)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <DescriptionOutlinedIcon sx={{ fontSize: 28, color: "#94A3B8" }} />
+        <DescriptionOutlinedIcon sx={{ fontSize: 28, color: "#6B737C" }} />
       </Box>
       <Box sx={{ textAlign: "center" }}>
-        <Typography sx={{ fontSize: "0.9375rem", fontWeight: 600, color: "#334155", mb: 0.5 }}>
+        <Typography sx={{ fontSize: "0.9375rem", fontWeight: 600, color: "#F4F7FA", mb: 0.5 }}>
           No document loaded
         </Typography>
-        <Typography sx={{ fontSize: "0.8125rem", color: "#94A3B8", lineHeight: 1.55 }}>
+        <Typography sx={{ fontSize: "0.8125rem", color: "#6B737C", lineHeight: 1.55 }}>
           Upload a certificate to begin fraud detection analysis
         </Typography>
       </Box>
@@ -942,8 +942,8 @@ function ViewerHeader({ file }: { file: File | null }) {
       sx={{
         px: 2.5,
         py: 1.75,
-        borderBottom: "1px solid #E2E8F0",
-        backgroundColor: "#FFFFFF",
+        borderBottom: "1px solid rgba(255,255,255,0.08)",
+        backgroundColor: "#14181b",
         display: "flex",
         alignItems: "center",
         gap: 1.25,
@@ -956,7 +956,8 @@ function ViewerHeader({ file }: { file: File | null }) {
           width: 7,
           height: 7,
           borderRadius: "50%",
-          backgroundColor: file ? "#107C10" : "#CBD5E1",
+          backgroundColor: file ? "#00FFA3" : "#4A525A",
+          boxShadow: file ? "0 0 8px rgba(0,255,163,0.45)" : "none",
           flexShrink: 0,
         }}
       />
@@ -966,7 +967,7 @@ function ViewerHeader({ file }: { file: File | null }) {
           fontWeight: 600,
           letterSpacing: "0.08em",
           textTransform: "uppercase",
-          color: "#0F172A",
+          color: "#F4F7FA",
           flex: 1,
         }}
       >
@@ -978,8 +979,8 @@ function ViewerHeader({ file }: { file: File | null }) {
             px: 1,
             py: 0.3,
             borderRadius: "5px",
-            backgroundColor: "#F1F5F9",
-            border: "1px solid #E2E8F0",
+            backgroundColor: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,255,255,0.08)",
             flexShrink: 0,
           }}
         >
@@ -988,7 +989,7 @@ function ViewerHeader({ file }: { file: File | null }) {
               fontSize: "0.625rem",
               fontWeight: 600,
               letterSpacing: "0.06em",
-              color: "#64748B",
+              color: "#9AA3AD",
             }}
           >
             {ext}
@@ -1005,12 +1006,12 @@ function ViewerFooter({ file }: { file: File | null }) {
       sx={{
         px: 2.5,
         py: 1.5,
-        borderTop: "1px solid #E2E8F0",
+        borderTop: "1px solid rgba(255,255,255,0.08)",
         display: "flex",
         alignItems: "center",
         gap: 1.5,
         flexShrink: 0,
-        backgroundColor: "#FFFFFF",
+        backgroundColor: "#14181b",
         minHeight: 48,
       }}
     >
@@ -1018,7 +1019,7 @@ function ViewerFooter({ file }: { file: File | null }) {
         sx={{
           fontSize: "0.8125rem",
           fontWeight: 500,
-          color: file ? "#334155" : "#94A3B8",
+          color: file ? "#F4F7FA" : "#6B737C",
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
@@ -1029,12 +1030,19 @@ function ViewerFooter({ file }: { file: File | null }) {
         {file?.name ?? "No file selected"}
       </Typography>
       {file && (
-        <Box sx={{ px: 1.1, py: 0.3, borderRadius: "5px", backgroundColor: "#F1F5F9" }}>
+        <Box
+          sx={{
+            px: 1.1,
+            py: 0.3,
+            borderRadius: "5px",
+            backgroundColor: "rgba(255,255,255,0.04)",
+          }}
+        >
           <Typography
             sx={{
               fontSize: "0.6875rem",
               fontWeight: 600,
-              color: "#64748B",
+              color: "#9AA3AD",
               fontVariantNumeric: "tabular-nums",
             }}
           >
@@ -1153,8 +1161,8 @@ export default function DocumentViewer({
   return (
     <Box
       sx={{
-        backgroundColor: "#FFFFFF",
-        border: hideChrome ? "none" : "1px solid #E2E8F0",
+        backgroundColor: hideChrome ? "transparent" : "#111416",
+        border: hideChrome ? "none" : "1px solid rgba(255,255,255,0.08)",
         borderRadius: hideChrome ? 0 : "12px",
         display: "flex",
         flexDirection: "column",
@@ -1162,9 +1170,7 @@ export default function DocumentViewer({
         height: "100%",
         minHeight: 0,
         maxHeight: "100%",
-        boxShadow: hideChrome
-          ? "none"
-          : "0 1px 2px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.04)",
+        boxShadow: "none",
       }}
     >
       {!hideChrome && <ViewerHeader file={file} />}

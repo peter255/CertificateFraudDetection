@@ -1,21 +1,58 @@
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
-import VerifiedUserOutlinedIcon from "@mui/icons-material/VerifiedUserOutlined";
-import GovernmentBrand from "../branding/GovernmentBrand";
-import SecureConnectionBadge from "../branding/SecureConnectionBadge";
-import {
-  PRODUCT_NAME,
-  PRODUCT_PILLARS,
-  PRODUCT_TAGLINE,
-} from "../../branding/constants";
+import { PRODUCT_NAME } from "../../branding/constants";
+import { VS } from "../../theme";
 
 interface NavbarProps {
   activeView?: "single" | "batch";
   onNavigate?: (view: "single" | "batch") => void;
+  onNewAnalysis?: () => void;
+  scanId?: string | null;
+  pathLabel?: string;
 }
 
-export default function Navbar({ activeView = "single", onNavigate }: NavbarProps) {
+function ShieldLogo() {
+  return (
+    <Box
+      sx={{
+        width: 32,
+        height: 32,
+        borderRadius: "8px",
+        backgroundColor: VS.accentDim,
+        border: `1px solid rgba(0,255,163,0.35)`,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+        <path
+          d="M12 3L20 6.5V11.5C20 16.2 16.4 20.3 12 21.5C7.6 20.3 4 16.2 4 11.5V6.5L12 3Z"
+          stroke={VS.accent}
+          strokeWidth="1.75"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M9 12L11 14L15.5 9.5"
+          stroke={VS.accent}
+          strokeWidth="1.75"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </Box>
+  );
+}
+
+export default function Navbar({
+  activeView = "single",
+  onNavigate,
+  onNewAnalysis,
+  scanId,
+  pathLabel = "/",
+}: NavbarProps) {
   return (
     <Box
       component="header"
@@ -23,111 +60,114 @@ export default function Navbar({ activeView = "single", onNavigate }: NavbarProp
         position: "sticky",
         top: 0,
         zIndex: 100,
-        backgroundColor: "#FFFFFF",
-        borderBottom: "1px solid #E2E8F0",
-        boxShadow: "0 1px 0 rgba(15,23,42,0.03)",
+        backgroundColor: "rgba(10,12,13,0.92)",
+        backdropFilter: "blur(12px)",
+        borderBottom: `1px solid ${VS.border}`,
       }}
     >
-      {/* Accent rail — calm authority */}
-      <Box
-        sx={{
-          height: 3,
-          background: "linear-gradient(90deg, #0F2942 0%, #163A5F 55%, #0078D4 100%)",
-        }}
-      />
-
       <Box
         sx={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           gap: 2,
-          px: { xs: 2.5, md: 5 },
-          py: { xs: 1.5, sm: 1.75 },
-          minHeight: { xs: 72, sm: 88 },
+          px: { xs: 2, md: 3.5 },
+          py: 1.5,
+          minHeight: 56,
         }}
       >
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, minWidth: 0 }}>
+          <ShieldLogo />
+          <Typography
+            sx={{
+              fontSize: "0.9375rem",
+              fontWeight: 700,
+              letterSpacing: "0.12em",
+              color: VS.text,
+              lineHeight: 1,
+            }}
+          >
+            {PRODUCT_NAME}
+          </Typography>
+        </Box>
+
         <Box
           sx={{
             display: "flex",
             alignItems: "center",
-            gap: { xs: 1.5, sm: 2.25 },
-            minWidth: 0,
+            gap: { xs: 1.25, sm: 2.5 },
+            flexShrink: 0,
           }}
         >
-          <GovernmentBrand size="lg" />
-
           <Box
             sx={{
-              width: "1px",
-              alignSelf: "stretch",
-              backgroundColor: "#E2E8F0",
-              display: { xs: "none", sm: "block" },
-              my: 0.5,
+              display: { xs: "none", md: "flex" },
+              alignItems: "center",
+              gap: 2.5,
+              fontFamily: VS.mono,
             }}
-          />
-
-          <Box sx={{ minWidth: 0 }}>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 0.25 }}>
-              <VerifiedUserOutlinedIcon
+          >
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+              <Box
                 sx={{
-                  fontSize: 15,
-                  color: "#0F2942",
-                  display: { xs: "none", sm: "block" },
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  backgroundColor: VS.accent,
+                  boxShadow: `0 0 8px ${VS.accentGlow}`,
                 }}
               />
               <Typography
                 sx={{
-                  fontSize: { xs: "0.9375rem", sm: "1.0625rem" },
-                  fontWeight: 700,
-                  color: "#0F172A",
-                  letterSpacing: "-0.02em",
-                  lineHeight: 1.2,
+                  fontSize: "0.6875rem",
+                  fontWeight: 500,
+                  letterSpacing: "0.06em",
+                  color: VS.accent,
+                  fontFamily: VS.mono,
                 }}
               >
-                {PRODUCT_NAME}
+                SYSTEM ONLINE
               </Typography>
             </Box>
+
+            {scanId && (
+              <Typography
+                sx={{
+                  fontSize: "0.6875rem",
+                  color: VS.textMuted,
+                  fontFamily: VS.mono,
+                  letterSpacing: "0.02em",
+                }}
+              >
+                ID: {scanId}
+              </Typography>
+            )}
+
             <Typography
               sx={{
-                fontSize: { xs: "0.625rem", sm: "0.6875rem" },
-                fontWeight: 500,
+                fontSize: "0.6875rem",
+                color: VS.textMuted,
+                fontFamily: VS.mono,
                 letterSpacing: "0.02em",
-                color: "#64748B",
-                lineHeight: 1.35,
-                mb: 0.35,
               }}
             >
-              {PRODUCT_TAGLINE}
-            </Typography>
-            <Typography
-              sx={{
-                fontSize: "0.5625rem",
-                fontWeight: 600,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "#94A3B8",
-                display: { xs: "none", sm: "block" },
-              }}
-            >
-              {PRODUCT_PILLARS}
+              PATH: {pathLabel}
             </Typography>
           </Box>
-        </Box>
 
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, flexShrink: 0 }}>
           {onNavigate && (
-            <>
+            <Box sx={{ display: { xs: "none", sm: "flex" }, gap: 0.5 }}>
               <Button
                 size="small"
                 onClick={() => onNavigate("single")}
                 sx={{
-                  textTransform: "none",
+                  minWidth: 0,
+                  px: 1.25,
+                  fontSize: "0.75rem",
                   fontWeight: 600,
-                  fontSize: "0.8125rem",
-                  color: activeView === "single" ? "#0078D4" : "#64748B",
+                  color: activeView === "single" ? VS.accent : VS.textMuted,
                   backgroundColor:
-                    activeView === "single" ? "rgba(0,120,212,0.08)" : "transparent",
+                    activeView === "single" ? VS.accentDim : "transparent",
                 }}
               >
                 Single
@@ -136,20 +176,35 @@ export default function Navbar({ activeView = "single", onNavigate }: NavbarProp
                 size="small"
                 onClick={() => onNavigate("batch")}
                 sx={{
-                  textTransform: "none",
+                  minWidth: 0,
+                  px: 1.25,
+                  fontSize: "0.75rem",
                   fontWeight: 600,
-                  fontSize: "0.8125rem",
-                  color: activeView === "batch" ? "#0078D4" : "#64748B",
+                  color: activeView === "batch" ? VS.accent : VS.textMuted,
                   backgroundColor:
-                    activeView === "batch" ? "rgba(0,120,212,0.08)" : "transparent",
+                    activeView === "batch" ? VS.accentDim : "transparent",
                 }}
               >
-                Batch verify
+                Batch
               </Button>
-            </>
+            </Box>
           )}
 
-          <SecureConnectionBadge />
+          <Button
+            variant="contained"
+            size="small"
+            onClick={onNewAnalysis}
+            sx={{
+              height: 36,
+              px: 2,
+              borderRadius: "8px",
+              fontWeight: 700,
+              fontSize: "0.8125rem",
+              boxShadow: `0 0 16px ${VS.accentGlow}`,
+            }}
+          >
+            New Analysis
+          </Button>
         </Box>
       </Box>
     </Box>
