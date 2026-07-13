@@ -1,6 +1,7 @@
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import LinearProgress from "@mui/material/LinearProgress";
+import { PRODUCT_NAME } from "../../branding/constants";
 
 const ANALYSIS_STEPS = [
   "Uploading document",
@@ -126,6 +127,18 @@ export default function AnalysisProgress({
           borderColor: "divider",
         }}
       >
+        <Typography
+          sx={{
+            fontSize: "0.625rem",
+            fontWeight: 700,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "#94A3B8",
+            mb: 1.25,
+          }}
+        >
+          {PRODUCT_NAME}
+        </Typography>
         <Box
           sx={{
             display: "flex",

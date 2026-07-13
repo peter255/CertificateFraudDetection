@@ -32,7 +32,7 @@ Engines return a **technical** classification. The Decision Engine owns the **bu
 
 | Related | Meaning |
 |---|---|
-| **AI Detection** (`aiDetection`) | Vendor-agnostic AI-generation signal from **explicit** engine fields only | Normalized in `utils/aiDetection.ts` via V1/V2 mappers → `result.aiDetection` (`supported`, `probability`, `label`, `explanation`). `aiProbability` mirrors `aiDetection.probability`. Never derived from model confidence, trust, risk, or verdict. |
+| **AI Detection** (`aiDetection`) | Vendor-agnostic AI-generation signal from **explicit** engine fields only | Normalized in `utils/aiDetection.ts` via V1/V2 mappers → `result.aiDetection`. **V1:** `/query.result` is the vendor **Core AI score** → `aiDetection.probability`, plus classification labels (`final_result` / `ml_label`). **V2:** `layer_details.c2pa.metadata.ai_generated` (boolean); live API has **no** numeric AI probability field. Never derived from trust, risk, or verdict. |
 
 Example: engine predicts authentic with 8% model confidence → the app does **not** show Trusted. It shows **Suspicious**, Medium Risk, and Model Confidence 8%.
 

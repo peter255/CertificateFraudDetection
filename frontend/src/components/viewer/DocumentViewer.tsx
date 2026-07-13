@@ -356,7 +356,7 @@ function EmptyState() {
           No document loaded
         </Typography>
         <Typography sx={{ fontSize: "0.8125rem", color: "#94A3B8", lineHeight: 1.55 }}>
-          Upload a certificate to preview evidence here
+          Upload a certificate to begin fraud detection analysis
         </Typography>
       </Box>
     </Box>

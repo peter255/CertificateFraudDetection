@@ -68,7 +68,7 @@ export default function ActionsPanel({
           lineHeight: 1.6,
         }}
       >
-        Download the investigation report or verify another document.
+        Download the fraud detection report or verify another document.
       </Typography>
 
       <Box sx={{ display: "flex", gap: 1.25, flexDirection: { xs: "column", sm: "row" } }}>
@@ -84,7 +84,7 @@ export default function ActionsPanel({
             borderRadius: "8px",
           }}
         >
-          {downloading ? "Preparing PDF..." : "Download PDF Report"}
+          {downloading ? "Preparing PDF..." : "Download Fraud Detection Report"}
         </Button>
         <Button
           variant="contained"

@@ -11,6 +11,12 @@ import type {
   VerificationResult,
   VerdictType,
 } from "../types/verification";
+import {
+  ORGANIZATION_NAME,
+  PRODUCT_NAME,
+  REPORT_TITLE,
+  BRAND_LOGO_PDF_PATH,
+} from "../branding/constants";
 
 const COLORS = {
   navy: [15, 41, 66] as [number, number, number],
@@ -122,7 +128,7 @@ function drawFooter(doc: jsPDF, page: number, total: number): void {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(...COLORS.muted);
-  doc.text("CertVerify · Confidential investigation report", 16, pageHeight - 7);
+  doc.text(`${PRODUCT_NAME} · Confidential · ${ORGANIZATION_NAME}`, 16, pageHeight - 7);
   doc.text(`Page ${page} of ${total}`, pageWidth - 16, pageHeight - 7, { align: "right" });
 }
 
@@ -352,25 +358,69 @@ export async function downloadVerificationReport(
 
   // ── Header ────────────────────────────────────────────────────────────────
   doc.setFillColor(...COLORS.navy);
-  doc.rect(0, 0, pageWidth, 36, "F");
+  doc.rect(0, 0, pageWidth, 48, "F");
   doc.setFillColor(...COLORS.accent);
-  doc.rect(0, 36, pageWidth, 1.5, "F");
+  doc.rect(0, 48, pageWidth, 1.5, "F");
+
+  // Logo slot: raster PNG preferred for jsPDF; falls back to MOHESR mark
+  const logoDataUrl = await fetchImageAsDataUrl(BRAND_LOGO_PDF_PATH);
+  if (logoDataUrl) {
+    try {
+      // Landscape wordmark — keep modest height in the navy header band
+      doc.addImage(logoDataUrl, "PNG", 16, 12, 42, 11);
+    } catch {
+      /* ignore unsupported formats */
+    }
+  } else {
+    doc.setDrawColor(186, 198, 214);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(16, 10, 14, 14, 1, 1, "S");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(5);
+    doc.setTextColor(186, 198, 214);
+    doc.text(ORGANIZATION_NAME, 23, 18, { align: "center" });
+  }
+
+  const textLeft = logoDataUrl ? 64 : 34;
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
+  doc.setFontSize(16);
   doc.setTextColor(...COLORS.white);
-  doc.text("CertVerify", 16, 16);
+  doc.text(REPORT_TITLE, textLeft, 16);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setTextColor(186, 198, 214);
-  doc.text("Investigation Report", 16, 23);
+  doc.text(PRODUCT_NAME, textLeft, 23);
+  doc.text(`Organization: ${ORGANIZATION_NAME}`, textLeft, 29);
 
   doc.setFontSize(8);
+  doc.setTextColor(186, 198, 214);
   doc.text(`Generated ${generatedAt}`, pageWidth - 16, 16, { align: "right" });
   doc.text(displayName, pageWidth - 16, 23, { align: "right" });
+  if (result.certificateId?.trim()) {
+    doc.text(
+      `Verification ID: ${result.certificateId.trim().slice(0, 12).toUpperCase()}`,
+      pageWidth - 16,
+      30,
+      { align: "right" }
+    );
+  }
 
-  let y = 46;
+  let y = 58;
+
+  // Official metadata block
+  y = drawSectionTitle(doc, "Report Information", y);
+  y = drawKeyValueTable(doc, y, [
+    ["Report Title", REPORT_TITLE],
+    ["Prepared by", PRODUCT_NAME],
+    ["Organization", ORGANIZATION_NAME],
+    ["Verification Date", generatedAt],
+    ...(result.certificateId?.trim()
+      ? [["Verification ID", result.certificateId.trim().slice(0, 12).toUpperCase()] as TableRow]
+      : []),
+    ["Document", displayName],
+  ]);
 
   // Compact verdict strip (not repeated later as a full overview table).
   doc.setFillColor(...verdict.bg);
@@ -577,5 +627,5 @@ export async function downloadVerificationReport(
   }
 
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-  doc.save(`investigation-report_${safeFileStem(fileName)}_${stamp}.pdf`);
+  doc.save(`fraud-detection-report_${safeFileStem(fileName)}_${stamp}.pdf`);
 }

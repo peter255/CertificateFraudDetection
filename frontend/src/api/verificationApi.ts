@@ -82,6 +82,10 @@ interface EngineV1ApiResponse {
     detection_step?: unknown;
     is_valid?: boolean | null;
     analysis_status?: string;
+    /** Vendor warnings (watermark, blur, screen_recapture, …). */
+    warnings?: Array<Record<string, unknown>> | null;
+    /** Full vendor `/query` JSON preserved by the backend mapper. */
+    raw_query_response?: Record<string, unknown> | null;
   };
 }
 
@@ -441,10 +445,14 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
     analysis_agreement: analysis.analysis_agreement ?? null,
     vendor_recommendations: analysis.vendor_recommendations ?? [],
     verdict_label: analysis.verdict_label ?? null,
+    // Vendor Core AI score (`/query.result`) — also exposed as aiDetection.probability.
     raw_score: analysis.raw_score ?? data.raw_score ?? null,
+    core_ai_score: analysis.raw_score ?? data.raw_score ?? null,
     detection_step: analysis.detection_step ?? null,
     is_valid: analysis.is_valid ?? null,
     analysis_status: analysisStatus,
+    warnings: analysis.warnings ?? null,
+    raw_query_response: analysis.raw_query_response ?? null,
     fraud_score: fraudScore,
     trust_score: engineTrustScore,
   };
@@ -1024,16 +1032,22 @@ function mapV2Findings(data: EngineV2ApiResponse): Finding[] {
   // Evidence → Forensic Indicators + Document Tamper Map (not Key Findings).
   // Score breakdown / PDF fraud subscores → Technical Analysis / Overview gauges.
 
-  // Provenance — only when it adds a clear AI / credential signal.
+  // Provenance — surface explicit C2PA AI / credential signals.
   const provenanceBits = [
     c2pa.ai_generated === true ? "Credentials claim this file was AI-generated." : "",
+    c2pa.ai_generated === false && c2pa.has_c2pa === true
+      ? "Content credentials are present and do not indicate AI-generated content."
+      : "",
+    Array.isArray(c2pa.ai_indicators) && c2pa.ai_indicators.length
+      ? `AI indicators: ${c2pa.ai_indicators.map(String).join(", ")}.`
+      : "",
     typeof c2pa.generator === "string" && c2pa.generator
       ? `Generator: ${c2pa.generator}.`
       : "",
     typeof c2pa.issuer_name === "string" && c2pa.issuer_name
       ? `Credential issuer: ${c2pa.issuer_name}.`
       : "",
-    c2pa.has_c2pa === true && c2pa.ai_generated !== true
+    c2pa.has_c2pa === true && c2pa.ai_generated == null
       ? "Content credentials are present on this file."
       : "",
   ].filter(Boolean);
@@ -1066,23 +1080,38 @@ function toScore100(...candidates: Array<number | null | undefined>): number | n
 const ENGINE_TRUST_KEYS = ["trust_score", "trustScore", "document_trust_score"];
 
 /**
- * Engine V1 AI detection — explicit AI classification / named AI fields only.
+ * Engine V1 AI detection — explicit vendor AI fields only.
  *
- * Sources:
- * - Nested AI probability keys inside `analysis` (when present)
- * - Nested AI boolean keys inside `analysis` (when present)
- * - `final_result` / `verdict_label` when they are explicit AI labels ("ai generated", "real")
- * - `ml_label` when it is an explicit AI vs human classification string
- * - OCR label text when it explicitly mentions AI detection
+ * Sources (TruthScan / AI Image Detection API):
+ * - `result` / `raw_score` — vendor **"Core AI score"** (0–100 AI detection score).
+ *   Documented at detect-image.truthscan.com (`GET /help?format=json`: "Core AI score only")
+ *   and in the official AI Image Detection API docs. This is the product's AI score,
+ *   not a trust/risk/verdict-derived value.
+ * - Named AI probability / boolean keys nested under `analysis` / `raw_query_response`
+ * - `final_result` / `verdict_label` / `ml_label` / `ocr_label` when they are explicit
+ *   AI classification strings ("AI Generated", "Real", …)
  *
- * Never uses `ml_score`, `confidence_score`, `raw_score`, trust, risk, or overall_status.
+ * Never invents values from trust, risk, or overall authenticity status.
+ * Note: V1 `confidence_score` is the same underlying Core AI score scaled to 0–1 for
+ * the Decision Engine's model-confidence input — AI Probability reads the raw score.
  */
 function resolveV1AiDetection(
   data: EngineV1ApiResponse,
   analysis: NonNullable<EngineV1ApiResponse["analysis"]>
 ): AiDetection {
   const analysisBag = asRecord(analysis);
-  const extracted = extractAiFieldsFromPools([analysisBag]);
+  const rawQuery = asRecord(analysis.raw_query_response);
+  const extracted = extractAiFieldsFromPools([analysisBag, rawQuery]);
+
+  // Vendor Core AI score (`result` → backend `raw_score`). Prefer an explicitly
+  // named AI-probability key when present; otherwise use the Core AI score.
+  let probability = extracted.probability;
+  if (probability == null) {
+    probability = toScore100(
+      typeof analysis.raw_score === "number" ? analysis.raw_score : null,
+      typeof data.raw_score === "number" ? data.raw_score : null
+    );
+  }
 
   let isAiGenerated = extracted.isAiGenerated;
 
@@ -1096,7 +1125,7 @@ function resolveV1AiDetection(
   }
 
   return buildAiDetection({
-    probability: extracted.probability,
+    probability,
     isAiGenerated,
   });
 }
@@ -1104,13 +1133,16 @@ function resolveV1AiDetection(
 /**
  * Engine V2 AI detection — nested named AI fields + explicit provenance flags.
  *
- * Sources:
+ * Sources (confirmed via live Paperwork status payload + opaque passthrough):
  * - Named AI probability / boolean keys in layer_details, engine_results,
- *   classification, pdf_fraud_subscores, llm_report
- * - `c2pa.ai_generated` boolean when present
+ *   classification, pdf_fraud_subscores, llm_report, engine_scores, raw_result
+ * - `layer_details.c2pa.metadata.ai_generated` boolean (always present on live API)
+ * - `layer_details.png_ai_metadata` / nested AI-named keys when present
  * - fraud type `ai_generated_provenance` as an explicit AI Yes signal
  *
- * Never uses model confidence, trust_score, fraud_score, risk, or verdict.
+ * Live audit found **no** numeric `ai_probability` / `ai_score` field — only the
+ * C2PA boolean (and optional `ai_indicators` list). Never uses model confidence,
+ * trust_score, fraud_score, risk, verdict, or `engine_scores.ai_review`.
  */
 function resolveV2AiDetection(data: EngineV2ApiResponse): AiDetection {
   const layerDetails = asRecord(data.layer_details);
@@ -1118,7 +1150,12 @@ function resolveV2AiDetection(data: EngineV2ApiResponse): AiDetection {
   const classification = asRecord(data.classification);
   const engineResults = asRecord(data.engine_results);
   const pdfFraudSubscores = asRecord(data.pdf_fraud_subscores);
+  const engineScores = asRecord(data.engine_scores);
+  const rawResult = asRecord(data.raw_result);
   const c2pa = asRecord(asRecord(layerDetails.c2pa).metadata ?? layerDetails.c2pa);
+  const pngAi = asRecord(
+    asRecord(layerDetails.png_ai_metadata).metadata ?? layerDetails.png_ai_metadata
+  );
 
   const extracted = extractAiFieldsFromPools([
     layerDetails,
@@ -1127,12 +1164,20 @@ function resolveV2AiDetection(data: EngineV2ApiResponse): AiDetection {
     pdfFraudSubscores,
     llmReport,
     c2pa,
+    pngAi,
+    engineScores,
+    rawResult,
   ]);
 
   let isAiGenerated = extracted.isAiGenerated;
 
   if (isAiGenerated == null && typeof c2pa.ai_generated === "boolean") {
     isAiGenerated = c2pa.ai_generated;
+  }
+
+  // Non-empty C2PA AI indicators are an explicit provenance AI signal.
+  if (isAiGenerated == null && Array.isArray(c2pa.ai_indicators) && c2pa.ai_indicators.length > 0) {
+    isAiGenerated = true;
   }
 
   if (isAiGenerated == null) {

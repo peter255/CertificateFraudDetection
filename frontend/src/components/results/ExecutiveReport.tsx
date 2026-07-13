@@ -15,6 +15,7 @@ import VerifiedUserOutlinedIcon from "@mui/icons-material/VerifiedUserOutlined";
 import SpeedOutlinedIcon from "@mui/icons-material/SpeedOutlined";
 import type { ExecReport, Finding } from "../../types/verification";
 import { DASHBOARD, SectionShell } from "./shared/dashboardShell";
+import { ORGANIZATION_NAME, PRODUCT_NAME, REPORT_TITLE } from "../../branding/constants";
 
 type RecommendationType = "approve" | "reject" | "manual_review";
 
@@ -347,6 +348,49 @@ export default function ExecutiveReport({ report }: ExecutiveReportProps) {
       emphasis="primary"
       noPadding
     >
+      <Box sx={{ px: { xs: 2, sm: 2.75 }, pt: { xs: 2, sm: 2.25 }, pb: 0 }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 2,
+            pb: 1.75,
+            mb: 0.5,
+            borderBottom: `1px solid ${DASHBOARD.borderLight}`,
+          }}
+        >
+          <Box>
+            <Typography
+              sx={{
+                fontSize: "0.5625rem",
+                fontWeight: 700,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: DASHBOARD.textMuted,
+                mb: 0.35,
+              }}
+            >
+              {REPORT_TITLE}
+            </Typography>
+            <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, color: DASHBOARD.textPrimary }}>
+              Prepared by {PRODUCT_NAME}
+            </Typography>
+          </Box>
+          <Typography
+            sx={{
+              fontSize: "0.6875rem",
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: DASHBOARD.navy,
+              flexShrink: 0,
+            }}
+          >
+            {ORGANIZATION_NAME}
+          </Typography>
+        </Box>
+      </Box>
       <Box sx={{ px: { xs: 2, sm: 2.75 }, py: { xs: 2.25, sm: 2.75 } }}>
         <Box
           sx={{

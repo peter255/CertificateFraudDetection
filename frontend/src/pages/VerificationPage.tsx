@@ -37,6 +37,11 @@ import { InvestigationBanner } from "../components/results/shared/dashboardShell
 import { verifyDocument } from "../api/verificationApi";
 import { buildDocumentInfoData } from "../utils/documentMetadata";
 import type { DocumentInfoData, VerificationResult } from "../types/verification";
+import {
+  PRODUCT_NAME,
+  PRODUCT_PILLARS,
+  PRODUCT_TAGLINE,
+} from "../branding/constants";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -398,6 +403,16 @@ export default function VerificationPage({ onOpenBatch }: VerificationPageProps)
       >
         <Box sx={{ maxWidth: 920, width: "100%", mx: "auto" }}>
           <Box sx={{ mb: { xs: 3.5, sm: 4 }, textAlign: "center" }}>
+            <Box
+              sx={{
+                width: 40,
+                height: 2,
+                mx: "auto",
+                mb: 2,
+                background: "linear-gradient(90deg, transparent, #0F2942, transparent)",
+                opacity: 0.45,
+              }}
+            />
             <Typography
               sx={{
                 display: "inline-block",
@@ -405,11 +420,11 @@ export default function VerificationPage({ onOpenBatch }: VerificationPageProps)
                 fontWeight: 600,
                 letterSpacing: "0.1em",
                 textTransform: "uppercase",
-                color: "#0078D4",
-                mb: 1.75,
+                color: "#0F2942",
+                mb: 1.25,
               }}
             >
-              Certificate Investigation Platform
+              {PRODUCT_TAGLINE}
             </Typography>
             <Typography
               sx={{
@@ -417,11 +432,23 @@ export default function VerificationPage({ onOpenBatch }: VerificationPageProps)
                 fontWeight: 700,
                 letterSpacing: "-0.035em",
                 color: "#0F172A",
-                mb: 1.5,
+                mb: 1,
                 lineHeight: 1.15,
               }}
             >
-              Verify a Certificate
+              {PRODUCT_NAME}
+            </Typography>
+            <Typography
+              sx={{
+                fontSize: "0.6875rem",
+                fontWeight: 600,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: "#94A3B8",
+                mb: 1.75,
+              }}
+            >
+              {PRODUCT_PILLARS}
             </Typography>
             <Typography
               sx={{
@@ -432,8 +459,8 @@ export default function VerificationPage({ onOpenBatch }: VerificationPageProps)
                 mx: "auto",
               }}
             >
-              Run AI-powered authenticity checks, forgery indicators, and a full
-              investigation report in one workspace.
+              Submit a certificate for authenticity verification, fraud analysis,
+              and an official investigation report.
             </Typography>
           </Box>
 

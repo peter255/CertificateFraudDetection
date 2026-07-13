@@ -86,6 +86,7 @@ class TruthScanResponseMapper:
             ml_score=ml_score,
             analysis_status=details.get("analysis_results_status") or "",
             job_id=job_id,
+            warnings=_as_dict_list(details.get("warnings")),
             raw_query_response=raw,
         )
 
@@ -126,6 +127,12 @@ class TruthScanResponseMapper:
 
 def _first(items: list) -> str | None:
     return items[0] if items else None
+
+
+def _as_dict_list(value: object) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 def _as_str_list(value: object) -> list[str]:

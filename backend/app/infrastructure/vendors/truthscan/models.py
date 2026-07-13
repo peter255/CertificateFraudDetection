@@ -46,6 +46,9 @@ class TruthScanAnalysisDetails(BaseModel):
     ml_score: float | None = None
     analysis_status: str = ""
     job_id: str = ""
+    # Vendor optional arrays (watermark / blur / screen_recapture, …).
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
+    # Full /query payload — preserves any undocumented nested fields.
     raw_query_response: dict[str, Any] = Field(default_factory=dict)
 
 

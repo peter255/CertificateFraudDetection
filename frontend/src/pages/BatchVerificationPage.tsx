@@ -31,6 +31,7 @@ import TechnicalDetails from "../components/results/TechnicalDetails";
 import VendorAnalysis from "../components/results/VendorAnalysis";
 import ActionsPanel from "../components/results/ActionsPanel";
 import { DASHBOARD } from "../components/results/shared/dashboardShell";
+import { PRODUCT_NAME } from "../branding/constants";
 
 interface BatchVerificationPageProps {
   onBack: () => void;
@@ -112,7 +113,7 @@ export default function BatchVerificationPage({ onBack }: BatchVerificationPageP
             Batch verification
           </Typography>
           <Typography sx={{ fontSize: "0.875rem", color: "#64748B" }}>
-            Upload up to {maxFiles} certificates. Runs with concurrency 3. Export CSV or JSON when done.
+            {PRODUCT_NAME} · upload up to {maxFiles} certificates. Concurrency 3. Export CSV or JSON when done.
           </Typography>
         </Box>
       </Box>
@@ -340,7 +341,7 @@ export default function BatchVerificationPage({ onBack }: BatchVerificationPageP
               }
               sx={{ textTransform: "none", fontWeight: 600 }}
             >
-              Download PDF report
+              Download fraud detection report
             </Button>
           </Box>
 

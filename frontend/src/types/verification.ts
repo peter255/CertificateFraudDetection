@@ -126,8 +126,10 @@ export interface VerificationResult {
   confidence: number;
   /**
    * Likelihood of AI-generated or AI-altered content (0–100).
-   * Alias of `aiDetection.probability` — null when the engine does not return a usable score.
-   * Never derived from model confidence, trust, risk, or verdict.
+   * Alias of `aiDetection.probability`.
+   * V1: vendor Core AI score (`/query.result` / `raw_score`).
+   * V2: null unless an explicit AI probability field is present (C2PA provides boolean only).
+   * Never derived from trust, risk, or verdict.
    */
   aiProbability: number | null;
   /**
