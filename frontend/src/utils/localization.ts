@@ -210,8 +210,11 @@ export function interpretBBox(
 }
 
 /**
- * Project source-pixel xywh onto a measured content box.
- * Uses uniform scale (object-fit: contain) so overlays never stretch.
+ * Project source-pixel xywh onto the file surface box.
+ *
+ * The overlay host MUST be exactly the rendered file (img / PDF canvas).
+ * We map with independent scaleX/scaleY so boxes track the file pixels —
+ * no letterboxing and no container offsets.
  */
 export function projectToContent(
   xywh: Xywh,
@@ -233,21 +236,17 @@ export function projectToContent(
 
   const scaleX = contentWidth / imageWidth;
   const scaleY = contentHeight / imageHeight;
-  const scale = Math.min(scaleX, scaleY);
-  const offsetX = (contentWidth - imageWidth * scale) / 2;
-  const offsetY = (contentHeight - imageHeight * scale) / 2;
-
   const [x, y, w, h] = xywh;
   return {
-    left: offsetX + x * scale,
-    top: offsetY + y * scale,
-    width: w * scale,
-    height: h * scale,
-    scale,
+    left: x * scaleX,
+    top: y * scaleY,
+    width: w * scaleX,
+    height: h * scaleY,
+    scale: Math.min(scaleX, scaleY),
     scaleX,
     scaleY,
-    offsetX,
-    offsetY,
+    offsetX: 0,
+    offsetY: 0,
     contentWidth,
     contentHeight,
     imageWidth,
