@@ -70,11 +70,14 @@ export default function AnnotatedDocumentSection({
 
   const selected = validRegions.find((r) => r.id === selectedId) ?? null;
 
+  // Jump to the region's page when selection changes. Do not depend on
+  // activePage — that fought toolbar prev/next and always snapped back.
   useEffect(() => {
-    if (selected && selected.page !== activePage) {
-      setActivePage(selected.page);
+    const region = validRegions.find((r) => r.id === selectedId);
+    if (region) {
+      setActivePage(region.page);
     }
-  }, [selected, activePage]);
+  }, [selectedId, validRegions]);
 
   return (
     <SectionShell
