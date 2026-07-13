@@ -1,6 +1,6 @@
 /**
  * TechnicalDetails — engine technical payloads only.
- * Forensic indicators live in SignalsList; this section does not re-list them.
+ * Forensic indicators live in SignalsList; overview scores live in VerdictCard.
  */
 
 import { useMemo, useState } from "react";
@@ -10,11 +10,36 @@ import Collapse from "@mui/material/Collapse";
 import ScienceIcon from "@mui/icons-material/Science";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import type { EngineTechnicalDetails } from "../../types/verification";
-import { CircularGauge } from "./shared/dashboardCharts";
 import { DASHBOARD, SectionBadge, SectionShell } from "./shared/dashboardShell";
 
 function humanizeKey(key: string): string {
   return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Fields already shown in Verification Overview — omit from technical dumps. */
+const OVERVIEW_SCORE_KEYS = new Set([
+  "ml_score",
+  "fraud_score",
+  "trust_score",
+  "raw_score",
+  "confidence",
+  "model_confidence",
+  "ai_probability",
+  "ai_prob",
+]);
+
+function stripPromotedScores(value: unknown): unknown {
+  const rec =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  if (!rec) return value;
+  const next: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(rec)) {
+    if (OVERVIEW_SCORE_KEYS.has(key.toLowerCase())) continue;
+    next[key] = nested;
+  }
+  return next;
 }
 
 function summarizeValue(value: unknown): string {
@@ -77,7 +102,8 @@ function extrasFromTechnical(technical?: EngineTechnicalDetails | null): Resolve
     push("layers-applied", "Layers Applied", technical.layersApplied.join(", "));
   }
   if (technical.classification) {
-    push("classification", "Classification", summarizeValue(technical.classification));
+    const cleaned = stripPromotedScores(technical.classification);
+    push("classification", "Classification", summarizeValue(cleaned));
   }
   if (technical.pdfFraudSubscores) {
     push("pdf-fraud-subscores", "PDF Fraud Subscores", summarizeValue(technical.pdfFraudSubscores));
@@ -86,7 +112,8 @@ function extrasFromTechnical(technical?: EngineTechnicalDetails | null): Resolve
     push("structural-profile", "Structural Profile", summarizeValue(technical.structuralProfile));
   }
   if (technical.engineResults) {
-    push("engine-results", "Engine Results", summarizeValue(technical.engineResults));
+    const cleaned = stripPromotedScores(technical.engineResults);
+    push("engine-results", "Engine Results", summarizeValue(cleaned));
   }
   if (technical.layerDetails) {
     push("layer-details", "Layer Details", summarizeValue(technical.layerDetails));
@@ -195,22 +222,13 @@ export default function TechnicalDetails({
           cursor: "pointer",
         }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 3 }}>
-          <CircularGauge
-            value={Math.min(100, modules.length * 12)}
-            label=""
-            color={DASHBOARD.accent}
-            size={80}
-            trackColor="#E2E8F0"
-          />
-          <Box>
-            <Typography sx={{ fontSize: "0.875rem", fontWeight: 700, color: DASHBOARD.textPrimary }}>
-              Engine Technical Payloads
-            </Typography>
-            <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted }}>
-              {modules.length} technical module{modules.length !== 1 ? "s" : ""} from the API
-            </Typography>
-          </Box>
+        <Box>
+          <Typography sx={{ fontSize: "0.875rem", fontWeight: 700, color: DASHBOARD.textPrimary }}>
+            Engine Technical Payloads
+          </Typography>
+          <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted }}>
+            {modules.length} technical module{modules.length !== 1 ? "s" : ""} from the API
+          </Typography>
         </Box>
         <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted }}>
           {isOpen ? "Collapse" : "Expand"}

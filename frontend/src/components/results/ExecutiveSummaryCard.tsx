@@ -1,6 +1,6 @@
 /**
- * ExecutiveSummaryCard — concise narrative summary only.
- * Scores and recommendations live in Verification Overview / Recommendation & Findings.
+ * ExecutiveSummaryCard — high-level narrative only.
+ * Authoritative source: result.aiSummary (report.summary is not used for display).
  */
 
 import Box from "@mui/material/Box";
@@ -22,7 +22,7 @@ interface ExecutiveSummaryCardProps {
 }
 
 export default function ExecutiveSummaryCard({ result }: ExecutiveSummaryCardProps) {
-  const summary = (result.aiSummary || result.report.summary || "").trim();
+  const summary = (result.aiSummary || "").trim();
   if (!isRealText(summary)) {
     return null;
   }

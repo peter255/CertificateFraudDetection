@@ -166,16 +166,13 @@ export function SectionBadge({
 
 interface InvestigationBannerProps {
   fileName: string;
-  verdict: string;
-  verdictColor: string;
   verifiedAt: string;
   certificateId?: string;
 }
 
+/** Investigation context only — verdict lives in Verification Overview. */
 export function InvestigationBanner({
   fileName,
-  verdict,
-  verdictColor,
   verifiedAt,
   certificateId,
 }: InvestigationBannerProps) {
@@ -194,97 +191,53 @@ export function InvestigationBanner({
         py: { xs: 2.25, sm: 2.75 },
       }}
     >
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 2,
-          flexWrap: "wrap",
-        }}
-      >
-        <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Typography
-            sx={{
-              fontSize: "0.625rem",
-              fontWeight: 600,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              color: "rgba(255,255,255,0.5)",
-              mb: 0.75,
-            }}
-          >
-            Investigation
-          </Typography>
-          <Typography
-            sx={{
-              fontSize: { xs: "1.125rem", sm: "1.35rem" },
-              fontWeight: 700,
-              letterSpacing: "-0.02em",
-              color: "#FFFFFF",
-              mb: 0.75,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              maxWidth: { xs: "100%", sm: 520 },
-              lineHeight: 1.3,
-            }}
-          >
-            {fileName}
-          </Typography>
-          <Box sx={{ display: "flex", flexWrap: "wrap", gap: { xs: 1, sm: 2 } }}>
-            {showVerified && (
-              <Typography sx={{ fontSize: "0.8125rem", color: "rgba(255,255,255,0.55)", lineHeight: 1.45 }}>
-                Verified {verifiedAt}
-              </Typography>
-            )}
-            {certificateId?.trim() && (
-              <Typography
-                sx={{
-                  fontSize: "0.8125rem",
-                  color: "rgba(255,255,255,0.65)",
-                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                  lineHeight: 1.45,
-                }}
-              >
-                ID {certificateId.slice(0, 8).toUpperCase()}
-              </Typography>
-            )}
-          </Box>
-        </Box>
-
-        <Box
+      <Box sx={{ minWidth: 0 }}>
+        <Typography
           sx={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 1,
-            px: 1.75,
-            py: 0.875,
-            borderRadius: "8px",
-            backgroundColor: "rgba(255,255,255,0.06)",
-            border: `1px solid ${verdictColor}44`,
+            fontSize: "0.625rem",
+            fontWeight: 600,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "rgba(255,255,255,0.5)",
+            mb: 0.75,
           }}
         >
-          <Box
-            sx={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              backgroundColor: verdictColor,
-              flexShrink: 0,
-            }}
-          />
-          <Typography
-            sx={{
-              fontSize: "0.75rem",
-              fontWeight: 700,
-              letterSpacing: "0.05em",
-              textTransform: "uppercase",
-              color: verdictColor,
-            }}
-          >
-            {verdict}
-          </Typography>
+          Investigation
+        </Typography>
+        <Typography
+          sx={{
+            fontSize: { xs: "1.125rem", sm: "1.35rem" },
+            fontWeight: 700,
+            letterSpacing: "-0.02em",
+            color: "#FFFFFF",
+            mb: 0.75,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            maxWidth: { xs: "100%", sm: 640 },
+            lineHeight: 1.3,
+          }}
+        >
+          {fileName}
+        </Typography>
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: { xs: 1, sm: 2 } }}>
+          {showVerified && (
+            <Typography sx={{ fontSize: "0.8125rem", color: "rgba(255,255,255,0.55)", lineHeight: 1.45 }}>
+              Verified {verifiedAt}
+            </Typography>
+          )}
+          {certificateId?.trim() && (
+            <Typography
+              sx={{
+                fontSize: "0.8125rem",
+                color: "rgba(255,255,255,0.65)",
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                lineHeight: 1.45,
+              }}
+            >
+              ID {certificateId.slice(0, 8).toUpperCase()}
+            </Typography>
+          )}
         </Box>
       </Box>
     </Box>

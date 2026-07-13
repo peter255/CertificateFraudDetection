@@ -11,7 +11,6 @@ import StorageIcon from "@mui/icons-material/Storage";
 import LibraryBooksIcon from "@mui/icons-material/LibraryBooks";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import TimerOutlinedIcon from "@mui/icons-material/TimerOutlined";
-import EventAvailableIcon from "@mui/icons-material/EventAvailable";
 import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
@@ -135,7 +134,6 @@ export default function DocumentInfo({ data }: DocumentInfoProps) {
     { icon: UpdateOutlinedIcon, label: "Modified Date", value: data.modifiedDate },
     { icon: AccessTimeIcon, label: "Upload Time", value: data.uploadTime },
     { icon: TimerOutlinedIcon, label: "Processing Time", value: data.processingTime },
-    { icon: EventAvailableIcon, label: "Verified Date", value: data.verifiedAt },
     ...data.extras.map((extra) => ({
       icon: InfoOutlinedIcon,
       label: extra.label,

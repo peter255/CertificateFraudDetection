@@ -103,7 +103,7 @@ def _build_response(
         ],
         signals=signals,
         report=ReportDTO(
-            summary=summary,
+            summary="",  # Narrative lives only in ai_summary
             risk_level=risk_level,
             risk_score=risk_score,
             findings=report_findings,

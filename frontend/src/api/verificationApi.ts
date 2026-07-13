@@ -270,38 +270,23 @@ function humanizeEngineValue(value: string | null | undefined): string | null {
   return scrubEngineName(cleaned.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
 }
 
-function collectAdditionalFindings(
+function normalizeNarrative(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function findingsWithoutNarrativeDuplicates(
   findings: Finding[],
-  signals: Signal[]
-): string[] | null {
-  const items: string[] = [];
-  const seen = new Set<string>();
-
-  for (const finding of findings) {
-    const title = scrubEngineName(finding.title || "").trim();
-    if (!title) continue;
-    const key = title.toLowerCase();
-    if (seen.has(key)) continue;
-    // Skip decision-engine notes already shown in executive summary.
-    if (key === "why this result") continue;
-    seen.add(key);
-    items.push(title);
-    if (items.length >= 6) break;
-  }
-
-  if (items.length < 6) {
-    for (const signal of signals) {
-      const category = scrubEngineName(signal.category || "").trim();
-      if (!category) continue;
-      const key = category.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      items.push(category);
-      if (items.length >= 6) break;
-    }
-  }
-
-  return items.length > 0 ? items : null;
+  aiSummary: string
+): Finding[] {
+  const summaryKey = normalizeNarrative(aiSummary);
+  return findings.filter((f) => {
+    const title = (f.title || "").trim().toLowerCase();
+    const detail = normalizeNarrative(f.detail || "");
+    if (!title && !detail) return false;
+    // Executive Summary owns the narrative — do not repeat it under findings.
+    if (summaryKey && detail && detail === summaryKey) return false;
+    return true;
+  });
 }
 
 function clampScore100(n: number): number {
@@ -324,23 +309,32 @@ function applyUserDecision(
     rawLabel: prediction.rawLabel,
   });
 
-  const findings = [...base.report.findings];
+  // Drop findings that restate the executive summary narrative.
+  let findings = findingsWithoutNarrativeDuplicates(
+    base.report.findings,
+    base.aiSummary
+  );
+
   if (decision.decisionNote) {
+    // Decision note is the only "Why this result" — replace any prior copy.
+    findings = findings.filter(
+      (f) => (f.title || "").trim().toLowerCase() !== "why this result"
+    );
     findings.unshift({
       title: "Why this result",
       detail: decision.decisionNote,
     });
   }
 
-  // Keep engine executive narrative in aiSummary / report.summary.
-  // Decision note belongs only under Recommendation & Findings.
+  // aiSummary is the single narrative source; report.summary stays empty for display.
+  // Model confidence lives only on result.confidence (Overview) — not vendorFindings.
   return {
     ...base,
     verdict: decision.verdict,
-    /** Model confidence in the engine prediction (0–100). Not document trust. */
     confidence: decision.modelConfidence,
     report: {
       ...base.report,
+      summary: "",
       findings,
       riskLevel: decision.riskLevel,
       riskScore: decision.riskScore,
@@ -349,10 +343,8 @@ function applyUserDecision(
     },
     vendorFindings: base.vendorFindings.map((vf) => ({
       ...vf,
-      confidenceScore:
-        typeof decision.modelConfidence === "number"
-          ? decision.modelConfidence / 100
-          : vf.confidenceScore,
+      confidenceScore: null,
+      additionalFindings: null,
     })),
   };
 }
@@ -372,18 +364,6 @@ function humanizeKey(key: string): string {
   return key
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatScore(value: unknown): string {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Number.isInteger(value) ? String(value) : value.toFixed(1);
-  }
-  if (value && typeof value === "object") {
-    const rec = asRecord(value);
-    if (typeof rec.score === "number") return formatScore(rec.score);
-    if (typeof rec.score_100 === "number") return formatScore(rec.score_100);
-  }
-  return String(value ?? "—");
 }
 
 function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
@@ -492,7 +472,8 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
       status: s.status as SignalStatus,
     })),
     report: {
-      summary: scrubEngineName(data.report.summary),
+      // Narrative lives only in aiSummary — Executive Summary card.
+      summary: "",
       // Placeholder — Decision Engine overwrites risk + recommendation.
       riskLevel: "medium",
       riskScore: 50,
@@ -504,14 +485,10 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
       {
         vendor: "Engine V1",
         status: humanizeEngineValue(data.overall_status) || humanizeEngineValue(analysisStatus),
-        confidenceScore: Number.isFinite(modelConfidence) ? modelConfidence / 100 : null,
+        // Model confidence → Verification Overview only.
+        confidenceScore: null,
         processingResult: humanizeEngineValue(data.final_result) || humanizeEngineValue(analysis.verdict_label),
-        additionalFindings: collectAdditionalFindings(findings, data.signals.map((s) => ({
-          id: s.id,
-          category: s.category,
-          description: scrubEngineName(s.description),
-          status: s.status as SignalStatus,
-        }))),
+        additionalFindings: null,
       },
     ],
     tamperRegions: [],
@@ -902,6 +879,9 @@ function mapV2Signals(data: EngineV2ApiResponse): Signal[] {
   const out: Signal[] = [];
 
   combined.forEach((signal, index) => {
+    // Spatial items belong on Document Tamper Map — do not re-list here.
+    if (asBBox(signal.bbox)) return;
+
     const key = signal.id || `${signal.type || "signal"}-${index}-${signal.description || ""}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -918,8 +898,11 @@ function mapV2Signals(data: EngineV2ApiResponse): Signal[] {
     });
   });
 
-  // Surface visual evidence as signals when they add unique findings.
+  // Visual evidence with a bbox belongs on Document Tamper Map only.
+  // Surface as Forensic Indicators only when there is no spatial region.
   (data.visual_evidence || []).forEach((item, index) => {
+    if (asBBox(item.bbox)) return;
+
     const key = `visual-${item.type || "item"}-${item.field || ""}-${item.description || item.title || index}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -979,26 +962,33 @@ function mapV2Findings(data: EngineV2ApiResponse): Finding[] {
   const findings: Finding[] = [];
   const layerDetails = asRecord(data.layer_details);
   const llmReport = asRecord(layerDetails.llm_report);
-  const llmVisual = asRecord(layerDetails.llm_visual);
   const c2pa = asRecord(asRecord(layerDetails.c2pa).metadata ?? layerDetails.c2pa);
   const fraudTypes = data.fraud_types?.length
     ? data.fraud_types
     : data.fraud?.types || [];
 
-  // 1) Why — one explanation only (not duplicated elsewhere).
-  const why =
-    (typeof llmReport.detailed_findings === "string" && llmReport.detailed_findings.trim()) ||
+  // "Why this result" = decision-engine notes only (applyUserDecision).
+  // Executive narrative → Executive Summary (aiSummary). Do not inject it here.
+  // detailed_findings is a distinct explanation when present and not equal to exec summary.
+  const execSummary =
     (typeof data.executive_summary === "string" && data.executive_summary.trim()) ||
     (typeof llmReport.executive_summary === "string" && llmReport.executive_summary.trim()) ||
     "";
-  if (why) {
+  const detailed =
+    typeof llmReport.detailed_findings === "string" && llmReport.detailed_findings.trim()
+      ? llmReport.detailed_findings.trim()
+      : "";
+  if (
+    detailed &&
+    normalizeNarrative(detailed) !== normalizeNarrative(execSummary)
+  ) {
     findings.push({
       title: "Why this result",
-      detail: scrubEngineName(why),
+      detail: scrubEngineName(detailed),
     });
   }
 
-  // 2) Issues detected — fraud types with plain-English meaning.
+  // Issues detected — fraud types with plain-English meaning.
   if (fraudTypes.length) {
     findings.push({
       title: "Issues detected",
@@ -1006,7 +996,7 @@ function mapV2Findings(data: EngineV2ApiResponse): Finding[] {
     });
   }
 
-  // 3) Risk factors — short bullets if present.
+  // Risk factors — short bullets if present.
   const riskFactors = asStringList(llmReport.risk_factors);
   if (riskFactors.length) {
     findings.push({
@@ -1025,66 +1015,10 @@ function mapV2Findings(data: EngineV2ApiResponse): Finding[] {
     }
   }
 
-  // 4) Concrete evidence rows (visual + field), deduped by description.
-  const evidenceLines: string[] = [];
-  const seenEvidence = new Set<string>();
+  // Evidence → Forensic Indicators + Document Tamper Map (not Key Findings).
+  // Score breakdown / PDF fraud subscores → Technical Analysis / Overview gauges.
 
-  const pushEvidence = (line: string) => {
-    const key = line.toLowerCase();
-    if (!line.trim() || seenEvidence.has(key)) return;
-    seenEvidence.add(key);
-    evidenceLines.push(`• ${line.trim()}`);
-  };
-
-  const visualFindings = Array.isArray(llmVisual.findings) ? llmVisual.findings : [];
-  for (const item of visualFindings.slice(0, 8)) {
-    const rec = asRecord(item);
-    const check = typeof rec.check === "string" ? humanizeKey(rec.check) : "Visual check";
-    const field =
-      typeof rec.field === "string" && rec.field && rec.field !== "null"
-        ? humanizeKey(rec.field)
-        : "";
-    const body =
-      (typeof rec.detail === "string" && rec.detail) ||
-      (typeof rec.description === "string" && rec.description) ||
-      "";
-    const severity = typeof rec.severity === "string" ? rec.severity : "";
-    const result = typeof rec.result === "string" ? rec.result : "";
-    pushEvidence(
-      [
-        check,
-        field ? `(${field})` : "",
-        severity ? `[${severity}]` : "",
-        result ? `→ ${result}` : "",
-        body ? `: ${body}` : "",
-      ]
-        .filter(Boolean)
-        .join(" ")
-    );
-  }
-
-  for (const s of (data.field_evidence || []).slice(0, 8)) {
-    const field = s.field_label || s.field || "Field";
-    const desc = s.description || s.type || "anomaly reported";
-    const sev = s.severity ? `[${s.severity}]` : "";
-    pushEvidence(`${field} ${sev}: ${desc}`.replace(/\s+/g, " "));
-  }
-
-  for (const item of (data.visual_evidence || []).slice(0, 6)) {
-    const label = item.title || item.type || "Visual evidence";
-    const field = item.field_label || item.field;
-    const desc = item.description || item.location || "reported";
-    pushEvidence(`${label}${field ? ` (${field})` : ""}: ${desc}`);
-  }
-
-  if (evidenceLines.length) {
-    findings.push({
-      title: "Evidence on the document",
-      detail: scrubEngineName(evidenceLines.join("\n")),
-    });
-  }
-
-  // 5) Provenance — only when it adds a clear AI / credential signal.
+  // Provenance — only when it adds a clear AI / credential signal.
   const provenanceBits = [
     c2pa.ai_generated === true ? "Credentials claim this file was AI-generated." : "",
     typeof c2pa.generator === "string" && c2pa.generator
@@ -1101,27 +1035,6 @@ function mapV2Findings(data: EngineV2ApiResponse): Finding[] {
     findings.push({
       title: "Digital provenance",
       detail: provenanceBits.join(" "),
-    });
-  }
-
-  // 6) Score breakdown — only engine scores that help explain severity.
-  if (data.engine_scores && Object.keys(data.engine_scores).length) {
-    const scores = Object.entries(data.engine_scores)
-      .map(([key, value]) => `${humanizeKey(key)}: ${formatScore(value)}`)
-      .join(" · ");
-    findings.push({
-      title: "Score breakdown",
-      detail: scores,
-    });
-  }
-
-  if (data.pdf_fraud_subscores && Object.keys(data.pdf_fraud_subscores).length) {
-    const scores = Object.entries(data.pdf_fraud_subscores)
-      .map(([key, value]) => `${humanizeKey(key)}: ${formatScore(value)}`)
-      .join(" · ");
-    findings.push({
-      title: "PDF fraud subscores",
-      detail: scores,
     });
   }
 
@@ -1317,7 +1230,8 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
     aiSummary: summary,
     signals,
     report: {
-      summary,
+      // Narrative lives only in aiSummary — Executive Summary card.
+      summary: "",
       // Placeholder — Decision Engine overwrites risk + recommendation.
       riskLevel: "medium",
       riskScore: 50,
@@ -1329,10 +1243,11 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
       {
         vendor: "Engine V2",
         status: humanizeEngineValue(data.status) || humanizeEngineValue(data.risk_level),
-        confidenceScore: Number.isFinite(modelConfidence) ? modelConfidence / 100 : null,
+        // Model confidence → Verification Overview only.
+        confidenceScore: null,
         processingResult:
           humanizeEngineValue(data.verdict) || humanizeEngineValue(data.fraud?.verdict),
-        additionalFindings: collectAdditionalFindings(findings, signals),
+        additionalFindings: null,
       },
     ],
     tamperRegions: mapTamperRegions(data),

@@ -173,7 +173,6 @@ export function buildDocumentInfoData(input: {
   processingMs: number | null;
   formatUploadTime: (date: Date) => string;
   formatProcessingTime: (ms: number) => string;
-  formatVerifiedAt: (iso: string) => string | null;
 }): DocumentInfoData | null {
   const { file, result } = input;
   if (!file && !result) return null;
@@ -290,11 +289,7 @@ export function buildDocumentInfoData(input: {
     ])
   );
 
-  const verifiedAt =
-    result?.verifiedAt && isDisplayable(result.verifiedAt)
-      ? input.formatVerifiedAt(result.verifiedAt)
-      : null;
-
+  // verifiedAt lives only on Investigation Banner — not Document Information.
   const processingTime =
     result?.engineDurationMs != null && Number.isFinite(result.engineDurationMs)
       ? input.formatProcessingTime(result.engineDurationMs)
@@ -305,27 +300,8 @@ export function buildDocumentInfoData(input: {
   const extras: Array<{ label: string; value: string }> = [];
   const usedLabels = new Set<string>();
 
-  const metadataNotes = result?.technical.engineResults?.metadata_notes;
-  if (Array.isArray(metadataNotes)) {
-    metadataNotes.forEach((note, index) => {
-      const cleaned = cleanString(note);
-      if (!cleaned) return;
-      const label = metadataNotes.length === 1 ? "Metadata Note" : `Metadata Note ${index + 1}`;
-      usedLabels.add(label.toLowerCase());
-      extras.push({ label, value: cleaned });
-    });
-  }
-
-  const mlLabel = cleanString(result?.technical.engineResults?.ml_label);
-  if (mlLabel) {
-    usedLabels.add("ml label");
-    extras.push({ label: "ML Label", value: mlLabel });
-  }
-  const ocrLabel = cleanString(result?.technical.engineResults?.ocr_label);
-  if (ocrLabel) {
-    usedLabels.add("ocr label");
-    extras.push({ label: "OCR Label", value: ocrLabel });
-  }
+  // Metadata notes / ML / OCR labels belong in Technical Analysis (engineResults),
+  // not Document Information.
 
   for (const key of KNOWN_EXTRA_KEYS) {
     const value = cleanString(findFirst(pools, [key]));
@@ -380,7 +356,7 @@ export function buildDocumentInfoData(input: {
     fileHash,
     createdDate,
     modifiedDate,
-    verifiedAt,
+    verifiedAt: null,
     documentType: cleanString(result?.documentType),
     holderName: cleanString(result?.holderName),
     issuingAuthority: cleanString(result?.issuingAuthority),

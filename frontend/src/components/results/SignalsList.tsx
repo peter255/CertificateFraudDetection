@@ -10,7 +10,7 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import CancelIcon from "@mui/icons-material/Cancel";
 import type { Signal, SignalStatus } from "../../types/verification";
-import { BarChartRow, DonutChart } from "./shared/dashboardCharts";
+import { BarChartRow } from "./shared/dashboardCharts";
 import { DASHBOARD, SectionBadge, SectionShell } from "./shared/dashboardShell";
 
 interface StatusStyle {
@@ -138,12 +138,6 @@ function DistributionPanel({ signals }: { signals: Signal[] }) {
     fail: signals.filter((s) => s.status === "fail").length,
   };
 
-  const segments = [
-    { label: "Failed", value: counts.fail, color: STATUS_STYLE.fail.color },
-    { label: "Warning", value: counts.warning, color: STATUS_STYLE.warning.color },
-    { label: "Passed", value: counts.pass, color: STATUS_STYLE.pass.color },
-  ].filter((segment) => segment.value > 0);
-
   return (
     <Box
       sx={{
@@ -151,20 +145,9 @@ function DistributionPanel({ signals }: { signals: Signal[] }) {
         py: { xs: 2, sm: 2.5 },
         borderBottom: `1px solid ${DASHBOARD.borderLight}`,
         backgroundColor: "#F8FAFC",
-        display: "flex",
-        alignItems: "center",
-        gap: { xs: 2.5, sm: 3.5 },
-        flexWrap: "wrap",
       }}
     >
-      <DonutChart
-        segments={segments}
-        size={112}
-        centerValue={String(total)}
-        centerLabel="Checks"
-      />
-
-      <Box sx={{ flex: 1, minWidth: 160, display: "flex", flexDirection: "column", gap: 1.25 }}>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
         {(["fail", "warning", "pass"] as SignalStatus[])
           .filter((status) => counts[status] > 0)
           .map((status) => (

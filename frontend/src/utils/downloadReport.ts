@@ -230,7 +230,7 @@ function groupSignals(signals: Signal[]): Array<{ category: string; items: Signa
 }
 
 function buildExecutiveSummary(result: VerificationResult): string | null {
-  const summary = (result.aiSummary || result.report.summary || "").trim();
+  const summary = (result.aiSummary || "").trim();
   return isKnownValue(summary) ? summary : null;
 }
 
@@ -250,13 +250,10 @@ function buildDocumentRows(result: VerificationResult, fileName: string): TableR
   return rows;
 }
 
+/** Scores + risk only — verdict is shown once in the header strip. */
 function buildAssessmentRows(result: VerificationResult): TableRow[] {
-  const verdict = VERDICT_STYLE[result.verdict] ?? VERDICT_STYLE.suspicious;
   const risk = RISK_STYLE[result.report.riskLevel] ?? RISK_STYLE.medium;
-  const rows: TableRow[] = [
-    ["Overall Assessment", verdict.label],
-    ["Risk Level", risk.label],
-  ];
+  const rows: TableRow[] = [["Risk Level", risk.label]];
 
   if (Number.isFinite(result.confidence)) {
     rows.push(["Model Confidence", `${result.confidence}%`]);
@@ -270,19 +267,10 @@ function buildAssessmentRows(result: VerificationResult): TableRow[] {
   if (result.fraudScore != null && Number.isFinite(result.fraudScore)) {
     rows.push(["Fraud Score", `${result.fraudScore}/100`]);
   }
-  if (isKnownValue(result.engineVerdictLabel)) {
-    rows.push(["Engine Label", result.engineVerdictLabel]);
-  }
-  if (isKnownValue(result.analysisStatus)) {
-    rows.push(["Analysis Status", result.analysisStatus]);
-  }
-  rows.push([
-    "Score glossary",
-    "Model Confidence = certainty in the prediction. Trust Score = engine document trust. AI Probability = likelihood of AI-generated content.",
-  ]);
   return rows;
 }
 
+/** Engine-specific output only — no confidence (Overview) or mirrored findings. */
 function buildAiAnalysisRows(result: VerificationResult): TableRow[] {
   const rows: TableRow[] = [];
   const engine = result.vendorFindings[0];
@@ -296,28 +284,11 @@ function buildAiAnalysisRows(result: VerificationResult): TableRow[] {
   if (engine && isKnownValue(engine.processingResult)) {
     rows.push(["Processing Result", engine.processingResult]);
   }
-  if (engine?.confidenceScore != null && Number.isFinite(engine.confidenceScore)) {
-    rows.push(["Engine Confidence", `${Math.round(engine.confidenceScore * 1000) / 10}%`]);
-  }
-
-  // AI-oriented findings only — avoid repeating the full forensic list.
-  const aiFindings = (engine?.additionalFindings || []).filter(isKnownValue);
-  const aiFromReport = result.report.findings
-    .filter((f) => /ai|model|ocr|generation|digital/i.test(f.title))
-    .map((f) => f.title)
-    .filter(isKnownValue);
-
-  const combined = [...aiFindings, ...aiFromReport].filter(
-    (item, index, arr) => arr.findIndex((x) => x.toLowerCase() === item.toLowerCase()) === index
-  );
-
-  if (combined.length) {
-    rows.push(["AI Findings", combined.slice(0, 6).join("; ")]);
-  }
 
   return rows;
 }
 
+/** Timeline timestamps only — status lives in Engine Analysis / Technical. */
 function buildTimelineRows(result: VerificationResult): TableRow[] {
   const rows: TableRow[] = [];
   const verified = formatDate(result.verifiedAt);
@@ -325,15 +296,6 @@ function buildTimelineRows(result: VerificationResult): TableRow[] {
 
   const duration = formatDuration(result.engineDurationMs);
   if (duration) rows.push(["Processing Time", duration]);
-
-  if (isKnownValue(result.analysisStatus)) {
-    rows.push(["Pipeline Status", result.analysisStatus]);
-  }
-
-  const engineStatus = result.vendorFindings[0]?.status;
-  if (isKnownValue(engineStatus) && engineStatus !== result.analysisStatus) {
-    rows.push(["Engine Status", engineStatus]);
-  }
 
   return rows;
 }

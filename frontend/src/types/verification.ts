@@ -44,10 +44,11 @@ export interface Finding {
 }
 
 export interface ExecReport {
+  /** Unused for display — narrative lives in VerificationResult.aiSummary only. */
   summary: string;
   riskLevel: RiskLevel;
   riskScore: number;
-  /** Higher = more trust (Trusted=100). Used by overview gauges. */
+  /** Decision-derived trust (100/50/0). Risk badge uses riskLevel; Overview Trust gauge uses engineTrustScore. */
   trustScore: number;
   findings: Finding[];
   recommendation: string;

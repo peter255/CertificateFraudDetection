@@ -365,7 +365,6 @@ export default function VerificationPage({ onOpenBatch }: VerificationPageProps)
     processingMs,
     formatUploadTime,
     formatProcessingTime,
-    formatVerifiedAt,
   });
 
   // ── Idle state: premium investigation landing ──────────────────────────────
@@ -720,13 +719,6 @@ export default function VerificationPage({ onOpenBatch }: VerificationPageProps)
   else if (step === "results" && verificationResult) {
     const verifiedAtDisplay = formatVerifiedAt(verificationResult.verifiedAt) ?? "—";
 
-    const VERDICT_DISPLAY: Record<string, { label: string; color: string }> = {
-      authentic: { label: "Trusted", color: "#107C10" },
-      suspicious: { label: "Suspicious", color: "#D97706" },
-      fraudulent: { label: "Potentially Fraudulent", color: "#C50F1F" },
-    };
-    const verdictDisplay = VERDICT_DISPLAY[verificationResult.verdict] ?? VERDICT_DISPLAY.suspicious;
-
     return (
       <Box
         sx={{
@@ -747,8 +739,6 @@ export default function VerificationPage({ onOpenBatch }: VerificationPageProps)
         >
           <InvestigationBanner
             fileName={file?.name ?? "certificate.pdf"}
-            verdict={verdictDisplay.label}
-            verdictColor={verdictDisplay.color}
             verifiedAt={verifiedAtDisplay}
             certificateId={verificationResult.certificateId}
           />

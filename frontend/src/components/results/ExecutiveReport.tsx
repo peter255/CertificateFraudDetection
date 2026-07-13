@@ -321,9 +321,17 @@ export default function ExecutiveReport({ report }: ExecutiveReportProps) {
     RECOMMENDATION_STYLE[report.recommendation as RecommendationType] ?? DEFAULT_REC;
   const { Icon: RecIcon } = rec;
   const findings = report.findings.filter((f) => {
-    const title = (f.title || "").trim();
+    const title = (f.title || "").trim().toLowerCase();
     const detail = (f.detail || "").trim();
     if (!title && !detail) return false;
+    // Owned by Forensic Indicators / Tamper Map / Technical Analysis / Overview.
+    if (
+      title.includes("evidence on the document") ||
+      title.includes("score breakdown") ||
+      title.includes("pdf fraud subscore")
+    ) {
+      return false;
+    }
     return true;
   });
 
