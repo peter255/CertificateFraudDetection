@@ -1,7 +1,11 @@
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
-import { PRODUCT_NAME } from "../../branding/constants";
+import GovernmentBrand from "../branding/GovernmentBrand";
+import {
+  PRODUCT_NAME,
+  PRODUCT_TAGLINE,
+} from "../../branding/constants";
 import { VS } from "../../theme";
 
 interface NavbarProps {
@@ -10,40 +14,6 @@ interface NavbarProps {
   onNewAnalysis?: () => void;
   scanId?: string | null;
   pathLabel?: string;
-}
-
-function ShieldLogo() {
-  return (
-    <Box
-      sx={{
-        width: 32,
-        height: 32,
-        borderRadius: "8px",
-        backgroundColor: VS.accentDim,
-        border: `1px solid rgba(0,255,163,0.35)`,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-      }}
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-        <path
-          d="M12 3L20 6.5V11.5C20 16.2 16.4 20.3 12 21.5C7.6 20.3 4 16.2 4 11.5V6.5L12 3Z"
-          stroke={VS.accent}
-          strokeWidth="1.75"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M9 12L11 14L15.5 9.5"
-          stroke={VS.accent}
-          strokeWidth="1.75"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </Box>
-  );
 }
 
 export default function Navbar({
@@ -73,22 +43,53 @@ export default function Navbar({
           gap: 2,
           px: { xs: 2, md: 3.5 },
           py: 1.5,
-          minHeight: 56,
+          minHeight: 64,
         }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, minWidth: 0 }}>
-          <ShieldLogo />
-          <Typography
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: { xs: 1.25, sm: 2 },
+            minWidth: 0,
+          }}
+        >
+          <GovernmentBrand size="md" variant="dark" />
+
+          <Box
             sx={{
-              fontSize: "0.9375rem",
-              fontWeight: 700,
-              letterSpacing: "0.12em",
-              color: VS.text,
-              lineHeight: 1,
+              width: "1px",
+              alignSelf: "stretch",
+              backgroundColor: VS.border,
+              display: { xs: "none", sm: "block" },
+              my: 0.5,
             }}
-          >
-            {PRODUCT_NAME}
-          </Typography>
+          />
+
+          <Box sx={{ minWidth: 0, display: { xs: "none", sm: "block" } }}>
+            <Typography
+              sx={{
+                fontSize: "0.9375rem",
+                fontWeight: 700,
+                color: VS.text,
+                letterSpacing: "-0.02em",
+                lineHeight: 1.2,
+              }}
+            >
+              {PRODUCT_NAME}
+            </Typography>
+            <Typography
+              sx={{
+                fontSize: "0.6875rem",
+                fontWeight: 500,
+                color: VS.textMuted,
+                lineHeight: 1.35,
+                mt: 0.25,
+              }}
+            >
+              {PRODUCT_TAGLINE}
+            </Typography>
+          </Box>
         </Box>
 
         <Box

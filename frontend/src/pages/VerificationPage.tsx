@@ -313,7 +313,7 @@ export default function VerificationPage({
               mb: 1.75,
             }}
           >
-            {PRODUCT_PILLARS}
+            {PRODUCT_TAGLINE}
           </Typography>
 
           <Typography
@@ -322,11 +322,24 @@ export default function VerificationPage({
               fontWeight: 700,
               letterSpacing: "-0.035em",
               color: VS.text,
-              mb: 1.25,
+              mb: 1,
               lineHeight: 1.1,
             }}
           >
-            {PRODUCT_TAGLINE}
+            {PRODUCT_NAME}
+          </Typography>
+
+          <Typography
+            sx={{
+              fontSize: "0.6875rem",
+              fontWeight: 600,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: VS.textMuted,
+              mb: 1.75,
+            }}
+          >
+            {PRODUCT_PILLARS}
           </Typography>
 
           <Typography

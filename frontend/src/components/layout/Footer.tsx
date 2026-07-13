@@ -1,6 +1,10 @@
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
-import { PRODUCT_NAME, PRODUCT_PILLARS } from "../../branding/constants";
+import {
+  ORGANIZATION_NAME,
+  PRODUCT_NAME,
+  PRODUCT_PILLARS,
+} from "../../branding/constants";
 import { VS } from "../../theme";
 
 export default function Footer() {
@@ -34,10 +38,9 @@ export default function Footer() {
           fontSize: "0.6875rem",
           color: VS.textMuted,
           letterSpacing: "0.04em",
-          fontFamily: VS.mono,
         }}
       >
-        {PRODUCT_PILLARS}
+        {ORGANIZATION_NAME} · {PRODUCT_PILLARS}
       </Typography>
     </Box>
   );
