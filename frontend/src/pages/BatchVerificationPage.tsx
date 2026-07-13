@@ -350,9 +350,8 @@ export default function BatchVerificationPage({ onBack }: BatchVerificationPageP
             verdict={selected.result.verdict}
             confidence={selected.result.confidence}
             trustScore={selected.result.engineTrustScore}
-            aiProbability={selected.result.aiProbability}
-            aiDetection={selected.result.aiDetection}
             riskLevel={selected.result.report.riskLevel}
+            riskScore={selected.result.report.riskScore}
           />
           <AnnotatedDocumentSection
             file={selected.file}
@@ -361,7 +360,7 @@ export default function BatchVerificationPage({ onBack }: BatchVerificationPageP
           />
           <ExecutiveReport report={selected.result.report} />
           <SignalsList signals={selected.result.signals} />
-          <TechnicalDetails technical={selected.result.technical} />
+          <TechnicalDetails result={selected.result} />
           <VendorAnalysis vendorFindings={selected.result.vendorFindings} />
           <ActionsPanel
             result={selected.result}

@@ -1,6 +1,6 @@
 /**
- * AnnotatedDocumentSection — document viewer with engine-returned overlays.
- * Bounding boxes / heatmaps render only when the active engine provided them.
+ * AnnotatedDocumentSection — Tamper Localization
+ * Bounding boxes / heatmaps render only when the verification engine provided them.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -17,6 +17,23 @@ const SEVERITY_STYLE = {
   medium: { color: "#D97706", bg: "rgba(217,119,6,0.16)", label: "Medium" },
   low: { color: "#CA8A04", bg: "rgba(202,138,4,0.14)", label: "Low" },
 } as const;
+
+function FieldLabel({ children }: { children: string }) {
+  return (
+    <Typography
+      sx={{
+        fontSize: "0.5625rem",
+        fontWeight: 700,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        color: DASHBOARD.textMuted,
+        mb: 0.35,
+      }}
+    >
+      {children}
+    </Typography>
+  );
+}
 
 interface AnnotatedDocumentSectionProps {
   file: File;
@@ -61,7 +78,7 @@ export default function AnnotatedDocumentSection({
 
   return (
     <SectionShell
-      title="Document Tamper Map"
+      title="Tamper Localization"
       icon={<TravelExploreIcon sx={{ fontSize: 18 }} />}
       accentColor={DASHBOARD.danger}
       emphasis="primary"
@@ -70,7 +87,7 @@ export default function AnnotatedDocumentSection({
           <SectionBadge color="rgba(197,15,31,0.10)">
             <Box component="span" sx={{ color: DASHBOARD.danger }}>
               {validRegions.length > 0
-                ? `${validRegions.length} marked region${validRegions.length === 1 ? "" : "s"}`
+                ? "Suspicious regions marked"
                 : "Heatmap available"}
             </Box>
           </SectionBadge>
@@ -83,7 +100,7 @@ export default function AnnotatedDocumentSection({
           display: "grid",
           gridTemplateColumns: {
             xs: "1fr",
-            lg: hasOverlays ? "minmax(0, 1.55fr) minmax(280px, 0.85fr)" : "1fr",
+            lg: hasOverlays ? "minmax(0, 1.55fr) minmax(300px, 0.85fr)" : "1fr",
           },
           minHeight: { xs: 480, md: 620 },
         }}
@@ -110,7 +127,10 @@ export default function AnnotatedDocumentSection({
                 backgroundColor: "#FAFBFD",
               }}
             >
-              <Typography sx={{ fontSize: "0.875rem", color: DASHBOARD.textSecondary, lineHeight: 1.5 }}>
+              <Typography sx={{ fontSize: "0.875rem", fontWeight: 600, color: DASHBOARD.textPrimary, mb: 0.5 }}>
+                No localized findings
+              </Typography>
+              <Typography sx={{ fontSize: "0.8125rem", color: DASHBOARD.textSecondary, lineHeight: 1.5 }}>
                 No suspicious regions were provided by the verification engine.
               </Typography>
             </Box>
@@ -153,12 +173,12 @@ export default function AnnotatedDocumentSection({
                   mb: 0.75,
                 }}
               >
-                Marked areas
+                Localized evidence
               </Typography>
-              <Typography sx={{ fontSize: "0.875rem", color: DASHBOARD.textSecondary, lineHeight: 1.5 }}>
+              <Typography sx={{ fontSize: "0.8125rem", color: DASHBOARD.textSecondary, lineHeight: 1.5 }}>
                 {validRegions.length > 0
-                  ? "Click a region or list item to highlight where manipulation was detected."
-                  : "A forensic heatmap highlights likely manipulation zones on the document."}
+                  ? "Select a region to highlight where the verification engine reported possible manipulation."
+                  : "The forensic heatmap highlights areas the verification engine associated with possible manipulation. Warmer zones indicate higher attention from the detection model."}
               </Typography>
             </Box>
 
@@ -169,18 +189,41 @@ export default function AnnotatedDocumentSection({
                 p: 1.5,
                 display: "flex",
                 flexDirection: "column",
-                gap: 1,
+                gap: 1.25,
                 maxHeight: { xs: 360, lg: 560 },
               }}
             >
               {validRegions.length === 0 ? (
-                <Box sx={{ p: 2, color: DASHBOARD.textMuted, fontSize: "0.875rem" }}>
-                  Heatmap overlay is shown on the document.
+                <Box
+                  sx={{
+                    p: 2,
+                    borderRadius: "12px",
+                    backgroundColor: "#FFFFFF",
+                    border: `1px solid ${DASHBOARD.borderLight}`,
+                  }}
+                >
+                  <FieldLabel>Heatmap</FieldLabel>
+                  <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, color: DASHBOARD.textPrimary, mb: 0.75 }}>
+                    Forensic attention map
+                  </Typography>
+                  <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textSecondary, lineHeight: 1.55 }}>
+                    This overlay was provided by the verification engine. It indicates relative
+                    suspicion across the document surface. It is not a precise boundary and does not
+                    invent region coordinates.
+                  </Typography>
                 </Box>
               ) : (
                 validRegions.map((region, index) => {
                   const style = SEVERITY_STYLE[region.severity];
                   const active = region.id === selectedId;
+                  const confidencePct =
+                    region.confidence != null && Number.isFinite(region.confidence)
+                      ? Math.round(region.confidence * 1000) / 10
+                      : null;
+                  const reason =
+                    region.label?.trim() ||
+                    (region.description?.trim() ? "Suspicious region" : "Marked region");
+
                   return (
                     <Box
                       key={region.id}
@@ -197,7 +240,7 @@ export default function AnnotatedDocumentSection({
                         boxShadow: active ? `0 0 0 3px ${style.color}22` : "none",
                       }}
                     >
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.75 }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.25 }}>
                         <Box
                           sx={{
                             width: 22,
@@ -224,7 +267,7 @@ export default function AnnotatedDocumentSection({
                             minWidth: 0,
                           }}
                         >
-                          {region.label}
+                          {reason}
                         </Typography>
                         <Box
                           sx={{
@@ -242,24 +285,37 @@ export default function AnnotatedDocumentSection({
                           {style.label}
                         </Box>
                       </Box>
-                      <Typography
-                        sx={{ fontSize: "0.75rem", color: DASHBOARD.textSecondary, lineHeight: 1.55 }}
+
+                      <Box
+                        sx={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr",
+                          gap: 1,
+                          mb: 1.25,
+                        }}
                       >
-                        {region.description}
-                      </Typography>
-                      <Typography sx={{ fontSize: "0.6875rem", color: DASHBOARD.textMuted, mt: 0.75 }}>
-                        {[
-                          `Page ${region.page}`,
-                          region.location || null,
-                          region.layer ? `Layer: ${region.layer}` : null,
-                          region.confidence != null
-                            ? `Confidence: ${Math.round(region.confidence * 1000) / 10}%`
-                            : null,
-                          region.bboxFormat ? `Format: ${region.bboxFormat}` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </Typography>
+                        <Box>
+                          <FieldLabel>Page</FieldLabel>
+                          <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, color: DASHBOARD.textPrimary }}>
+                            {region.page}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <FieldLabel>Confidence</FieldLabel>
+                          <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, color: DASHBOARD.textPrimary }}>
+                            {confidencePct != null ? `${confidencePct}%` : "Not provided by the verification engine."}
+                          </Typography>
+                        </Box>
+                      </Box>
+
+                      <Box>
+                        <FieldLabel>Description</FieldLabel>
+                        <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textSecondary, lineHeight: 1.55 }}>
+                          {region.description?.trim()
+                            ? region.description
+                            : "Not provided by the verification engine."}
+                        </Typography>
+                      </Box>
                     </Box>
                   );
                 })

@@ -74,11 +74,12 @@ function displayCategory(raw: string): string {
     "visual manipulation": "Visual Manipulation",
     forensic: "Forensic Analysis",
     perceptual: "Perceptual Analysis",
-    semantic: "Semantic Analysis",
+    semantic: "Content Analysis",
     "field evidence": "Field Evidence",
-    "detection pipeline": "Detection Pipeline",
+    "detection pipeline": "Detection Process",
     "document validity": "Document Validity",
     "engine signal": "Forensic Indicator",
+    "provenance / c2pa": "Provenance",
   };
   if (map[key]) return map[key];
   return raw.trim() || "Forensic Indicator";
@@ -296,7 +297,7 @@ function CategoryGroup({ group, startIndex }: { group: SignalGroup; startIndex: 
             textTransform: "uppercase",
           }}
         >
-          {group.signals.length}
+          {STATUS_STYLE[group.worstStatus].label}
         </Box>
       </Box>
       {group.signals.map((signal, i) => (
@@ -326,7 +327,7 @@ export default function SignalsList({ signals }: SignalsListProps) {
       icon={<BugReportIcon sx={{ fontSize: 18 }} />}
       accentColor={DASHBOARD.danger}
       emphasis="primary"
-      badge={<SectionBadge>{realSignals.length} checks</SectionBadge>}
+      badge={<SectionBadge>Indicators reported</SectionBadge>}
       noPadding
     >
       <DistributionPanel signals={realSignals} />

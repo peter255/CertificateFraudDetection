@@ -1,7 +1,7 @@
 /**
- * ExecutiveSummaryCard — high-level narrative + optional AI detection paragraph.
+ * ExecutiveSummaryCard — high-level narrative only.
  * Authoritative narrative: result.aiSummary (report.summary is not used for display).
- * AI paragraph: only when aiDetection.supported and explanation is present.
+ * AI Generated Content details live in Technical Analysis (not duplicated here).
  */
 
 import Box from "@mui/material/Box";
@@ -24,12 +24,8 @@ interface ExecutiveSummaryCardProps {
 
 export default function ExecutiveSummaryCard({ result }: ExecutiveSummaryCardProps) {
   const summary = (result.aiSummary || "").trim();
-  const aiExplanation =
-    result.aiDetection?.supported && isRealText(result.aiDetection.explanation)
-      ? result.aiDetection.explanation.trim()
-      : null;
 
-  if (!isRealText(summary) && !aiExplanation) {
+  if (!isRealText(summary)) {
     return null;
   }
 
@@ -40,37 +36,16 @@ export default function ExecutiveSummaryCard({ result }: ExecutiveSummaryCardPro
       accentColor={DASHBOARD.accent}
       emphasis="primary"
     >
-      <Box
-        sx={{
-          px: { xs: 0.25, sm: 0.5 },
-          py: 0.25,
-          display: "flex",
-          flexDirection: "column",
-          gap: 1.5,
-        }}
-      >
-        {isRealText(summary) && (
-          <Typography
-            sx={{
-              fontSize: { xs: "0.9375rem", sm: "1rem" },
-              color: DASHBOARD.textSecondary,
-              lineHeight: 1.7,
-            }}
-          >
-            {summary}
-          </Typography>
-        )}
-        {aiExplanation && (
-          <Typography
-            sx={{
-              fontSize: { xs: "0.9375rem", sm: "1rem" },
-              color: DASHBOARD.textSecondary,
-              lineHeight: 1.7,
-            }}
-          >
-            {aiExplanation}
-          </Typography>
-        )}
+      <Box sx={{ px: { xs: 0.25, sm: 0.5 }, py: 0.25 }}>
+        <Typography
+          sx={{
+            fontSize: { xs: "0.9375rem", sm: "1rem" },
+            color: DASHBOARD.textSecondary,
+            lineHeight: 1.7,
+          }}
+        >
+          {summary}
+        </Typography>
       </Box>
     </SectionShell>
   );

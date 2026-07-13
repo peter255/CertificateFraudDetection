@@ -221,7 +221,7 @@ export default function VendorAnalysis({ vendorFindings }: VendorAnalysisProps) 
       icon={<HubOutlinedIcon sx={{ fontSize: 18 }} />}
       badge={
         <SectionBadge>
-          {cards.length} engine{cards.length !== 1 ? "s" : ""}
+          {cards.length === 1 ? "Active engine" : "Active engines"}
         </SectionBadge>
       }
     >

@@ -1,6 +1,6 @@
 /**
- * TechnicalDetails — engine technical payloads only.
- * Forensic indicators live in SignalsList; overview scores live in VerdictCard.
+ * Technical Analysis — executive forensic investigation report.
+ * Human-language cards only. Raw payloads live in Developer Technical Details.
  */
 
 import { useMemo, useState } from "react";
@@ -8,259 +8,437 @@ import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Collapse from "@mui/material/Collapse";
 import ScienceIcon from "@mui/icons-material/Science";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
-import type { EngineTechnicalDetails } from "../../types/verification";
+import CancelIcon from "@mui/icons-material/Cancel";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
+import CodeOutlinedIcon from "@mui/icons-material/CodeOutlined";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
+import type { VerificationResult } from "../../types/verification";
+import {
+  buildForensicReport,
+  forensicStatusStyle,
+  type ForensicCard,
+  type ForensicStatus,
+  type TimelineStep,
+} from "../../utils/forensicAnalysis";
 import { DASHBOARD, SectionBadge, SectionShell } from "./shared/dashboardShell";
 
-function humanizeKey(key: string): string {
-  return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+function StatusIcon({ status }: { status: ForensicStatus }) {
+  const style = forensicStatusStyle(status);
+  const sx = { fontSize: 16, color: style.color };
+  if (status === "passed") return <CheckCircleIcon sx={sx} />;
+  if (status === "warning") return <WarningAmberIcon sx={sx} />;
+  if (status === "failed") return <CancelIcon sx={sx} />;
+  if (status === "informed") return <InfoOutlinedIcon sx={sx} />;
+  return <HelpOutlineOutlinedIcon sx={sx} />;
 }
 
-/** Fields already shown in Verification Overview — omit from technical dumps. */
-const OVERVIEW_SCORE_KEYS = new Set([
-  "ml_score",
-  "fraud_score",
-  "trust_score",
-  "raw_score",
-  "confidence",
-  "model_confidence",
-  "ai_probability",
-  "ai_prob",
-  "ai_generation_probability",
-  "generative_ai_probability",
-  "generative_probability",
-  "ai_generated",
-  "ai_generated_score",
-  "ai_likelihood",
-  "synthetic_probability",
-  "deepfake_probability",
-  "generated_content_confidence",
-  "ai_detection_score",
-]);
-
-function stripPromotedScores(value: unknown): unknown {
-  const rec =
-    value && typeof value === "object" && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : null;
-  if (!rec) return value;
-  const next: Record<string, unknown> = {};
-  for (const [key, nested] of Object.entries(rec)) {
-    if (OVERVIEW_SCORE_KEYS.has(key.toLowerCase())) continue;
-    next[key] = nested;
-  }
-  return next;
-}
-
-function summarizeValue(value: unknown): string {
-  if (value == null) return "";
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    if (value.length === 0) return "";
-    if (value.every((item) => typeof item === "string" || typeof item === "number")) {
-      return value.map(String).join(", ");
-    }
-    return `${value.length} items`;
-  }
-  if (typeof value === "object") {
-    const keys = Object.keys(value as object);
-    if (keys.length === 0) return "";
-    return keys
-      .slice(0, 12)
-      .map((key) => {
-        const nested = (value as Record<string, unknown>)[key];
-        if (
-          typeof nested === "string" ||
-          typeof nested === "number" ||
-          typeof nested === "boolean"
-        ) {
-          return `${humanizeKey(key)}: ${nested}`;
-        }
-        if (Array.isArray(nested)) return `${humanizeKey(key)}: ${nested.length} items`;
-        if (nested && typeof nested === "object") {
-          return `${humanizeKey(key)}: ${Object.keys(nested).length} fields`;
-        }
-        return "";
-      })
-      .filter(Boolean)
-      .join(" · ");
-  }
-  return "";
-}
-
-interface ResolvedModule {
-  key: string;
-  label: string;
-  detail: string;
-}
-
-function extrasFromTechnical(technical?: EngineTechnicalDetails | null): ResolvedModule[] {
-  if (!technical) return [];
-  const modules: ResolvedModule[] = [];
-
-  const push = (key: string, label: string, detail: string) => {
-    if (!detail.trim()) return;
-    modules.push({ key, label, detail });
-  };
-
-  if (technical.analysisStatus) {
-    push("analysis-status", "Analysis Status", technical.analysisStatus);
-  }
-  if (technical.layersApplied?.length) {
-    push("layers-applied", "Layers Applied", technical.layersApplied.join(", "));
-  }
-  if (technical.classification) {
-    const cleaned = stripPromotedScores(technical.classification);
-    push("classification", "Classification", summarizeValue(cleaned));
-  }
-  if (technical.pdfFraudSubscores) {
-    push("pdf-fraud-subscores", "PDF Fraud Subscores", summarizeValue(technical.pdfFraudSubscores));
-  }
-  if (technical.structuralProfile) {
-    push("structural-profile", "Structural Profile", summarizeValue(technical.structuralProfile));
-  }
-  if (technical.engineResults) {
-    const cleaned = stripPromotedScores(technical.engineResults);
-    push("engine-results", "Engine Results", summarizeValue(cleaned));
-  }
-  if (technical.layerDetails) {
-    push("layer-details", "Layer Details", summarizeValue(technical.layerDetails));
-  }
-  if (technical.evidenceGroups) {
-    push("evidence-groups", "Evidence Groups", summarizeValue(technical.evidenceGroups));
-  }
-  if (technical.analysisFlow?.length) {
-    push(
-      "analysis-flow",
-      "Analysis Flow",
-      technical.analysisFlow
-        .map((step, index) => {
-          const summary = summarizeValue(step);
-          return summary ? `${index + 1}. ${summary}` : "";
-        })
-        .filter(Boolean)
-        .join(" · ")
-    );
-  }
-
-  return modules;
-}
-
-function AnalysisTile({ module }: { module: ResolvedModule }) {
+function StatusBadge({ status }: { status: ForensicStatus }) {
+  const style = forensicStatusStyle(status);
   return (
     <Box
       sx={{
-        p: 2,
-        borderRadius: "14px",
-        backgroundColor: "#FFFFFF",
-        border: `1px solid ${DASHBOARD.borderLight}`,
-        borderTop: `3px solid ${DASHBOARD.accent}`,
-        minHeight: 130,
-        display: "flex",
-        flexDirection: "column",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 0.6,
+        px: 1.1,
+        py: 0.4,
+        borderRadius: "8px",
+        backgroundColor: style.bg,
+        border: `1px solid ${style.color}33`,
+        flexShrink: 0,
       }}
     >
-      <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", mb: 1 }}>
-        <Typography sx={{ fontSize: "0.875rem", fontWeight: 700, color: DASHBOARD.textPrimary }}>
-          {module.label}
-        </Typography>
-        <Box
-          sx={{
-            width: 28,
-            height: 28,
-            borderRadius: "8px",
-            backgroundColor: "rgba(0,120,212,0.08)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <WarningAmberIcon sx={{ fontSize: 16, color: DASHBOARD.accent }} />
-        </Box>
-      </Box>
-      <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted, mb: 1, flex: 1, lineHeight: 1.45 }}>
-        {module.detail}
+      <StatusIcon status={status} />
+      <Typography
+        sx={{
+          fontSize: "0.625rem",
+          fontWeight: 700,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+          color: style.color,
+        }}
+      >
+        {style.label}
       </Typography>
     </Box>
   );
 }
 
+function FieldLabel({ children }: { children: string }) {
+  return (
+    <Typography
+      sx={{
+        fontSize: "0.5625rem",
+        fontWeight: 700,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        color: DASHBOARD.textMuted,
+        mb: 0.4,
+      }}
+    >
+      {children}
+    </Typography>
+  );
+}
+
+function ForensicEvidenceCard({ card }: { card: ForensicCard }) {
+  const style = forensicStatusStyle(card.status);
+  return (
+    <Box
+      sx={{
+        p: 2.25,
+        borderRadius: "14px",
+        backgroundColor: "#FFFFFF",
+        border: `1px solid ${DASHBOARD.borderLight}`,
+        borderTop: `3px solid ${style.color}`,
+        display: "flex",
+        flexDirection: "column",
+        gap: 1.5,
+        minHeight: 220,
+        boxShadow: "0 1px 4px rgba(15,23,42,0.04)",
+      }}
+    >
+      <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 1.5 }}>
+        <Typography sx={{ fontSize: "0.9375rem", fontWeight: 700, color: DASHBOARD.textPrimary, lineHeight: 1.3 }}>
+          {card.title}
+        </Typography>
+        <StatusBadge status={card.status} />
+      </Box>
+
+      <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textSecondary, lineHeight: 1.55 }}>
+        {card.description}
+      </Typography>
+
+      {card.metric && (
+        <Box
+          sx={{
+            px: 1.5,
+            py: 1.25,
+            borderRadius: "10px",
+            backgroundColor: "#F8FAFC",
+            border: `1px solid ${DASHBOARD.borderLight}`,
+          }}
+        >
+          <FieldLabel>{card.metric.label}</FieldLabel>
+          <Typography
+            sx={{
+              fontSize: "1.25rem",
+              fontWeight: 800,
+              color: DASHBOARD.textPrimary,
+              letterSpacing: "-0.02em",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {card.metric.value}
+          </Typography>
+        </Box>
+      )}
+
+      <Box>
+        <FieldLabel>Finding</FieldLabel>
+        <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, color: DASHBOARD.textPrimary, lineHeight: 1.5 }}>
+          {card.finding}
+        </Typography>
+      </Box>
+
+      <Box sx={{ mt: "auto" }}>
+        <FieldLabel>Business Interpretation</FieldLabel>
+        <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textSecondary, lineHeight: 1.55 }}>
+          {card.interpretation}
+        </Typography>
+      </Box>
+    </Box>
+  );
+}
+
+function InvestigationTimeline({ steps }: { steps: TimelineStep[] }) {
+  if (steps.length === 0) return null;
+
+  return (
+    <Box
+      sx={{
+        px: { xs: 2, sm: 2.75 },
+        py: { xs: 2.25, sm: 2.75 },
+        borderBottom: `1px solid ${DASHBOARD.borderLight}`,
+        backgroundColor: "#F8FAFC",
+      }}
+    >
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
+        <AccountTreeOutlinedIcon sx={{ fontSize: 18, color: DASHBOARD.accent }} />
+        <Box>
+          <Typography sx={{ fontSize: "0.875rem", fontWeight: 700, color: DASHBOARD.textPrimary }}>
+            Investigation Timeline
+          </Typography>
+          <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted, mt: 0.25 }}>
+            Completed steps reported for this verification.
+          </Typography>
+        </Box>
+      </Box>
+
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 0 }}>
+        {steps.map((step, index) => {
+          const isLast = index === steps.length - 1;
+          return (
+            <Box key={step.id} sx={{ display: "flex", gap: 1.5, minHeight: isLast ? 28 : 44 }}>
+              <Box
+                sx={{
+                  width: 22,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: "50%",
+                    backgroundColor: step.complete ? "#ECFDF5" : "#F1F5F9",
+                    border: `1.5px solid ${step.complete ? "#107C10" : DASHBOARD.border}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    zIndex: 1,
+                  }}
+                >
+                  {step.complete ? (
+                    <CheckCircleIcon sx={{ fontSize: 14, color: "#107C10" }} />
+                  ) : (
+                    <Box sx={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: DASHBOARD.textMuted }} />
+                  )}
+                </Box>
+                {!isLast && (
+                  <Box
+                    sx={{
+                      width: 2,
+                      flex: 1,
+                      backgroundColor: DASHBOARD.border,
+                      my: 0.35,
+                    }}
+                  />
+                )}
+              </Box>
+              <Typography
+                sx={{
+                  fontSize: "0.8125rem",
+                  fontWeight: 600,
+                  color: DASHBOARD.textPrimary,
+                  pt: 0.15,
+                  lineHeight: 1.4,
+                }}
+              >
+                {step.label}
+              </Typography>
+            </Box>
+          );
+        })}
+      </Box>
+    </Box>
+  );
+}
+
+function DeveloperTechnicalDetails({ payload }: { payload: Record<string, unknown> }) {
+  const [open, setOpen] = useState(false);
+  const json = useMemo(() => JSON.stringify(payload, null, 2), [payload]);
+
+  return (
+    <Box sx={{ borderTop: `1px solid ${DASHBOARD.borderLight}` }}>
+      <Box
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((v) => !v);
+          }
+        }}
+        sx={{
+          px: { xs: 2, sm: 2.75 },
+          py: 1.75,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 2,
+          cursor: "pointer",
+          backgroundColor: open ? "#F1F5F9" : "#FAFBFD",
+          "&:hover": { backgroundColor: "#F1F5F9" },
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, minWidth: 0 }}>
+          <CodeOutlinedIcon sx={{ fontSize: 18, color: DASHBOARD.textMuted }} />
+          <Box sx={{ minWidth: 0 }}>
+            <Typography sx={{ fontSize: "0.8125rem", fontWeight: 700, color: DASHBOARD.textPrimary }}>
+              Developer Technical Details
+            </Typography>
+            <Typography sx={{ fontSize: "0.6875rem", color: DASHBOARD.textMuted }}>
+              Raw engine payloads for engineering and audit support. Collapsed by default.
+            </Typography>
+          </Box>
+        </Box>
+        <ExpandMoreIcon
+          sx={{
+            fontSize: 22,
+            color: DASHBOARD.textMuted,
+            transform: open ? "rotate(180deg)" : "rotate(0deg)",
+            transition: "transform 0.2s ease",
+            flexShrink: 0,
+          }}
+        />
+      </Box>
+      <Collapse in={open}>
+        <Box
+          sx={{
+            px: { xs: 2, sm: 2.75 },
+            pb: 2.5,
+            backgroundColor: "#0F172A",
+          }}
+        >
+          <Box
+            component="pre"
+            sx={{
+              m: 0,
+              mt: 2,
+              p: 2,
+              borderRadius: "10px",
+              backgroundColor: "#020617",
+              color: "#E2E8F0",
+              fontSize: "0.6875rem",
+              lineHeight: 1.55,
+              overflow: "auto",
+              maxHeight: 420,
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+            }}
+          >
+            {json}
+          </Box>
+        </Box>
+      </Collapse>
+    </Box>
+  );
+}
+
 interface TechnicalDetailsProps {
-  /** @deprecated Signals belong in SignalsList; ignored here. */
+  /** @deprecated Prefer passing `result`. */
   signals?: unknown;
-  technical?: EngineTechnicalDetails | null;
+  technical?: VerificationResult["technical"] | null;
+  /** Preferred: full result for forensic cards (structure, AI, timeline). */
+  result?: VerificationResult | null;
 }
 
 export default function TechnicalDetails({
   technical = null,
+  result = null,
 }: TechnicalDetailsProps) {
-  const [isOpen, setIsOpen] = useState(true);
-  const modules = useMemo(() => extrasFromTechnical(technical), [technical]);
+  const report = useMemo(() => {
+    if (result) return buildForensicReport(result);
+    if (!technical) return null;
+    // Legacy technical-only path (batch callers may still pass technical alone).
+    const stub = {
+      certificateId: "",
+      verdict: "suspicious" as const,
+      confidence: 0,
+      aiProbability: null,
+      aiDetection: {
+        supported: false,
+        probability: null,
+        label: "Unknown" as const,
+        explanation: null,
+      },
+      engineTrustScore: null,
+      documentType: null,
+      issuingAuthority: null,
+      holderName: null,
+      issueDate: null,
+      verifiedAt: "",
+      aiSummary: "",
+      signals: [],
+      report: {
+        summary: "",
+        riskLevel: "medium" as const,
+        riskScore: 50,
+        trustScore: 50,
+        findings: [],
+        recommendation: "",
+      },
+      vendorFindings: [],
+      tamperRegions: [],
+      engineDurationMs: null,
+      engineVerdictLabel: null,
+      analysisStatus: technical.analysisStatus,
+      fraudScore: null,
+      fraudColor: null,
+      isScan: null,
+      fileKind: null,
+      technical,
+    };
+    return buildForensicReport(stub);
+  }, [result, technical]);
 
-  if (modules.length === 0) {
-    return null;
-  }
+  if (!report) return null;
+
+  const providedCount = report.cards.filter((c) => c.status !== "unavailable").length;
 
   return (
     <SectionShell
       title="Technical Analysis"
       icon={<ScienceIcon sx={{ fontSize: 18 }} />}
+      accentColor={DASHBOARD.accent}
+      emphasis="primary"
       badge={
         <SectionBadge>
-          {modules.length} module{modules.length !== 1 ? "s" : ""} reported
+          {providedCount > 0
+            ? "Forensic inspection report"
+            : "Awaiting engine evidence"}
         </SectionBadge>
       }
       noPadding
     >
       <Box
-        role="button"
-        tabIndex={0}
-        onClick={() => setIsOpen((prev) => !prev)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") setIsOpen((prev) => !prev);
-        }}
         sx={{
-          px: 3,
-          py: 2,
-          backgroundColor: "#F1F5F9",
-          borderBottom: isOpen ? `1px solid ${DASHBOARD.borderLight}` : "none",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          cursor: "pointer",
+          px: { xs: 2, sm: 2.75 },
+          py: 1.75,
+          borderBottom: `1px solid ${DASHBOARD.borderLight}`,
+          backgroundColor: "#FAFBFD",
         }}
       >
-        <Box>
-          <Typography sx={{ fontSize: "0.875rem", fontWeight: 700, color: DASHBOARD.textPrimary }}>
-            Engine Technical Payloads
-          </Typography>
-          <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted }}>
-            {modules.length} technical module{modules.length !== 1 ? "s" : ""} from the API
-          </Typography>
-        </Box>
-        <Typography sx={{ fontSize: "0.75rem", color: DASHBOARD.textMuted }}>
-          {isOpen ? "Collapse" : "Expand"}
+        <Typography sx={{ fontSize: "0.8125rem", color: DASHBOARD.textSecondary, lineHeight: 1.55 }}>
+          Forensic inspection areas reviewed by the verification engine. Each card explains what was
+          inspected, what was found, and what it means for the investigation.
         </Typography>
       </Box>
 
-      <Collapse in={isOpen}>
-        <Box
-          sx={{
-            px: 3,
-            py: 3,
-            display: "grid",
-            gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(3, 1fr)" },
-            gap: 1.5,
-            backgroundColor: "#FAFBFD",
-          }}
-        >
-          {modules.map((module) => (
-            <AnalysisTile key={module.key} module={module} />
-          ))}
-        </Box>
-      </Collapse>
+      <InvestigationTimeline steps={report.timeline} />
+
+      <Box
+        sx={{
+          px: { xs: 2, sm: 2.75 },
+          py: { xs: 2.25, sm: 2.75 },
+          display: "grid",
+          gridTemplateColumns: {
+            xs: "1fr",
+            sm: "1fr 1fr",
+            lg: "repeat(3, 1fr)",
+          },
+          gap: 1.5,
+          backgroundColor: "#FFFFFF",
+        }}
+      >
+        {report.cards.map((card) => (
+          <ForensicEvidenceCard key={card.id} card={card} />
+        ))}
+      </Box>
+
+      {report.hasDeveloperPayload && (
+        <DeveloperTechnicalDetails payload={report.developerPayload} />
+      )}
     </SectionShell>
   );
 }

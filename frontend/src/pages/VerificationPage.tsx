@@ -776,9 +776,8 @@ export default function VerificationPage({ onOpenBatch }: VerificationPageProps)
             verdict={verificationResult.verdict}
             confidence={verificationResult.confidence}
             trustScore={verificationResult.engineTrustScore}
-            aiProbability={verificationResult.aiProbability}
-            aiDetection={verificationResult.aiDetection}
             riskLevel={verificationResult.report.riskLevel}
+            riskScore={verificationResult.report.riskScore}
           />
 
           {file && (
@@ -793,10 +792,7 @@ export default function VerificationPage({ onOpenBatch }: VerificationPageProps)
 
           <SignalsList signals={verificationResult.signals} />
 
-          <TechnicalDetails
-            signals={verificationResult.signals}
-            technical={verificationResult.technical}
-          />
+          <TechnicalDetails result={verificationResult} />
 
           <VendorAnalysis vendorFindings={verificationResult.vendorFindings} />
 

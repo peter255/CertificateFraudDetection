@@ -852,7 +852,7 @@ function v2SignalCategory(signal: EngineV2Signal): string {
   if (blob.includes("signature") || blob.includes("c2pa") || blob.includes("provenance")) {
     return blob.includes("signature") && !blob.includes("c2pa")
       ? "Signature Analysis"
-      : "Provenance / C2PA";
+      : "Provenance";
   }
   if (blob.includes("font")) return "Font Consistency";
   if (blob.includes("layout") || blob.includes("template") || blob.includes("alignment")) {
@@ -870,7 +870,7 @@ function v2SignalCategory(signal: EngineV2Signal): string {
   if (blob.includes("exif") || blob.includes("metadata")) return "Metadata Integrity";
   if (engine.includes("forensic")) return "Forensic Analysis";
   if (engine.includes("perceptual")) return "Perceptual Analysis";
-  if (engine.includes("semantic")) return "Semantic Analysis";
+  if (engine.includes("semantic")) return "Content Analysis";
   if (layer.includes("llm") || engine.includes("ai_review") || detector.includes("visual_review")) {
     return "AI Review";
   }
@@ -879,8 +879,6 @@ function v2SignalCategory(signal: EngineV2Signal): string {
   const label =
     optionalString(signal.engine_label) ||
     optionalString(signal.detector_label) ||
-    optionalString(signal.layer) ||
-    optionalString(signal.engine) ||
     optionalString(signal.type) ||
     optionalString(signal.check);
 
@@ -899,7 +897,7 @@ function v2SignalDescription(signal: EngineV2Signal): string {
   if (signal.location) meta.push(`Location: ${signal.location}`);
   if (signal.page != null) meta.push(`Page ${signal.page}`);
   if (signal.bbox?.length === 4) {
-    meta.push(`BBox [${signal.bbox.join(", ")}]`);
+    meta.push("Spatial region marked on document");
   }
   if (signal.severity) meta.push(`Severity: ${signal.severity}`);
   if (signal.evidence_class) meta.push(`Evidence: ${signal.evidence_class}`);
@@ -910,12 +908,9 @@ function v2SignalDescription(signal: EngineV2Signal): string {
   if (signal.generator) meta.push(`Generator: ${signal.generator}`);
   if (signal.issuer_name) meta.push(`Issuer: ${signal.issuer_name}`);
   if (signal.issuer_category) meta.push(`Issuer category: ${signal.issuer_category}`);
-  if (signal.stage) meta.push(`Stage: ${signal.stage}`);
-  if (signal.source) meta.push(`Source: ${signal.source}`);
-  if (signal.score_role) meta.push(`Score role: ${signal.score_role}`);
-  if (signal.bbox_source) meta.push(`BBox source: ${signal.bbox_source}`);
+  // Internal stage / score-role / bbox-source tokens are developer-only — omit from customer UI.
   if (signal.bbox_area_ratio != null) {
-    meta.push(`BBox area ratio: ${signal.bbox_area_ratio}`);
+    meta.push(`Marked area ratio: ${signal.bbox_area_ratio}`);
   }
   if (signal.field_fit_score != null) meta.push(`Field fit: ${signal.field_fit_score}`);
   if (signal.field_importance != null) {

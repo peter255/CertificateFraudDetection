@@ -15,7 +15,6 @@ import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
 import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
-import DocumentScannerOutlinedIcon from "@mui/icons-material/DocumentScannerOutlined";
 import AspectRatioOutlinedIcon from "@mui/icons-material/AspectRatioOutlined";
 import HeightOutlinedIcon from "@mui/icons-material/HeightOutlined";
 import GridOnOutlinedIcon from "@mui/icons-material/GridOnOutlined";
@@ -115,11 +114,7 @@ export default function DocumentInfo({ data }: DocumentInfoProps) {
     { icon: DataObjectOutlinedIcon, label: "MIME Type", value: data.mimeType },
     { icon: DescriptionOutlinedIcon, label: "Document Type", value: data.documentType },
     { icon: CategoryOutlinedIcon, label: "File Kind", value: data.fileKind },
-    {
-      icon: DocumentScannerOutlinedIcon,
-      label: "Scan",
-      value: data.isScan === true ? "Yes" : data.isScan === false ? "No" : null,
-    },
+    // Scan / born-digital interpretation lives in Technical Analysis → Document Structure.
     { icon: AspectRatioOutlinedIcon, label: "Width", value: data.width },
     { icon: HeightOutlinedIcon, label: "Height", value: data.height },
     { icon: GridOnOutlinedIcon, label: "Resolution", value: data.resolution },
