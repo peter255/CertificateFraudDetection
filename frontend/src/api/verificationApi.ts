@@ -10,6 +10,7 @@ import type {
   Signal,
   Finding,
   TamperRegion,
+  AiDetection,
 } from "../types/verification";
 import {
   ACTIVE_VERIFICATION_ENGINE,
@@ -20,6 +21,11 @@ import {
   DECISION_THRESHOLDS,
   type EnginePredictionLabel,
 } from "../decision";
+import {
+  buildAiDetection,
+  extractAiFieldsFromPools,
+  parseAiClassificationLabel,
+} from "../utils/aiDetection";
 
 // ── Engine V1 response DTO ───────────────────────────────────────────────────
 
@@ -394,9 +400,8 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
     optionalString(data.final_result) ||
     optionalString(data.overall_status);
 
-  const aiProbability = toScore100(
-    typeof analysis.ml_score === "number" ? analysis.ml_score : null
-  );
+  const aiDetection = resolveV1AiDetection(data, analysis);
+  const aiProbability = aiDetection.probability;
 
   // V1 has no native fraud_score / trust_score — derive from prediction intensity.
   // fraudulent → fraud ≈ confidence in that call; authentic → trust ≈ confidence.
@@ -449,6 +454,7 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
     verdict: "suspicious",
     confidence: modelConfidence,
     aiProbability,
+    aiDetection,
     engineTrustScore,
     documentType: optionalString(data.document_type),
     issuingAuthority: optionalString(data.issuer_name),
@@ -1057,16 +1063,93 @@ function toScore100(...candidates: Array<number | null | undefined>): number | n
   return null;
 }
 
-const AI_PROBABILITY_KEYS = [
-  "ai_probability",
-  "ai_prob",
-  "ai_generation_probability",
-  "generative_ai_probability",
-  "generative_probability",
-  "ml_score",
-];
-
 const ENGINE_TRUST_KEYS = ["trust_score", "trustScore", "document_trust_score"];
+
+/**
+ * Engine V1 AI detection — explicit AI classification / named AI fields only.
+ *
+ * Sources:
+ * - Nested AI probability keys inside `analysis` (when present)
+ * - Nested AI boolean keys inside `analysis` (when present)
+ * - `final_result` / `verdict_label` when they are explicit AI labels ("ai generated", "real")
+ * - `ml_label` when it is an explicit AI vs human classification string
+ * - OCR label text when it explicitly mentions AI detection
+ *
+ * Never uses `ml_score`, `confidence_score`, `raw_score`, trust, risk, or overall_status.
+ */
+function resolveV1AiDetection(
+  data: EngineV1ApiResponse,
+  analysis: NonNullable<EngineV1ApiResponse["analysis"]>
+): AiDetection {
+  const analysisBag = asRecord(analysis);
+  const extracted = extractAiFieldsFromPools([analysisBag]);
+
+  let isAiGenerated = extracted.isAiGenerated;
+
+  if (isAiGenerated == null) {
+    isAiGenerated =
+      parseAiClassificationLabel(data.final_result) ??
+      parseAiClassificationLabel(analysis.verdict_label) ??
+      parseAiClassificationLabel(analysis.ml_label) ??
+      parseAiClassificationLabel(analysis.ocr_label) ??
+      null;
+  }
+
+  return buildAiDetection({
+    probability: extracted.probability,
+    isAiGenerated,
+  });
+}
+
+/**
+ * Engine V2 AI detection — nested named AI fields + explicit provenance flags.
+ *
+ * Sources:
+ * - Named AI probability / boolean keys in layer_details, engine_results,
+ *   classification, pdf_fraud_subscores, llm_report
+ * - `c2pa.ai_generated` boolean when present
+ * - fraud type `ai_generated_provenance` as an explicit AI Yes signal
+ *
+ * Never uses model confidence, trust_score, fraud_score, risk, or verdict.
+ */
+function resolveV2AiDetection(data: EngineV2ApiResponse): AiDetection {
+  const layerDetails = asRecord(data.layer_details);
+  const llmReport = asRecord(layerDetails.llm_report);
+  const classification = asRecord(data.classification);
+  const engineResults = asRecord(data.engine_results);
+  const pdfFraudSubscores = asRecord(data.pdf_fraud_subscores);
+  const c2pa = asRecord(asRecord(layerDetails.c2pa).metadata ?? layerDetails.c2pa);
+
+  const extracted = extractAiFieldsFromPools([
+    layerDetails,
+    engineResults,
+    classification,
+    pdfFraudSubscores,
+    llmReport,
+    c2pa,
+  ]);
+
+  let isAiGenerated = extracted.isAiGenerated;
+
+  if (isAiGenerated == null && typeof c2pa.ai_generated === "boolean") {
+    isAiGenerated = c2pa.ai_generated;
+  }
+
+  if (isAiGenerated == null) {
+    const fraudTypes = [
+      ...(data.fraud_types || []),
+      ...((data.fraud?.types as string[] | undefined) || []),
+    ].map((t) => String(t).toLowerCase().trim());
+    if (fraudTypes.includes("ai_generated_provenance")) {
+      isAiGenerated = true;
+    }
+  }
+
+  return buildAiDetection({
+    probability: extracted.probability,
+    isAiGenerated,
+  });
+}
 
 function findNestedScore(
   pools: Array<Record<string, unknown> | null | undefined>,
@@ -1147,7 +1230,6 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
   const llmReport = asRecord(layerDetails.llm_report);
   const classification = asRecord(data.classification);
   const engineResults = asRecord(data.engine_results);
-  const pdfFraudSubscores = asRecord(data.pdf_fraud_subscores);
 
   const engineTrustScore = findNestedScore(
     [layerDetails, engineResults, classification, llmReport],
@@ -1164,10 +1246,8 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
 
   const modelConfidence = resolveV2ModelConfidence(engineLabel, fraudScore, explicitConfidence);
 
-  const aiProbability = findNestedScore(
-    [layerDetails, engineResults, classification, pdfFraudSubscores],
-    AI_PROBABILITY_KEYS
-  );
+  const aiDetection = resolveV2AiDetection(data);
+  const aiProbability = aiDetection.probability;
 
   const signals = mapV2Signals(data);
   const findings = mapV2Findings(data);
@@ -1221,6 +1301,7 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
     verdict: "suspicious",
     confidence: modelConfidence,
     aiProbability,
+    aiDetection,
     engineTrustScore,
     documentType: documentType ? String(documentType).replace(/_/g, " ") : null,
     issuingAuthority,

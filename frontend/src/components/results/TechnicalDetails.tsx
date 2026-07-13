@@ -26,6 +26,16 @@ const OVERVIEW_SCORE_KEYS = new Set([
   "model_confidence",
   "ai_probability",
   "ai_prob",
+  "ai_generation_probability",
+  "generative_ai_probability",
+  "generative_probability",
+  "ai_generated",
+  "ai_generated_score",
+  "ai_likelihood",
+  "synthetic_probability",
+  "deepfake_probability",
+  "generated_content_confidence",
+  "ai_detection_score",
 ]);
 
 function stripPromotedScores(value: unknown): unknown {

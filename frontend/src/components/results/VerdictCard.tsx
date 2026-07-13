@@ -1,5 +1,5 @@
 /**
- * VerdictCard — Verification Overview with score gauges.
+ * VerdictCard — Verification Overview with AI detection + score gauges.
  */
 
 import Box from "@mui/material/Box";
@@ -8,9 +8,10 @@ import SecurityIcon from "@mui/icons-material/Security";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import CancelIcon from "@mui/icons-material/Cancel";
-import type { VerdictType, RiskLevel } from "../../types/verification";
+import type { VerdictType, RiskLevel, AiDetection } from "../../types/verification";
 import { CircularGauge } from "./shared/dashboardCharts";
 import { DASHBOARD, SectionBadge, SectionShell } from "./shared/dashboardShell";
+import { aiDetectionYesNo, UNSUPPORTED_AI_DETECTION } from "../../utils/aiDetection";
 
 interface VerdictConfig {
   label: string;
@@ -59,11 +60,14 @@ const SCORE_COPY = {
     "Engine-assessed document trustworthiness — independent of model confidence.",
 } as const;
 
+const AI_TEAL = "#0F766E";
+
 interface VerdictCardProps {
   verdict: VerdictType;
   confidence: number | null;
   trustScore?: number | null;
   aiProbability?: number | null;
+  aiDetection?: AiDetection | null;
   riskLevel: RiskLevel;
 }
 
@@ -72,6 +76,7 @@ export default function VerdictCard({
   confidence,
   trustScore = null,
   aiProbability = null,
+  aiDetection = null,
   riskLevel,
 }: VerdictCardProps) {
   const cfg = VERDICT_CONFIG[verdict];
@@ -79,12 +84,32 @@ export default function VerdictCard({
   const riskColor = RISK_COLOR[riskLevel];
   const trustColor = verdict === "authentic" ? cfg.color : riskColor;
 
+  const detection = aiDetection ?? UNSUPPORTED_AI_DETECTION;
+  const probability =
+    detection.probability != null && Number.isFinite(detection.probability)
+      ? detection.probability
+      : aiProbability != null && Number.isFinite(aiProbability)
+        ? aiProbability
+        : null;
+  const yesNo = aiDetectionYesNo(
+    detection.supported
+      ? { ...detection, probability }
+      : UNSUPPORTED_AI_DETECTION
+  );
+
   const showConfidence = confidence != null && Number.isFinite(confidence);
-  const showAiProbability = aiProbability != null && Number.isFinite(aiProbability);
+  const showAiProbability = probability != null;
   const showTrustScore = trustScore != null && Number.isFinite(trustScore);
   const gaugeCount =
     Number(showConfidence) + Number(showAiProbability) + Number(showTrustScore);
   const gaugeSize = gaugeCount >= 3 ? 112 : 132;
+
+  const aiLabelColor =
+    detection.label === "Likely AI Generated"
+      ? "#C50F1F"
+      : detection.label === "Likely Human Generated"
+        ? "#107C10"
+        : DASHBOARD.textMuted;
 
   return (
     <SectionShell
@@ -101,6 +126,108 @@ export default function VerdictCard({
       }
       noPadding
     >
+      {/* AI Generated Content — top of Overview; explicit engine fields only */}
+      <Box
+        sx={{
+          px: { xs: 2, sm: 2.75 },
+          py: { xs: 1.75, sm: 2 },
+          borderBottom: `1px solid ${DASHBOARD.borderLight}`,
+          backgroundColor: "#F8FAFB",
+        }}
+      >
+        {!detection.supported || (probability == null && yesNo == null) ? (
+          <Box>
+            <Typography
+              sx={{
+                fontSize: "0.6875rem",
+                fontWeight: 700,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: DASHBOARD.textMuted,
+                mb: 0.5,
+              }}
+            >
+              AI Detection
+            </Typography>
+            <Typography sx={{ fontSize: "0.9375rem", fontWeight: 600, color: DASHBOARD.textSecondary }}>
+              Not Available
+            </Typography>
+          </Box>
+        ) : (
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 2,
+              flexWrap: "wrap",
+            }}
+          >
+            <Box sx={{ minWidth: 180 }}>
+              <Typography
+                sx={{
+                  fontSize: "0.6875rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: DASHBOARD.textMuted,
+                  mb: 0.75,
+                }}
+              >
+                AI Generated Content
+              </Typography>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <Box
+                  component="span"
+                  sx={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    backgroundColor: aiLabelColor,
+                    flexShrink: 0,
+                  }}
+                />
+                <Typography
+                  sx={{
+                    fontSize: { xs: "1rem", sm: "1.125rem" },
+                    fontWeight: 700,
+                    color: aiLabelColor,
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  {detection.label}
+                </Typography>
+              </Box>
+              {yesNo != null && (
+                <Box sx={{ mt: 1.25 }}>
+                  <Typography
+                    sx={{
+                      fontSize: "0.6875rem",
+                      fontWeight: 700,
+                      letterSpacing: "0.1em",
+                      textTransform: "uppercase",
+                      color: DASHBOARD.textMuted,
+                      mb: 0.35,
+                    }}
+                  >
+                    AI Generated
+                  </Typography>
+                  <Typography
+                    sx={{
+                      fontSize: "0.9375rem",
+                      fontWeight: 700,
+                      color: DASHBOARD.textPrimary,
+                    }}
+                  >
+                    {yesNo}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Box>
+        )}
+      </Box>
+
       <Box
         sx={{
           background: cfg.bgGradient,
@@ -171,10 +298,10 @@ export default function VerdictCard({
           )}
           {showAiProbability && (
             <CircularGauge
-              value={aiProbability}
+              value={probability}
               label="AI Probability"
               description={SCORE_COPY.aiProbability}
-              color="#0F766E"
+              color={AI_TEAL}
               size={gaugeSize}
             />
           )}

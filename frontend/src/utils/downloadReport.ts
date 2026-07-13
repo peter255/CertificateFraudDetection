@@ -231,7 +231,17 @@ function groupSignals(signals: Signal[]): Array<{ category: string; items: Signa
 
 function buildExecutiveSummary(result: VerificationResult): string | null {
   const summary = (result.aiSummary || "").trim();
-  return isKnownValue(summary) ? summary : null;
+  const aiExplanation =
+    result.aiDetection?.supported && isKnownValue(result.aiDetection.explanation)
+      ? result.aiDetection.explanation.trim()
+      : null;
+
+  const parts = [
+    isKnownValue(summary) ? summary : null,
+    aiExplanation,
+  ].filter(Boolean) as string[];
+
+  return parts.length ? parts.join("\n\n") : null;
 }
 
 function buildDocumentRows(result: VerificationResult, fileName: string): TableRow[] {
@@ -258,9 +268,21 @@ function buildAssessmentRows(result: VerificationResult): TableRow[] {
   if (Number.isFinite(result.confidence)) {
     rows.push(["Model Confidence", `${result.confidence}%`]);
   }
-  if (result.aiProbability != null && Number.isFinite(result.aiProbability)) {
-    rows.push(["AI Probability", `${result.aiProbability}%`]);
+
+  const detection = result.aiDetection;
+  if (detection?.supported) {
+    rows.push(["AI Generated Content", detection.label]);
+    if (detection.probability != null && Number.isFinite(detection.probability)) {
+      rows.push(["AI Probability", `${detection.probability}%`]);
+    } else if (detection.label === "Likely AI Generated") {
+      rows.push(["AI Generated", "Yes"]);
+    } else if (detection.label === "Likely Human Generated") {
+      rows.push(["AI Generated", "No"]);
+    }
+  } else {
+    rows.push(["AI Detection", "Not Available"]);
   }
+
   if (result.engineTrustScore != null && Number.isFinite(result.engineTrustScore)) {
     rows.push(["Trust Score", `${result.engineTrustScore}/100`]);
   }

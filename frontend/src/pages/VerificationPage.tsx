@@ -750,6 +750,7 @@ export default function VerificationPage({ onOpenBatch }: VerificationPageProps)
             confidence={verificationResult.confidence}
             trustScore={verificationResult.engineTrustScore}
             aiProbability={verificationResult.aiProbability}
+            aiDetection={verificationResult.aiDetection}
             riskLevel={verificationResult.report.riskLevel}
           />
 

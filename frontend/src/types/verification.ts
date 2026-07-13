@@ -100,6 +100,22 @@ export interface EngineTechnicalDetails {
   layerDetails: Record<string, unknown> | null;
 }
 
+/** Vendor-agnostic AI-generation detection (explicit engine fields only). */
+export type AiDetectionLabel =
+  | "Likely AI Generated"
+  | "Likely Human Generated"
+  | "Unknown";
+
+export interface AiDetection {
+  /** True only when the engine returned an explicit AI probability and/or AI Yes/No signal. */
+  supported: boolean;
+  /** 0–100 when an explicit AI probability/score field is present; otherwise null. */
+  probability: number | null;
+  label: AiDetectionLabel;
+  /** Short narrative for Executive Summary; null when unsupported. */
+  explanation: string | null;
+}
+
 export interface VerificationResult {
   certificateId: string;
   verdict: VerdictType;
@@ -110,9 +126,14 @@ export interface VerificationResult {
   confidence: number;
   /**
    * Likelihood of AI-generated or AI-altered content (0–100).
-   * Null when the engine does not return a usable score.
+   * Alias of `aiDetection.probability` — null when the engine does not return a usable score.
+   * Never derived from model confidence, trust, risk, or verdict.
    */
   aiProbability: number | null;
+  /**
+   * Normalized AI-generation detection from explicit engine fields only.
+   */
+  aiDetection: AiDetection;
   /**
    * Engine-assessed document trustworthiness (0–100).
    * Distinct from Model Confidence and from decision-derived report.trustScore.

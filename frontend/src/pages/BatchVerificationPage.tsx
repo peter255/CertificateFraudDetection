@@ -350,6 +350,7 @@ export default function BatchVerificationPage({ onBack }: BatchVerificationPageP
             confidence={selected.result.confidence}
             trustScore={selected.result.engineTrustScore}
             aiProbability={selected.result.aiProbability}
+            aiDetection={selected.result.aiDetection}
             riskLevel={selected.result.report.riskLevel}
           />
           <AnnotatedDocumentSection

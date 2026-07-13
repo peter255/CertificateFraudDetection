@@ -32,7 +32,7 @@ Engines return a **technical** classification. The Decision Engine owns the **bu
 
 | Related | Meaning |
 |---|---|
-| **AI Probability** | Likelihood of AI-generated / AI-altered content | V1 `ml_score`; V2 nested generative / AI probability keys → `result.aiProbability` |
+| **AI Detection** (`aiDetection`) | Vendor-agnostic AI-generation signal from **explicit** engine fields only | Normalized in `utils/aiDetection.ts` via V1/V2 mappers → `result.aiDetection` (`supported`, `probability`, `label`, `explanation`). `aiProbability` mirrors `aiDetection.probability`. Never derived from model confidence, trust, risk, or verdict. |
 
 Example: engine predicts authentic with 8% model confidence → the app does **not** show Trusted. It shows **Suspicious**, Medium Risk, and Model Confidence 8%.
 
@@ -71,9 +71,10 @@ Combinations that must never appear:
 
 **Updated**
 
-- `frontend/src/api/verificationApi.ts` — V1/V2 adapters call Decision Engine; map `aiProbability` / `engineTrustScore`
-- `frontend/src/types/verification.ts` — documents score fields
-- `frontend/src/components/results/VerdictCard.tsx` — Model Confidence / AI Probability / Trust Score gauges
+- `frontend/src/api/verificationApi.ts` — V1/V2 adapters call Decision Engine; map `aiDetection` / `engineTrustScore`
+- `frontend/src/utils/aiDetection.ts` — vendor-agnostic AI field extraction (explicit keys / labels only)
+- `frontend/src/types/verification.ts` — documents score fields + `AiDetection`
+- `frontend/src/components/results/VerdictCard.tsx` — AI Generated Content strip + Model Confidence / AI Probability / Trust Score gauges
 - `frontend/src/utils/downloadReport.ts` — PDF labels + glossary
 
 **Not changed**
