@@ -17,9 +17,15 @@ import FitScreenIcon from "@mui/icons-material/FitScreen";
 import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
 import NavigateNextIcon from "@mui/icons-material/NavigateNext";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
+import BugReportIcon from "@mui/icons-material/BugReport";
 import { Document, Page, pdfjs } from "react-pdf";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { TamperRegion } from "../../types/verification";
+import {
+  projectRawAsXywh,
+  projectToContent,
+  type OverlayProjection,
+} from "../../utils/localization";
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
@@ -97,6 +103,18 @@ interface OverlayLayerProps {
   heatmapUrl: string | null;
   selectedId: string | null;
   onSelectRegion?: (id: string) => void;
+  /** Measured content box (img/canvas) in CSS pixels. */
+  contentSize: { width: number; height: number } | null;
+  debug?: boolean;
+}
+
+function formatProj(p: OverlayProjection): string {
+  return (
+    `scale=${p.scale.toFixed(4)} (sx=${p.scaleX.toFixed(4)}, sy=${p.scaleY.toFixed(4)}) ` +
+    `offset=(${p.offsetX.toFixed(1)}, ${p.offsetY.toFixed(1)}) ` +
+    `content=${p.contentWidth.toFixed(0)}×${p.contentHeight.toFixed(0)} ` +
+    `src=${p.imageWidth}×${p.imageHeight}`
+  );
 }
 
 function OverlayLayer({
@@ -104,9 +122,56 @@ function OverlayLayer({
   heatmapUrl,
   selectedId,
   onSelectRegion,
+  contentSize,
+  debug = false,
 }: OverlayLayerProps) {
   const hasRegions = regions.length > 0;
   const hasHeatmap = Boolean(heatmapUrl);
+
+  const canProject =
+    contentSize != null && contentSize.width > 0 && contentSize.height > 0;
+
+  useEffect(() => {
+    if (!debug || !canProject || !contentSize) return;
+    for (const region of regions) {
+      const projected = projectToContent(
+        region.bbox,
+        region.imageWidth,
+        region.imageHeight,
+        contentSize.width,
+        contentSize.height
+      );
+      if (!projected) continue;
+      const rawProj = region.rawBBox
+        ? projectRawAsXywh(
+            region.rawBBox,
+            region.imageWidth,
+            region.imageHeight,
+            contentSize.width,
+            contentSize.height
+          )
+        : null;
+      // eslint-disable-next-line no-console
+      console.info("[localization-debug]", {
+        id: region.id,
+        page: region.page,
+        format: region.bboxFormat,
+        ambiguous: region.bboxAmbiguous,
+        originalBBox: region.rawBBox,
+        interpretedXywh: region.bbox,
+        imageSize: [region.imageWidth, region.imageHeight],
+        viewportSize: [contentSize.width, contentSize.height],
+        scaleFactor: projected.scale,
+        scaleX: projected.scaleX,
+        scaleY: projected.scaleY,
+        offset: [projected.offsetX, projected.offsetY],
+        scaledBBox: [projected.left, projected.top, projected.width, projected.height],
+        rawAsXywhRendered: rawProj
+          ? [rawProj.left, rawProj.top, rawProj.width, rawProj.height]
+          : null,
+      });
+    }
+  }, [debug, canProject, contentSize, regions]);
 
   if (!hasRegions && !hasHeatmap) {
     return null;
@@ -119,6 +184,7 @@ function OverlayLayer({
         inset: 0,
         pointerEvents: hasRegions ? "auto" : "none",
         zIndex: 2,
+        overflow: "hidden",
       }}
     >
       {hasHeatmap && heatmapUrl && (
@@ -138,36 +204,126 @@ function OverlayLayer({
           }}
         />
       )}
-      {regions.map((region) => {
-        const color = SEVERITY_COLOR[region.severity] ?? SEVERITY_COLOR.medium;
-        const [x, y, w, h] = region.bbox;
-        const selected = region.id === selectedId;
-        return (
-          <Box
-            key={region.id}
-            onClick={(event) => {
-              event.stopPropagation();
-              onSelectRegion?.(region.id);
-            }}
-            title={region.label}
-            sx={{
-              position: "absolute",
-              left: `${(x / region.imageWidth) * 100}%`,
-              top: `${(y / region.imageHeight) * 100}%`,
-              width: `${(w / region.imageWidth) * 100}%`,
-              height: `${(h / region.imageHeight) * 100}%`,
-              border: `2px solid ${color}`,
-              backgroundColor: selected ? `${color}33` : `${color}22`,
-              borderRadius: "4px",
-              boxShadow: selected
-                ? `0 0 0 3px ${color}55, 0 8px 20px rgba(15,23,42,0.18)`
-                : `0 0 0 1px ${color}22`,
-              cursor: onSelectRegion ? "pointer" : "default",
-              zIndex: selected ? 3 : 2,
-            }}
-          />
-        );
-      })}
+      {canProject &&
+        regions.map((region) => {
+          const color = SEVERITY_COLOR[region.severity] ?? SEVERITY_COLOR.medium;
+          const selected = region.id === selectedId;
+          const projected = projectToContent(
+            region.bbox,
+            region.imageWidth,
+            region.imageHeight,
+            contentSize.width,
+            contentSize.height
+          );
+          if (!projected) return null;
+
+          const rawProj =
+            debug && region.rawBBox
+              ? projectRawAsXywh(
+                  region.rawBBox,
+                  region.imageWidth,
+                  region.imageHeight,
+                  contentSize.width,
+                  contentSize.height
+                )
+              : null;
+
+          return (
+            <Box key={region.id} component="span" sx={{ display: "contents" }}>
+              {/* Production overlay — interpreted + uniformly scaled */}
+              <Box
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelectRegion?.(region.id);
+                }}
+                title={
+                  debug
+                    ? [
+                        region.label,
+                        `page=${region.page}`,
+                        `format=${region.bboxFormat ?? "?"}`,
+                        `raw=[${(region.rawBBox || []).join(", ")}]`,
+                        `xywh=[${region.bbox.join(", ")}]`,
+                        `rendered=[${projected.left.toFixed(1)}, ${projected.top.toFixed(1)}, ${projected.width.toFixed(1)}, ${projected.height.toFixed(1)}]`,
+                        formatProj(projected),
+                      ].join(" | ")
+                    : region.label
+                }
+                sx={{
+                  position: "absolute",
+                  left: projected.left,
+                  top: projected.top,
+                  width: projected.width,
+                  height: projected.height,
+                  border: debug ? `2px solid #2563EB` : `2px solid ${color}`,
+                  backgroundColor: selected
+                    ? debug
+                      ? "rgba(37,99,235,0.18)"
+                      : `${color}33`
+                    : debug
+                      ? "rgba(37,99,235,0.08)"
+                      : `${color}22`,
+                  borderRadius: debug ? 0 : "4px",
+                  boxShadow: selected
+                    ? `0 0 0 3px ${debug ? "#2563EB55" : `${color}55`}, 0 8px 20px rgba(15,23,42,0.18)`
+                    : undefined,
+                  cursor: onSelectRegion ? "pointer" : "default",
+                  zIndex: selected ? 3 : 2,
+                  boxSizing: "border-box",
+                }}
+              />
+
+              {/* Debug: green = raw vendor tuple treated as xywh (no conversion) */}
+              {debug && rawProj && (
+                <Box
+                  sx={{
+                    position: "absolute",
+                    left: rawProj.left,
+                    top: rawProj.top,
+                    width: Math.max(rawProj.width, 1),
+                    height: Math.max(rawProj.height, 1),
+                    border: "2px solid #16A34A",
+                    backgroundColor: "transparent",
+                    pointerEvents: "none",
+                    zIndex: 4,
+                    boxSizing: "border-box",
+                  }}
+                />
+              )}
+
+              {debug && (
+                <Box
+                  sx={{
+                    position: "absolute",
+                    left: Math.max(0, projected.left),
+                    top: Math.max(0, projected.top - 18),
+                    px: 0.5,
+                    py: 0.125,
+                    backgroundColor: "rgba(15,23,42,0.82)",
+                    color: "#F8FAFC",
+                    fontSize: "0.5625rem",
+                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                    lineHeight: 1.35,
+                    pointerEvents: "none",
+                    zIndex: 5,
+                    whiteSpace: "nowrap",
+                    maxWidth: "96%",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  p{region.page} {region.bboxFormat}
+                  {region.bboxAmbiguous ? " ?" : ""} | raw[
+                  {(region.rawBBox || []).map((n) => Math.round(n)).join(",")}
+                  ] → xywh[{region.bbox.map((n) => Math.round(n)).join(",")}] |{" "}
+                  {region.imageWidth}×{region.imageHeight} →{" "}
+                  {contentSize.width.toFixed(0)}×{contentSize.height.toFixed(0)} @
+                  {projected.scale.toFixed(3)}
+                </Box>
+              )}
+            </Box>
+          );
+        })}
     </Box>
   );
 }
@@ -183,6 +339,9 @@ interface ToolbarProps {
   onNextPage: () => void;
   showPageNav: boolean;
   disabled?: boolean;
+  debug?: boolean;
+  onToggleDebug?: () => void;
+  showDebugToggle?: boolean;
 }
 
 function Toolbar({
@@ -196,6 +355,9 @@ function Toolbar({
   onNextPage,
   showPageNav,
   disabled = false,
+  debug = false,
+  onToggleDebug,
+  showDebugToggle = false,
 }: ToolbarProps) {
   const isFit = Math.abs(zoom - ZOOM_FIT) < 0.001;
   const btnSx = {
@@ -319,6 +481,25 @@ function Toolbar({
           </Tooltip>
         </>
       )}
+
+      {showDebugToggle && (
+        <>
+          <Box sx={{ flex: 1 }} />
+          <Tooltip title={debug ? "Hide localization debug" : "Show localization debug"}>
+            <IconButton
+              size="small"
+              onClick={onToggleDebug}
+              sx={{
+                ...btnSx,
+                color: debug ? "#16A34A" : btnSx.color,
+                backgroundColor: debug ? "rgba(22,163,74,0.12)" : "transparent",
+              }}
+            >
+              <BugReportIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
+        </>
+      )}
     </Box>
   );
 }
@@ -370,6 +551,7 @@ interface ImageViewerProps {
   heatmapUrl: string | null;
   selectedRegionId: string | null;
   onSelectRegion?: (id: string) => void;
+  debug?: boolean;
 }
 
 function ImageViewer({
@@ -379,9 +561,64 @@ function ImageViewer({
   heatmapUrl,
   selectedRegionId,
   onSelectRegion,
+  debug = false,
 }: ImageViewerProps) {
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [contentSize, setContentSize] = useState<{ width: number; height: number } | null>(
+    null
+  );
+
+  const measure = useCallback(() => {
+    const el = imgRef.current;
+    if (!el) return;
+    const width = el.clientWidth;
+    const height = el.clientHeight;
+    if (width > 0 && height > 0) {
+      setContentSize({ width, height });
+    }
+  }, []);
+
+  useEffect(() => {
+    setContentSize(null);
+  }, [objectUrl]);
+
+  useEffect(() => {
+    const el = imgRef.current;
+    if (!el) return;
+    measure();
+    const obs = new ResizeObserver(() => measure());
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [objectUrl, zoom, measure]);
+
   return (
     <Box sx={{ ...scrollAreaSx, p: 2.5 }}>
+      {debug && contentSize && (
+        <Box
+          sx={{
+            mb: 1,
+            px: 1.25,
+            py: 0.75,
+            borderRadius: "6px",
+            backgroundColor: "rgba(15,23,42,0.88)",
+            color: "#E2E8F0",
+            fontSize: "0.625rem",
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            lineHeight: 1.45,
+          }}
+        >
+          <Box component="span" sx={{ color: "#4ADE80" }}>
+            ■ green
+          </Box>
+          {" = raw vendor as xywh  "}
+          <Box component="span" sx={{ color: "#60A5FA" }}>
+            ■ blue
+          </Box>
+          {" = interpreted + scaled  | viewport content "}
+          {contentSize.width.toFixed(0)}×{contentSize.height.toFixed(0)}px | zoom{" "}
+          {Math.round(zoom * 100)}%
+        </Box>
+      )}
       <Box
         sx={{
           width: `${zoom * 100}%`,
@@ -395,21 +632,27 @@ function ImageViewer({
             transformOrigin: "top left",
             position: "relative",
             lineHeight: 0,
+            borderRadius: "6px",
+            boxShadow: "0 4px 20px rgba(15,23,42,0.1)",
+            // outline avoids border-box shrinking the image content vs overlay.
+            outline: "1px solid #E2E8F0",
+            backgroundColor: "#FFFFFF",
+            overflow: "hidden",
           }}
         >
           <Box
             component="img"
+            ref={imgRef}
             src={objectUrl}
             alt="Certificate preview"
+            onLoad={measure}
             sx={{
               width: "100%",
               maxWidth: "none",
               height: "auto",
               display: "block",
-              borderRadius: "6px",
-              boxShadow: "0 4px 20px rgba(15,23,42,0.1)",
-              border: "1px solid #E2E8F0",
-              backgroundColor: "#FFFFFF",
+              // No border on the img — border lives on the wrapper so overlays
+              // align to the image content box with zero offset.
             }}
           />
           <OverlayLayer
@@ -417,6 +660,8 @@ function ImageViewer({
             heatmapUrl={heatmapUrl}
             selectedId={selectedRegionId}
             onSelectRegion={onSelectRegion}
+            contentSize={contentSize}
+            debug={debug}
           />
         </Box>
       </Box>
@@ -434,6 +679,7 @@ interface PdfViewerProps {
   heatmapUrl: string | null;
   selectedRegionId: string | null;
   onSelectRegion?: (id: string) => void;
+  debug?: boolean;
 }
 
 function PdfViewer({
@@ -446,9 +692,14 @@ function PdfViewer({
   heatmapUrl,
   selectedRegionId,
   onSelectRegion,
+  debug = false,
 }: PdfViewerProps) {
   const measureRef = useRef<HTMLDivElement>(null);
+  const pageBoxRef = useRef<HTMLDivElement>(null);
   const [baseWidth, setBaseWidth] = useState(0);
+  const [contentSize, setContentSize] = useState<{ width: number; height: number } | null>(
+    null
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [useNativeFallback, setUseNativeFallback] = useState(false);
   const lockedWidth = useRef(0);
@@ -458,7 +709,12 @@ function PdfViewer({
     setUseNativeFallback(false);
     lockedWidth.current = 0;
     setBaseWidth(0);
+    setContentSize(null);
   }, [file]);
+
+  useEffect(() => {
+    setContentSize(null);
+  }, [currentPage]);
 
   useEffect(() => {
     const el = measureRef.current;
@@ -483,12 +739,35 @@ function PdfViewer({
     };
   }, [file]);
 
+  const measurePageBox = useCallback(() => {
+    const el = pageBoxRef.current;
+    if (!el) return;
+    // Prefer the rendered canvas size (exact PDF page pixels after react-pdf).
+    const canvas = el.querySelector("canvas");
+    const width = canvas?.clientWidth || el.clientWidth;
+    const height = canvas?.clientHeight || el.clientHeight;
+    if (width > 0 && height > 0) {
+      setContentSize({ width, height });
+    }
+  }, []);
+
+  useEffect(() => {
+    const el = pageBoxRef.current;
+    if (!el) return;
+    measurePageBox();
+    const obs = new ResizeObserver(() => measurePageBox());
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [baseWidth, currentPage, zoom, measurePageBox]);
+
   const handleLoadSuccess = useCallback(
     ({ numPages }: { numPages: number }) => {
       setIsLoading(false);
       onLoadSuccess(numPages);
+      // Canvas may mount one frame later.
+      requestAnimationFrame(() => measurePageBox());
     },
-    [onLoadSuccess]
+    [onLoadSuccess, measurePageBox]
   );
 
   const hasOverlays = pageRegions.length > 0 || Boolean(heatmapUrl);
@@ -504,6 +783,32 @@ function PdfViewer({
 
   return (
     <Box ref={measureRef} sx={{ ...scrollAreaSx, p: useNativeFallback ? 0 : 2.5, position: "relative" }}>
+      {debug && contentSize && (
+        <Box
+          sx={{
+            mb: 1,
+            px: 1.25,
+            py: 0.75,
+            borderRadius: "6px",
+            backgroundColor: "rgba(15,23,42,0.88)",
+            color: "#E2E8F0",
+            fontSize: "0.625rem",
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            lineHeight: 1.45,
+          }}
+        >
+          <Box component="span" sx={{ color: "#4ADE80" }}>
+            ■ green
+          </Box>
+          {" = raw vendor as xywh  "}
+          <Box component="span" sx={{ color: "#60A5FA" }}>
+            ■ blue
+          </Box>
+          {" = interpreted + scaled  | PDF page "}
+          {currentPage} content {contentSize.width.toFixed(0)}×{contentSize.height.toFixed(0)}px
+        </Box>
+      )}
+
       {(isLoading || baseWidth === 0) && !useNativeFallback && (
         <Box
           sx={{
@@ -576,11 +881,14 @@ function PdfViewer({
                 error=""
               >
                 <Box
+                  ref={pageBoxRef}
                   sx={{
                     boxShadow: "0 4px 20px rgba(15,23,42,0.1)",
                     borderRadius: "6px",
                     overflow: "hidden",
-                    border: "1px solid #E2E8F0",
+                    // outline (not border) so box-sizing cannot shrink the
+                    // content box relative to react-pdf's canvas width.
+                    outline: "1px solid #E2E8F0",
                     backgroundColor: "#FFFFFF",
                     width: baseWidth,
                     position: "relative",
@@ -592,12 +900,15 @@ function PdfViewer({
                     width={baseWidth}
                     renderTextLayer={false}
                     renderAnnotationLayer={false}
+                    onRenderSuccess={measurePageBox}
                   />
                   <OverlayLayer
                     regions={pageRegions}
                     heatmapUrl={heatmapUrl}
                     selectedId={selectedRegionId}
                     onSelectRegion={onSelectRegion}
+                    contentSize={contentSize}
+                    debug={debug}
                   />
                 </Box>
               </Document>
@@ -756,6 +1067,9 @@ interface DocumentViewerProps {
   currentPage?: number;
   onPageChange?: (page: number) => void;
   hideChrome?: boolean;
+  /** Toggleable localization debug overlays (green raw / blue scaled). */
+  debugLocalization?: boolean;
+  onToggleDebugLocalization?: () => void;
 }
 
 export default function DocumentViewer({
@@ -768,6 +1082,8 @@ export default function DocumentViewer({
   currentPage: controlledPage,
   onPageChange,
   hideChrome = false,
+  debugLocalization = false,
+  onToggleDebugLocalization,
 }: DocumentViewerProps) {
   const [zoom, setZoom] = useState(ZOOM_FIT);
   const [internalPage, setInternalPage] = useState(1);
@@ -837,6 +1153,10 @@ export default function DocumentViewer({
     setPage(Math.min(totalPages || currentPage, currentPage + 1));
   }, [currentPage, totalPages, setPage]);
 
+  const showDebugToggle =
+    Boolean(onToggleDebugLocalization) &&
+    (validRegions.length > 0 || Boolean(resolvedHeatmap));
+
   return (
     <Box
       sx={{
@@ -867,6 +1187,9 @@ export default function DocumentViewer({
         onNextPage={handleNextPage}
         showPageNav={mode === "pdf" || mode === "empty"}
         disabled={mode === "empty"}
+        debug={debugLocalization}
+        onToggleDebug={onToggleDebugLocalization}
+        showDebugToggle={showDebugToggle}
       />
 
       {mode === "empty" && <EmptyState />}
@@ -878,6 +1201,7 @@ export default function DocumentViewer({
           heatmapUrl={resolvedHeatmap}
           selectedRegionId={selectedRegionId}
           onSelectRegion={onSelectRegion}
+          debug={debugLocalization}
         />
       )}
       {mode === "pdf" && file && (
@@ -891,6 +1215,7 @@ export default function DocumentViewer({
           heatmapUrl={resolvedHeatmap}
           selectedRegionId={selectedRegionId}
           onSelectRegion={onSelectRegion}
+          debug={debugLocalization}
         />
       )}
 

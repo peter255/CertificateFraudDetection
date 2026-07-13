@@ -26,6 +26,10 @@ import {
   extractAiFieldsFromPools,
   parseAiClassificationLabel,
 } from "../utils/aiDetection";
+import {
+  interpretBBox,
+  type InterpretedBBox,
+} from "../utils/localization";
 
 // ── Engine V1 response DTO ───────────────────────────────────────────────────
 
@@ -543,24 +547,28 @@ function normalizeSeverity(raw: string | null | undefined): TamperRegion["severi
   return "medium";
 }
 
+/**
+ * Gate used by signal filters — true when a 4-tuple looks spatial.
+ * Full format resolution happens in resolveBBox() with image dimensions.
+ */
 function asBBox(value: unknown): [number, number, number, number] | null {
   if (!Array.isArray(value) || value.length !== 4) return null;
   const nums = value.map((n) => Number(n));
   if (nums.some((n) => !Number.isFinite(n))) return null;
-
   const [a, b, c, d] = nums;
-
-  // xywh: x, y, width, height (width/height positive)
-  if (c > 0 && d > 0 && a >= 0 && b >= 0) {
-    return [a, b, c, d];
-  }
-
-  // xyxy: x1, y1, x2, y2 → convert to xywh
-  if (c > a && d > b && a >= 0 && b >= 0) {
-    return [a, b, c - a, d - b];
-  }
-
+  // Accept either xywh (positive size) or xyxy (c>a, d>b).
+  if (c > 0 && d > 0 && a >= 0 && b >= 0) return [a, b, c, d];
+  if (c > a && d > b && a >= 0 && b >= 0) return [a, b, c - a, d - b];
   return null;
+}
+
+function resolveBBox(
+  value: unknown,
+  imageWidth: number,
+  imageHeight: number,
+  areaRatio?: number | null
+): InterpretedBBox | null {
+  return interpretBBox(value, imageWidth, imageHeight, areaRatio);
 }
 
 function toConfidenceRatio(value: unknown): number | null {
@@ -582,6 +590,7 @@ type TamperRegionInput = {
   layer?: string | null;
   confidence?: number | null;
   bboxSource?: string | null;
+  bboxAreaRatio?: number | null;
   hasImage?: boolean | null;
   hasCropImage?: boolean | null;
   extras?: Record<string, unknown> | null;
@@ -643,6 +652,12 @@ function relatedBBoxCandidate(
       (typeof related.bbox_source === "string" ? related.bbox_source : null) ||
       (typeof related.bboxSource === "string" ? related.bboxSource : null) ||
       parent.bboxSource,
+    bboxAreaRatio:
+      typeof related.bbox_area_ratio === "number"
+        ? related.bbox_area_ratio
+        : typeof related.bboxAreaRatio === "number"
+          ? related.bboxAreaRatio
+          : null,
     hasImage: null,
     hasCropImage: null,
     extras: related,
@@ -677,6 +692,8 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
     candidates.push({
       ...parent,
       bbox: signal.bbox,
+      bboxAreaRatio:
+        typeof signal.bbox_area_ratio === "number" ? signal.bbox_area_ratio : null,
       hasImage: null,
       hasCropImage: null,
       extras: signal.extras ?? null,
@@ -704,6 +721,7 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       layer: item.layer,
       confidence: item.confidence,
       bboxSource: item.bbox_source,
+      bboxAreaRatio: null,
       hasImage: typeof item.has_image === "boolean" ? item.has_image : null,
       hasCropImage: typeof item.has_crop_image === "boolean" ? item.has_crop_image : null,
       extras: item.extras ?? null,
@@ -724,9 +742,6 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
   const seen = new Set<string>();
 
   for (const input of candidates) {
-    const bbox = asBBox(input.bbox);
-    if (!bbox) continue;
-
     const page = input.page && input.page > 0 ? input.page : 1;
     let imageWidth = Number(input.imageWidth);
     let imageHeight = Number(input.imageHeight);
@@ -736,6 +751,15 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       imageWidth = fallback.w;
       imageHeight = fallback.h;
     }
+
+    const interpreted = resolveBBox(
+      input.bbox,
+      imageWidth,
+      imageHeight,
+      input.bboxAreaRatio
+    );
+    if (!interpreted) continue;
+    const { xywh: bbox, raw, format, ambiguous } = interpreted;
 
     const key = `${page}-${bbox.join(",")}-${input.label}`;
     if (seen.has(key)) continue;
@@ -747,6 +771,9 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       description: scrubEngineName(input.description || input.label),
       severity: normalizeSeverity(input.severity),
       bbox,
+      rawBBox: raw,
+      bboxFormat: format,
+      bboxAmbiguous: ambiguous,
       page,
       imageWidth,
       imageHeight,

@@ -73,8 +73,23 @@ export interface TamperRegion {
   label: string;
   description: string;
   severity: "critical" | "high" | "medium" | "low";
-  /** [x, y, width, height] in source image pixels (origin top-left). */
+  /**
+   * Canonical render form: [x, y, width, height] in source image pixels.
+   * Origin: top-left. Produced by interpretBBox() from the vendor raw tuple.
+   */
   bbox: [number, number, number, number];
+  /** Original vendor 4-tuple before format conversion (for debug overlays). */
+  rawBBox?: [number, number, number, number] | null;
+  /** Detected vendor format used to produce `bbox`. */
+  bboxFormat?:
+    | "xywh"
+    | "xyxy"
+    | "normalized-xywh"
+    | "normalized-xyxy"
+    | "ambiguous-xywh"
+    | null;
+  /** True when xywh vs xyxy could not be resolved with high confidence. */
+  bboxAmbiguous?: boolean | null;
   page: number;
   imageWidth: number;
   imageHeight: number;

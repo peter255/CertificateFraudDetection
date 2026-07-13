@@ -39,6 +39,7 @@ export default function AnnotatedDocumentSection({
 
   const [selectedId, setSelectedId] = useState<string | null>(validRegions[0]?.id ?? null);
   const [activePage, setActivePage] = useState(1);
+  const [debugLocalization, setDebugLocalization] = useState(false);
 
   useEffect(() => {
     if (!validRegions.length) {
@@ -124,6 +125,10 @@ export default function AnnotatedDocumentSection({
               currentPage={activePage}
               onPageChange={setActivePage}
               hideChrome
+              debugLocalization={debugLocalization}
+              onToggleDebugLocalization={
+                hasOverlays ? () => setDebugLocalization((v) => !v) : undefined
+              }
             />
           </Box>
         </Box>
@@ -250,6 +255,7 @@ export default function AnnotatedDocumentSection({
                           region.confidence != null
                             ? `Confidence: ${Math.round(region.confidence * 1000) / 10}%`
                             : null,
+                          region.bboxFormat ? `Format: ${region.bboxFormat}` : null,
                         ]
                           .filter(Boolean)
                           .join(" · ")}
