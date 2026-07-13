@@ -129,6 +129,8 @@ export interface AiDetection {
   label: AiDetectionLabel;
   /** Short narrative for Executive Summary; null when unsupported. */
   explanation: string | null;
+  /** Where the probability came from when numeric: vendor engine or Azure OpenAI fallback. */
+  source?: "vendor" | "azure_openai" | null;
 }
 
 export interface VerificationResult {

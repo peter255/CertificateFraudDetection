@@ -370,6 +370,15 @@ export default function ResultsDashboard({
           ? Math.round((riskScore + (result.confidence ?? 50)) / 2)
           : Math.min(riskScore, 18);
 
+  const aiProbability =
+    result.aiProbability != null && Number.isFinite(result.aiProbability)
+      ? Math.round(result.aiProbability * 10) / 10
+      : result.aiDetection?.probability != null &&
+          Number.isFinite(result.aiDetection.probability)
+        ? Math.round(result.aiDetection.probability * 10) / 10
+        : null;
+  const aiProbabilitySource = result.aiDetection?.source ?? null;
+
   const criticalLabel = riskLabel(result.report.riskLevel, riskScore);
   const criticalColor = scoreColor(riskScore);
 
@@ -523,7 +532,7 @@ export default function ResultsDashboard({
           <Box
             sx={{
               display: "grid",
-              gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+              gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" },
               gap: 1.5,
             }}
           >
@@ -561,7 +570,7 @@ export default function ResultsDashboard({
                   <Box
                     component="span"
                     sx={{ fontSize: "1rem", color: VS.textMuted, fontWeight: 500 }}
-                  >
+                  > 
                     /100
                   </Box>
                 </Typography>
@@ -625,6 +634,74 @@ export default function ResultsDashboard({
                 value={fraudProbability}
                 color={scoreColor(fraudProbability)}
               />
+            </Box>
+
+            <Box
+              sx={{
+                p: 2.25,
+                borderRadius: "12px",
+                border: `1px solid ${VS.border}`,
+                backgroundColor: VS.bgCard,
+              }}
+            >
+              <Typography
+                sx={{
+                  fontSize: "0.6875rem",
+                  fontWeight: 600,
+                  letterSpacing: "0.1em",
+                  color: VS.textMuted,
+                  fontFamily: VS.mono,
+                  mb: 1,
+                }}
+              >
+                AI PROBABILITY
+              </Typography>
+              {aiProbability != null ? (
+                <>
+                  <Typography
+                    sx={{
+                      fontSize: "2.5rem",
+                      fontWeight: 700,
+                      letterSpacing: "-0.04em",
+                      color: scoreColor(aiProbability),
+                      lineHeight: 1,
+                      mb: 0.75,
+                    }}
+                  >
+                    {aiProbability % 1 === 0
+                      ? `${Math.round(aiProbability)}%`
+                      : `${aiProbability}%`}
+                  </Typography>
+                  {aiProbabilitySource === "azure_openai" && (
+                    <Typography
+                      sx={{
+                        fontSize: "0.5625rem",
+                        fontWeight: 600,
+                        letterSpacing: "0.06em",
+                        color: VS.textMuted,
+                        fontFamily: VS.mono,
+                        mb: 1,
+                      }}
+                    >
+                    </Typography>
+                  )}
+                  <ScoreBar
+                    value={aiProbability}
+                    color={scoreColor(aiProbability)}
+                  />
+                </>
+              ) : (
+                <Typography
+                  sx={{
+                    fontSize: "2.5rem",
+                    fontWeight: 700,
+                    letterSpacing: "-0.04em",
+                    color: VS.textMuted,
+                    lineHeight: 1,
+                  }}
+                >
+                </Typography>
+              )}
             </Box>
           </Box>
 

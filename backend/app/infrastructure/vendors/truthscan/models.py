@@ -75,3 +75,13 @@ class TruthScanVerifyResponse(BaseModel):
     ai_summary: str
     verified_at: datetime
     duration_ms: int
+    ai_probability: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="0–100 AI-generation probability from vendor fields or Azure OpenAI fallback.",
+    )
+    ai_probability_source: str | None = Field(
+        default=None,
+        description='"vendor" when taken from engine fields; "azure_openai" when estimated.',
+    )

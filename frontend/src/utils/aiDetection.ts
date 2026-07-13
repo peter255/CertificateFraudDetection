@@ -265,10 +265,14 @@ function labelFromFields(
 
 function explanationFromFields(
   probability: number | null,
-  isAiGenerated: boolean | null
+  isAiGenerated: boolean | null,
+  source?: "vendor" | "azure_openai" | null
 ): string | null {
   if (probability != null) {
     const pct = Math.round(probability);
+    if (source === "azure_openai") {
+      return `Azure OpenAI estimates a ${pct}% probability that this document was created or modified using AI-generated content.`;
+    }
     return `The verification engine estimates a ${pct}% probability that this document was created or modified using AI-generated content.`;
   }
   if (isAiGenerated === true) {
@@ -284,6 +288,7 @@ function explanationFromFields(
 export function buildAiDetection(fields: {
   probability?: number | null;
   isAiGenerated?: boolean | null;
+  source?: "vendor" | "azure_openai" | null;
 }): AiDetection {
   const probability =
     fields.probability != null && Number.isFinite(fields.probability)
@@ -300,7 +305,8 @@ export function buildAiDetection(fields: {
     supported: true,
     probability,
     label: labelFromFields(probability, isAiGenerated),
-    explanation: explanationFromFields(probability, isAiGenerated),
+    explanation: explanationFromFields(probability, isAiGenerated, fields.source),
+    source: fields.source ?? (probability != null ? "vendor" : null),
   };
 }
 

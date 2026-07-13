@@ -672,11 +672,16 @@ function extractAi(aiDetection: AiDetection | null | undefined): ExtractedFindin
     status,
     finding: detection.label === "Unknown" ? "AI assessment completed." : detection.label,
     interpretation:
-      "This metric estimates AI involvement only. It does not determine whether the document is authentic.",
+      detection.source === "azure_openai"
+        ? "This percentage was estimated by Azure OpenAI when the verification engine did not return a numeric AI probability. It estimates AI involvement only and does not determine authenticity."
+        : "This metric estimates AI involvement only. It does not determine whether the document is authentic.",
     metric:
       probability != null
         ? {
-            label: "AI Generated Probability",
+            label:
+              detection.source === "azure_openai"
+                ? "AI Generated Probability (Azure OpenAI)"
+                : "AI Generated Probability",
             value: `${Math.round(probability * 10) / 10}%`,
           }
         : { label: "AI Generated Probability", value: NOT_PROVIDED },

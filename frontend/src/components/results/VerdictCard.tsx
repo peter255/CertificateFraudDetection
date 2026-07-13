@@ -187,11 +187,12 @@ export default function VerdictCard({
             />
           )}
           {showRiskScore && (
+            
             <CircularGauge
               value={riskScore}
               max={100}
               label="Risk Score"
-              sublabel="/ 100"
+              sublabel=" / 100"
               description={SCORE_COPY.riskScore}
               color={riskColor}
               size={gaugeSize}

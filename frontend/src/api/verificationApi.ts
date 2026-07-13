@@ -69,6 +69,9 @@ interface EngineV1ApiResponse {
   ai_summary: string;
   verified_at: string;
   duration_ms: number;
+  /** Backend-resolved AI probability (0–100), from vendor fields or Azure OpenAI. */
+  ai_probability?: number | null;
+  ai_probability_source?: "vendor" | "azure_openai" | string | null;
   analysis?: {
     heatmap_url?: string | null;
     reasoning?: string;
@@ -195,6 +198,9 @@ interface EngineV2ApiResponse {
   raw_result?: Record<string, unknown>;
   verified_at: string;
   duration_ms: number;
+  /** Backend-resolved AI probability (0–100), from vendor fields or Azure OpenAI. */
+  ai_probability?: number | null;
+  ai_probability_source?: "vendor" | "azure_openai" | string | null;
 }
 
 function emptyTechnical() {
@@ -1200,14 +1206,29 @@ function resolveV1AiDetection(
   const rawQuery = asRecord(analysis.raw_query_response);
   const extracted = extractAiFieldsFromPools([analysisBag, rawQuery]);
 
+  // Backend-resolved probability (vendor fields or Azure OpenAI fallback).
+  let probability = toScore100(
+    typeof data.ai_probability === "number" ? data.ai_probability : null
+  );
+  let source: "vendor" | "azure_openai" | null =
+    data.ai_probability_source === "azure_openai"
+      ? "azure_openai"
+      : data.ai_probability_source === "vendor"
+        ? "vendor"
+        : null;
+
   // Vendor Core AI score (`result` → backend `raw_score`). Prefer an explicitly
   // named AI-probability key when present; otherwise use the Core AI score.
-  let probability = extracted.probability;
+  if (probability == null) {
+    probability = extracted.probability;
+    if (probability != null) source = "vendor";
+  }
   if (probability == null) {
     probability = toScore100(
       typeof analysis.raw_score === "number" ? analysis.raw_score : null,
       typeof data.raw_score === "number" ? data.raw_score : null
     );
+    if (probability != null) source = "vendor";
   }
 
   let isAiGenerated = extracted.isAiGenerated;
@@ -1224,6 +1245,7 @@ function resolveV1AiDetection(
   return buildAiDetection({
     probability,
     isAiGenerated,
+    source,
   });
 }
 
@@ -1266,6 +1288,21 @@ function resolveV2AiDetection(data: EngineV2ApiResponse): AiDetection {
     rawResult,
   ]);
 
+  let probability = toScore100(
+    typeof data.ai_probability === "number" ? data.ai_probability : null
+  );
+  let source: "vendor" | "azure_openai" | null =
+    data.ai_probability_source === "azure_openai"
+      ? "azure_openai"
+      : data.ai_probability_source === "vendor"
+        ? "vendor"
+        : null;
+
+  if (probability == null) {
+    probability = extracted.probability;
+    if (probability != null) source = "vendor";
+  }
+
   let isAiGenerated = extracted.isAiGenerated;
 
   if (isAiGenerated == null && typeof c2pa.ai_generated === "boolean") {
@@ -1288,8 +1325,9 @@ function resolveV2AiDetection(data: EngineV2ApiResponse): AiDetection {
   }
 
   return buildAiDetection({
-    probability: extracted.probability,
+    probability,
     isAiGenerated,
+    source,
   });
 }
 

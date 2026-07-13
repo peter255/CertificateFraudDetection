@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
+from app.application.services.ai_probability_enrichment import AiProbabilityEnrichmentService
 from app.infrastructure.vendors.truthscan.client import TruthScanClient
 from app.infrastructure.vendors.truthscan.dependencies import provide_truthscan_client
 from app.infrastructure.vendors.truthscan.models import TruthScanVerifyResponse
+from app.presentation.dependencies.ai_probability import provide_ai_probability_enrichment
 
 router = APIRouter(prefix="/vendors/v1", tags=["vendors:v1"])
 
@@ -27,12 +29,48 @@ async def verify_with_engine_v1(
         description="Document category: academic_certificate | professional_license | identity_document | corporate_document",
     ),
     client: TruthScanClient = Depends(provide_truthscan_client),
+    ai_probability_service: AiProbabilityEnrichmentService = Depends(provide_ai_probability_enrichment),
 ) -> TruthScanVerifyResponse:
     raw_content = await file.read()
-    return await client.verify(
+    response = await client.verify(
         raw_content,
         filename=file.filename or "certificate.bin",
         document_type=document_type,
         holder_name=holder_name or file.filename or "Unknown",
         issuer_name=issuer_name or "Unknown",
     )
+
+    analysis = response.analysis
+    ai_probability, ai_probability_source = await ai_probability_service.enrich(
+        document_content=raw_content,
+        filename=file.filename or "certificate.bin",
+        vendor_payloads=[
+            analysis.model_dump(),
+            analysis.raw_query_response,
+        ],
+        raw_score=response.raw_score,
+        context={
+            "engine": "v1",
+            "final_result": response.final_result,
+            "overall_status": response.overall_status,
+            "raw_score": response.raw_score,
+            "ml_label": analysis.ml_label,
+            "ml_score": analysis.ml_score,
+            "ocr_label": analysis.ocr_label,
+            "ocr_score": analysis.ocr_score,
+            "key_indicators": analysis.key_indicators,
+            "visual_patterns": analysis.visual_patterns,
+            "metadata_notes": analysis.metadata_notes,
+            "reasoning": analysis.reasoning,
+        },
+    )
+
+    if ai_probability is not None:
+        return response.model_copy(
+            update={
+                "ai_probability": ai_probability,
+                "ai_probability_source": ai_probability_source,
+            }
+        )
+
+    return response

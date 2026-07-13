@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
+from app.application.services.ai_probability_enrichment import AiProbabilityEnrichmentService
 from app.infrastructure.vendors.paperwork.client import PaperworkClient
 from app.infrastructure.vendors.paperwork.dependencies import provide_paperwork_client
 from app.infrastructure.vendors.paperwork.models import PaperworkVerifyResponse
+from app.presentation.dependencies.ai_probability import provide_ai_probability_enrichment
 
 router = APIRouter(prefix="/vendors/v2", tags=["vendors:v2"])
 
@@ -29,11 +31,44 @@ async def verify_with_engine_v2(
         description='OCR mode. Use "auto" unless a specific mode is required.',
     ),
     client: PaperworkClient = Depends(provide_paperwork_client),
+    ai_probability_service: AiProbabilityEnrichmentService = Depends(provide_ai_probability_enrichment),
 ) -> PaperworkVerifyResponse:
     raw_content = await file.read()
-    return await client.verify(
+    response = await client.verify(
         raw_content,
         filename=file.filename or "certificate.bin",
         document_type=document_type or "auto",
         ocr_mode=ocr_mode or "auto",
     )
+
+    ai_probability, ai_probability_source = await ai_probability_service.enrich(
+        document_content=raw_content,
+        filename=file.filename or "certificate.bin",
+        vendor_payloads=[
+            response.layer_details,
+            response.engine_results,
+            response.classification,
+            response.pdf_fraud_subscores,
+            response.engine_scores,
+            response.raw_result,
+        ],
+        context={
+            "engine": "v2",
+            "verdict": response.verdict,
+            "fraud_types": response.fraud_types,
+            "fraud_score": response.fraud_score,
+            "executive_summary": response.executive_summary,
+            "layer_details": response.layer_details,
+            "signals": [signal.model_dump(exclude_none=True) for signal in response.signals[:8]],
+        },
+    )
+
+    if ai_probability is not None:
+        return response.model_copy(
+            update={
+                "ai_probability": ai_probability,
+                "ai_probability_source": ai_probability_source,
+            }
+        )
+
+    return response
