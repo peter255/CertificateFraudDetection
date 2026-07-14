@@ -67,10 +67,14 @@ class AzureOpenAIClient:
             context_json = context_json[:_MAX_CONTEXT_CHARS] + "…"
 
         prompt = (
-            "Write a forensic executive summary as JSON only:\n"
-            '{"summary":"<paragraph>"}\n'
-            "Rules: include EVERY item in detected_flags; describe findings only; "
-            "never recommend approve/reject/manual review/next steps; do not invent flags.\n"
+            "Write a short forensic verdict summary as JSON only:\n"
+            '{"summary":"<text>"}\n'
+            "Hard limits:\n"
+            "- Maximum 3 short sentences (about 3–4 lines total).\n"
+            "- Be expressive and concrete: name the key verdict and the most important flags.\n"
+            "- Prefer the strongest signals; do not list every minor detail.\n"
+            "- Findings only — never recommend approve/reject/manual review/next steps.\n"
+            "- Do not invent flags.\n"
             f"Context:\n{context_json}"
         )
 
@@ -89,7 +93,70 @@ class AzureOpenAIClient:
         if _looks_like_recommendation(summary):
             logger.warning("Azure summary looked like a recommendation; discarding.")
             return None
-        return summary
+        return _clamp_summary_length(summary)
+
+    async def generate_category_summary(
+        self,
+        *,
+        category: str,
+        findings: list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
+    ) -> str | None:
+        if not self.is_configured():
+            return None
+        if not findings:
+            return None
+
+        slim_findings = [_slim_finding(item) for item in findings[:24]]
+        slim_findings = [item for item in slim_findings if item]
+        if not slim_findings:
+            return None
+
+        payload = {
+            "category": category,
+            "findings": slim_findings,
+        }
+        if context:
+            for key in ("verdict", "fraud_score", "risk_level", "document_type"):
+                if context.get(key) not in (None, "", [], {}):
+                    payload[key] = context[key]
+
+        context_json = json.dumps(payload, ensure_ascii=False, default=str)
+        if len(context_json) > _MAX_CONTEXT_CHARS:
+            context_json = context_json[:_MAX_CONTEXT_CHARS] + "…"
+
+        prompt = (
+            f"Summarize {category} findings for a non-technical reviewer as JSON only:\n"
+            '{"summary":"<text>"}\n'
+            "Hard limits:\n"
+            "- Maximum 3 short sentences (about 3–4 lines total).\n"
+            "- Be expressive: say what looks wrong (or that nothing notable was found).\n"
+            "- Mention only the most important fields/issues (name, date, font, OCR, splice, etc.).\n"
+            "- Do not invent findings.\n"
+            "- Do not recommend approve/reject/manual review/next steps.\n"
+            f"\nFindings:\n{context_json}"
+        )
+
+        message_content = await self._chat_completion(
+            prompt,
+            max_completion_tokens=_MAX_SUMMARY_COMPLETION_TOKENS,
+            reasoning_effort="low",
+        )
+        if not message_content:
+            return None
+
+        summary = _parse_summary(message_content)
+        if summary is None:
+            logger.warning(
+                "Could not parse %s summary from: %s",
+                category,
+                message_content[:300],
+            )
+            return None
+        if _looks_like_recommendation(summary):
+            logger.warning("Azure %s summary looked like a recommendation; discarding.", category)
+            return None
+        return _clamp_summary_length(summary)
 
     async def estimate_ai_probability(
         self,
@@ -320,6 +387,58 @@ def _slim_probability_context(context: dict[str, Any]) -> dict[str, Any]:
                 if llm_report.get(k) is not None
             }
 
+    return slim
+
+
+def _clamp_summary_length(text: str, *, max_sentences: int = 3, max_chars: int = 420) -> str:
+    """Keep summaries short and readable: ~3–4 lines max."""
+    cleaned = re.sub(r"\s+", " ", text.strip())
+    if not cleaned:
+        return cleaned
+
+    parts = re.split(r"(?<=[.!?])\s+", cleaned)
+    sentences = [p.strip() for p in parts if p.strip()]
+    if len(sentences) > max_sentences:
+        cleaned = " ".join(sentences[:max_sentences])
+        if cleaned[-1] not in ".!?":
+            cleaned += "."
+
+    if len(cleaned) > max_chars:
+        cut = cleaned[: max_chars - 1]
+        # Prefer cutting at a sentence/word boundary.
+        for sep in (". ", "! ", "? ", "; ", ", ", " "):
+            idx = cut.rfind(sep)
+            if idx >= int(max_chars * 0.55):
+                cut = cut[: idx + (1 if sep.strip() else 0)]
+                break
+        cleaned = cut.rstrip(" ,;")
+        if cleaned[-1:] not in ".!?":
+            cleaned += "."
+
+    return cleaned
+
+
+def _slim_finding(item: dict[str, Any]) -> dict[str, Any]:
+    slim: dict[str, Any] = {}
+    for key in (
+        "description",
+        "check",
+        "category",
+        "status",
+        "severity",
+        "confidence",
+        "field",
+        "field_label",
+        "detector",
+        "detector_label",
+        "layer",
+        "fraud_type",
+        "evidence_class",
+        "title",
+    ):
+        value = item.get(key)
+        if value not in (None, "", [], {}):
+            slim[key] = value
     return slim
 
 

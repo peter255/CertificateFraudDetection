@@ -72,6 +72,10 @@ interface EngineV1ApiResponse {
   /** Backend-resolved AI probability (0–100), from vendor fields or Azure OpenAI. */
   ai_probability?: number | null;
   ai_probability_source?: "vendor" | "azure_openai" | string | null;
+  /** Azure OpenAI plain-English summary of Text Manipulation findings. */
+  text_manipulation_summary?: string | null;
+  /** Azure OpenAI plain-English summary of Image Manipulation findings. */
+  image_manipulation_summary?: string | null;
   analysis?: {
     heatmap_url?: string | null;
     reasoning?: string;
@@ -201,6 +205,8 @@ interface EngineV2ApiResponse {
   /** Backend-resolved AI probability (0–100), from vendor fields or Azure OpenAI. */
   ai_probability?: number | null;
   ai_probability_source?: "vendor" | "azure_openai" | string | null;
+  text_manipulation_summary?: string | null;
+  image_manipulation_summary?: string | null;
 }
 
 function emptyTechnical() {
@@ -494,6 +500,14 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
     issueDate: null,
     verifiedAt: data.verified_at || "",
     aiSummary: summary,
+    textManipulationSummary:
+      typeof data.text_manipulation_summary === "string" && data.text_manipulation_summary.trim()
+        ? scrubEngineName(data.text_manipulation_summary.trim())
+        : null,
+    imageManipulationSummary:
+      typeof data.image_manipulation_summary === "string" && data.image_manipulation_summary.trim()
+        ? scrubEngineName(data.image_manipulation_summary.trim())
+        : null,
     signals: data.signals
       .filter((s) => {
         const description = (s.description || "").trim().toLowerCase();
@@ -1571,6 +1585,14 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
     issueDate,
     verifiedAt: data.verified_at || "",
     aiSummary: summary,
+    textManipulationSummary:
+      typeof data.text_manipulation_summary === "string" && data.text_manipulation_summary.trim()
+        ? scrubEngineName(data.text_manipulation_summary.trim())
+        : null,
+    imageManipulationSummary:
+      typeof data.image_manipulation_summary === "string" && data.image_manipulation_summary.trim()
+        ? scrubEngineName(data.image_manipulation_summary.trim())
+        : null,
     signals,
     report: {
       // Narrative lives only in aiSummary — Executive Summary card.

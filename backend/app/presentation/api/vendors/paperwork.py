@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from app.application.services.ai_probability_enrichment import AiProbabilityEnrichmentService
@@ -56,29 +58,52 @@ async def verify_with_engine_v2(
         "signals": [signal.model_dump(exclude_none=True) for signal in response.signals[:16]],
     }
 
-    ai_probability, ai_probability_source = await ai_probability_service.enrich(
-        document_content=raw_content,
-        filename=file.filename or "certificate.bin",
-        vendor_payloads=[
-            response.layer_details,
-            response.engine_results,
-            response.classification,
-            response.pdf_fraud_subscores,
-            response.engine_scores,
-            response.raw_result,
-        ],
-        context={
-            **enrichment_context,
-            # Probability estimator may still use vendor narrative as a weak hint.
-            "executive_summary": response.executive_summary,
-        },
+    signal_payloads = [signal.model_dump(exclude_none=True) for signal in response.signals]
+    visual_payloads = [
+        item.model_dump(exclude_none=True) for item in response.visual_evidence
+    ]
+
+    (
+        (ai_probability, ai_probability_source),
+        ai_summary,
+        text_manipulation_summary,
+        image_manipulation_summary,
+    ) = await asyncio.gather(
+        ai_probability_service.enrich(
+            document_content=raw_content,
+            filename=file.filename or "certificate.bin",
+            vendor_payloads=[
+                response.layer_details,
+                response.engine_results,
+                response.classification,
+                response.pdf_fraud_subscores,
+                response.engine_scores,
+                response.raw_result,
+            ],
+            context={
+                **enrichment_context,
+                "executive_summary": response.executive_summary,
+            },
+        ),
+        ai_summary_service.enrich(context=enrichment_context),
+        ai_summary_service.enrich_text_manipulation(
+            signals=signal_payloads,
+            field_evidence=[
+                item.model_dump(exclude_none=True) for item in response.field_evidence
+            ],
+            context=enrichment_context,
+        ),
+        ai_summary_service.enrich_image_manipulation(
+            signals=signal_payloads,
+            visual_evidence=visual_payloads,
+            context=enrichment_context,
+        ),
     )
 
-    ai_summary = await ai_summary_service.enrich(context=enrichment_context)
-
     updates: dict = {
-        # Always overwrite vendor executive_summary — it often restates recommendations.
         "executive_summary": ai_summary,
+        "text_manipulation_summary": text_manipulation_summary,
+        "image_manipulation_summary": image_manipulation_summary,
     }
     if ai_probability is not None:
         updates["ai_probability"] = ai_probability

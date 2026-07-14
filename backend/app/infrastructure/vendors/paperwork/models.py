@@ -137,3 +137,11 @@ class PaperworkVerifyResponse(BaseModel):
         default=None,
         description='"vendor" when taken from engine fields; "azure_openai" when estimated.',
     )
+    text_manipulation_summary: str | None = Field(
+        default=None,
+        description="Azure OpenAI plain-English summary of Text Manipulation findings.",
+    )
+    image_manipulation_summary: str | None = Field(
+        default=None,
+        description="Azure OpenAI plain-English summary of Image Manipulation findings.",
+    )

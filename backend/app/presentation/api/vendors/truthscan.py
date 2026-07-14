@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from app.application.services.ai_probability_enrichment import AiProbabilityEnrichmentService
@@ -62,22 +64,48 @@ async def verify_with_engine_v1(
         "signals": [signal.model_dump(exclude_none=True) for signal in response.signals[:16]],
     }
 
-    ai_probability, ai_probability_source = await ai_probability_service.enrich(
-        document_content=raw_content,
-        filename=file.filename or "certificate.bin",
-        vendor_payloads=[
-            analysis.model_dump(),
-            analysis.raw_query_response,
-        ],
-        raw_score=response.raw_score,
-        context=enrichment_context,
+    signal_payloads = [signal.model_dump(exclude_none=True) for signal in response.signals]
+    v1_context = {
+        "verdict": response.overall_status,
+        "document_type": response.document_type,
+    }
+
+    (
+        (ai_probability, ai_probability_source),
+        ai_summary,
+        text_manipulation_summary,
+        image_manipulation_summary,
+    ) = await asyncio.gather(
+        ai_probability_service.enrich(
+            document_content=raw_content,
+            filename=file.filename or "certificate.bin",
+            vendor_payloads=[
+                analysis.model_dump(),
+                analysis.raw_query_response,
+            ],
+            raw_score=response.raw_score,
+            context=enrichment_context,
+        ),
+        ai_summary_service.enrich(context=enrichment_context),
+        ai_summary_service.enrich_text_manipulation(
+            signals=signal_payloads,
+            context=v1_context,
+        ),
+        ai_summary_service.enrich_image_manipulation(
+            signals=signal_payloads,
+            visual_evidence=[
+                {"description": pattern, "category": "Visual Pattern"}
+                for pattern in (analysis.visual_patterns or [])
+                if isinstance(pattern, str) and pattern.strip()
+            ],
+            context=v1_context,
+        ),
     )
 
-    ai_summary = await ai_summary_service.enrich(context=enrichment_context)
-
     updates: dict = {
-        # Always overwrite vendor ai_summary — never keep recommendation-style narratives.
         "ai_summary": ai_summary,
+        "text_manipulation_summary": text_manipulation_summary,
+        "image_manipulation_summary": image_manipulation_summary,
     }
     if ai_probability is not None:
         updates["ai_probability"] = ai_probability

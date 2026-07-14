@@ -83,6 +83,49 @@ function bucketForSignal(signal: Signal): "text" | "image" | "pdf" {
   return "text";
 }
 
+function clampSummary(text: string, maxSentences = 3, maxChars = 420): string {
+  let cleaned = text.replace(/\s+/g, " ").trim();
+  if (!cleaned) return cleaned;
+
+  const sentences = cleaned
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (sentences.length > maxSentences) {
+    cleaned = sentences.slice(0, maxSentences).join(" ");
+    if (!/[.!?]$/.test(cleaned)) cleaned += ".";
+  }
+
+  if (cleaned.length > maxChars) {
+    let cut = cleaned.slice(0, maxChars - 1);
+    const seps = [". ", "! ", "? ", "; ", ", ", " "];
+    for (const sep of seps) {
+      const idx = cut.lastIndexOf(sep);
+      if (idx >= Math.floor(maxChars * 0.55)) {
+        cut = cut.slice(0, idx + (sep.trim() ? 1 : 0));
+        break;
+      }
+    }
+    cleaned = cut.replace(/[ ,;]+$/g, "");
+    if (!/[.!?]$/.test(cleaned)) cleaned += ".";
+  }
+
+  return cleaned;
+}
+
+function buildLocalCategorySummary(title: string, signals: Signal[]): string | null {
+  const bits = signals
+    .map((s) => (s.description || s.check || s.fieldLabel || "").trim())
+    .filter(Boolean)
+    .map((bit) => (bit.length > 90 ? `${bit.slice(0, 89).replace(/[ ,;]+$/g, "")}…` : bit))
+    .slice(0, 2);
+  if (!bits.length) return null;
+  if (bits.length === 1) return clampSummary(bits[0]);
+  return clampSummary(
+    `${title} shows ${signals.length} key issues. ${bits[0]}. ${bits[1]}.`
+  );
+}
+
 function categoryRisk(
   signals: Signal[]
 ): { label: string; color: string; score: number } {
@@ -251,24 +294,31 @@ function FindingCategory({
   icon,
   signals,
   prefix,
+  summary,
 }: {
   title: string;
   icon: React.ReactNode;
   signals: Signal[];
   prefix: string;
+  /** Azure OpenAI plain-English summary — shown instead of dumping raw cards when present. */
+  summary?: string | null;
 }) {
   const risk = categoryRisk(signals);
+  const hasAiSummary = Boolean(summary?.trim());
+  const displaySummary = hasAiSummary ? clampSummary(summary!.trim()) : "";
   const items =
     signals.length > 0
       ? signals
-      : [
-          {
-            id: `${prefix}-ok`,
-            category: title,
-            description: "No anomalies detected in this layer.",
-            status: "pass" as const,
-          },
-        ];
+      : hasAiSummary
+        ? []
+        : [
+            {
+              id: `${prefix}-ok`,
+              category: title,
+              description: "No anomalies detected in this layer.",
+              status: "pass" as const,
+            },
+          ];
 
   return (
     <Box
@@ -326,21 +376,56 @@ function FindingCategory({
       </Box>
 
       <Box sx={{ p: 1.5, display: "flex", flexDirection: "column", gap: 1.25 }}>
-        {items.map((signal, i) => (
-          <FindingCard
-            key={signal.id || `${prefix}-${i}`}
-            title={
-              signal.check?.trim() ||
-              signal.fieldLabel?.trim() ||
-              signal.category?.trim() ||
-              title
-            }
-            description={signal.description}
-            code={refCode(signal, i, prefix)}
-            confidence={confOf(signal)}
-            color={statusColor(signal.status)}
-          />
-        ))}
+        {hasAiSummary && (
+          <Box
+            sx={{
+              px: 1.5,
+              py: 1.35,
+              borderRadius: "8px",
+              border: `1px solid ${VS.border}`,
+              backgroundColor: VS.bg,
+            }}
+          >
+            <Typography
+              sx={{
+                fontSize: "0.625rem",
+                fontWeight: 700,
+                letterSpacing: "0.1em",
+                color: VS.textMuted,
+                fontFamily: VS.mono,
+                mb: 0.75,
+              }}
+            >
+              AI SUMMARY
+            </Typography>
+            <Typography
+              sx={{
+                fontSize: "0.875rem",
+                color: VS.textSecondary,
+                lineHeight: 1.65,
+              }}
+            >
+              {displaySummary}
+            </Typography>
+          </Box>
+        )}
+
+        {!hasAiSummary &&
+          items.map((signal, i) => (
+            <FindingCard
+              key={signal.id || `${prefix}-${i}`}
+              title={
+                signal.check?.trim() ||
+                signal.fieldLabel?.trim() ||
+                signal.category?.trim() ||
+                title
+              }
+              description={signal.description}
+              code={refCode(signal, i, prefix)}
+              confidence={confOf(signal)}
+              color={statusColor(signal.status)}
+            />
+          ))}
       </Box>
     </Box>
   );
@@ -784,7 +869,7 @@ export default function ResultsDashboard({
               }}
             >
               {result.aiSummary?.trim()
-                ? highlightVerdict(result.aiSummary.trim())
+                ? highlightVerdict(clampSummary(result.aiSummary.trim()))
                 : verdictFallback(result.verdict)}
             </Typography>
           </Box>
@@ -808,12 +893,22 @@ export default function ResultsDashboard({
             icon={<TextFieldsIcon sx={{ fontSize: 18 }} />}
             signals={buckets.text}
             prefix="TXT"
+            summary={clampSummary(
+              result.textManipulationSummary?.trim() ||
+                buildLocalCategorySummary("Text manipulation", buckets.text) ||
+                ""
+            )}
           />
           <FindingCategory
             title="Image Manipulation"
             icon={<ImageIcon sx={{ fontSize: 18 }} />}
             signals={buckets.image}
             prefix="IMG"
+            summary={clampSummary(
+              result.imageManipulationSummary?.trim() ||
+                buildLocalCategorySummary("Image manipulation", buckets.image) ||
+                ""
+            )}
           />
           <FindingCategory
             title="File Structure"
@@ -900,10 +995,10 @@ export default function ResultsDashboard({
 
 function verdictFallback(verdict: VerdictType): string {
   if (verdict === "fraudulent") {
-    return "Multiple forensic layers indicate probable document manipulation based on the consolidated flags.";
+    return "Strong manipulation signals appear across layers. The document looks altered.";
   }
   if (verdict === "suspicious") {
-    return "Mixed signals were detected across analysis layers. Review the detailed findings for each detected flag.";
+    return "Mixed forensic signals leave authenticity uncertain. Key flags need closer attention.";
   }
-  return "Cross-layer analysis supports document authenticity. No material fraud indicators were consolidated into a critical verdict.";
+  return "Cross-layer checks support authenticity. No material fraud flags stood out.";
 }

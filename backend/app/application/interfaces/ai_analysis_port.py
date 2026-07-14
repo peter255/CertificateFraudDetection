@@ -24,6 +24,14 @@ class IAiAnalysisPort(Protocol):
         context: dict[str, Any],
     ) -> str | None: ...
 
+    async def generate_category_summary(
+        self,
+        *,
+        category: str,
+        findings: list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
+    ) -> str | None: ...
+
     async def estimate_ai_probability(
         self,
         *,

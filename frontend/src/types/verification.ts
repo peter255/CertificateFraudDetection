@@ -165,6 +165,10 @@ export interface VerificationResult {
   issueDate: string | null;
   verifiedAt: string;
   aiSummary: string;
+  /** Azure OpenAI plain-English summary of Text Manipulation findings. */
+  textManipulationSummary?: string | null;
+  /** Azure OpenAI plain-English summary of Image Manipulation findings. */
+  imageManipulationSummary?: string | null;
   signals: Signal[];
   report: ExecReport;
   vendorFindings: VendorFinding[];

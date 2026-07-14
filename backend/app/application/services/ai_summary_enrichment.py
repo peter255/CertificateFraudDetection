@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.application.interfaces.ai_analysis_port import IAiAnalysisPort
@@ -46,6 +47,180 @@ class AiSummaryEnrichmentService:
 
         return build_flags_summary(summary_context)
 
+    async def enrich_text_manipulation(
+        self,
+        *,
+        signals: list[dict[str, Any]],
+        field_evidence: list[dict[str, Any]] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> str | None:
+        """Summarize Text Manipulation signals for a non-technical user via Azure OpenAI."""
+        combined = [*(signals or []), *(field_evidence or [])]
+        text_findings = [
+            _normalize_finding(item)
+            for item in combined
+            if isinstance(item, dict) and _bucket_for_signal(item) == "text"
+        ]
+        text_findings = [
+            item
+            for item in text_findings
+            if item.get("description") or item.get("check") or item.get("field") or item.get("field_label")
+        ]
+        if not text_findings:
+            logger.info("Text manipulation summary skipped — no text-bucket findings.")
+            return None
+
+        logger.info("Text manipulation summary: %s finding(s)", len(text_findings))
+
+        if self._ai_client.is_configured():
+            try:
+                generated = await self._ai_client.generate_category_summary(
+                    category="Text Manipulation",
+                    findings=text_findings,
+                    context=context or {},
+                )
+                if generated and not looks_like_recommendation(generated):
+                    return generated
+                logger.warning("Azure text-manipulation summary missing/invalid; using fallback.")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Azure OpenAI text-manipulation summary failed: %s", exc)
+
+        return _build_category_fallback("Text manipulation", text_findings)
+
+    async def enrich_image_manipulation(
+        self,
+        *,
+        signals: list[dict[str, Any]],
+        visual_evidence: list[dict[str, Any]] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> str | None:
+        """Summarize Image Manipulation signals/evidence for a non-technical user via Azure OpenAI."""
+        combined = [*(signals or []), *(visual_evidence or [])]
+        image_findings = [
+            _normalize_finding(item)
+            for item in combined
+            if isinstance(item, dict) and _bucket_for_signal(item) == "image"
+        ]
+        for item in visual_evidence or []:
+            if not isinstance(item, dict) or not item:
+                continue
+            normalized = _normalize_finding(item)
+            if _bucket_for_signal(normalized) == "pdf":
+                continue
+            if normalized not in image_findings:
+                image_findings.append(normalized)
+
+        image_findings = [
+            item
+            for item in image_findings
+            if item.get("description") or item.get("title") or item.get("check") or item.get("type")
+        ]
+        if not image_findings:
+            return None
+
+        if self._ai_client.is_configured():
+            try:
+                generated = await self._ai_client.generate_category_summary(
+                    category="Image Manipulation",
+                    findings=image_findings,
+                    context=context or {},
+                )
+                if generated and not looks_like_recommendation(generated):
+                    return generated
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Azure OpenAI image-manipulation summary failed: %s", exc)
+
+        return _build_category_fallback("Image manipulation", image_findings)
+
+
+def _signal_haystack(item: dict[str, Any]) -> str:
+    return " ".join(
+        str(item.get(key) or "")
+        for key in (
+            "category",
+            "layer",
+            "check",
+            "detector",
+            "detector_label",
+            "description",
+            "evidence_class",
+            "fraud_type",
+            "field",
+            "field_label",
+            "title",
+            "type",
+            "location",
+            "stage",
+            "engine",
+        )
+    ).lower()
+
+
+def _bucket_for_signal(item: dict[str, Any]) -> str:
+    """Match frontend ResultsDashboard bucketing: pdf → image → text (default)."""
+    hay = _signal_haystack(item)
+    if not hay.strip():
+        return "text"
+    if re.search(
+        r"\bpdf\b|xmp|incremental|embedded.?font|structure|metadata|provenance|c2pa",
+        hay,
+    ):
+        return "pdf"
+    if re.search(
+        r"\bimage\b|visual|copy.?move|splic|resampl|seal|pixel|heatmap|perceptual|forensic",
+        hay,
+    ):
+        # Field/OCR/text cues stay in Text even when a weak "forensic" label is present.
+        if re.search(
+            r"\b(?:ocr|font|text|typography|glyph|field.?valid|holder|issuer|name.?field|date.?field)\b",
+            hay,
+        ):
+            return "text"
+        return "image"
+    return "text"
+
+
+def _normalize_finding(item: dict[str, Any]) -> dict[str, Any]:
+    out = dict(item)
+    if not out.get("description"):
+        bits = [
+            out.get("title"),
+            out.get("check"),
+            out.get("detector_label") or out.get("detector"),
+            out.get("field_label") or out.get("field"),
+            out.get("fraud_type") or out.get("type"),
+        ]
+        desc = " — ".join(str(b).strip() for b in bits if isinstance(b, str) and b.strip())
+        if desc:
+            out["description"] = desc
+    return out
+
+
+def _build_category_fallback(label: str, findings: list[dict[str, Any]]) -> str:
+    bits: list[str] = []
+    for item in findings[:3]:
+        desc = (
+            item.get("description")
+            or item.get("title")
+            or item.get("check")
+            or item.get("field_label")
+            or item.get("fraud_type")
+            or item.get("type")
+        )
+        if isinstance(desc, str) and desc.strip() and not looks_like_recommendation(desc):
+            # Keep each bullet short.
+            short = re.sub(r"\s+", " ", desc.strip())
+            if len(short) > 90:
+                short = short[:89].rstrip(" ,;") + "…"
+            bits.append(short)
+    if not bits:
+        return f"No clear {label.lower()} issues stood out in this scan."
+    if len(bits) == 1:
+        return f"{bits[0]}"
+    lead = f"{label} shows {len(bits)} key issues."
+    detail = " ".join(f"{bit}." if not bit.endswith((".", "!", "?", "…")) else bit for bit in bits[:2])
+    return f"{lead} {detail}"
+
 
 def looks_like_recommendation(text: str | None) -> bool:
     if not text or not text.strip():
@@ -82,15 +257,17 @@ def build_flags_summary(context: dict[str, Any]) -> str:
         unique_flags.append(key)
 
     if unique_flags:
-        listed = "; ".join(unique_flags)
+        top = unique_flags[:3]
+        listed = ", ".join(top)
+        extra = f" (+{len(unique_flags) - 3} more)" if len(unique_flags) > 3 else ""
         return (
-            f"Verification classified this document as {verdict_label}. "
-            f"Detected flags: {listed}."
+            f"Result: {verdict_label}. "
+            f"Main flags: {listed}{extra}."
         )
 
     return (
-        f"Verification classified this document as {verdict_label}. "
-        "No discrete fraud flags were reported in the available forensic signals."
+        f"Result: {verdict_label}. "
+        "No material fraud flags stood out in this scan."
     )
 
 
