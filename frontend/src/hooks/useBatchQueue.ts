@@ -47,6 +47,7 @@ export function useBatchQueue(concurrency = DEFAULT_CONCURRENCY) {
   const jobsRef = useRef<BatchJob[]>([]);
   const durationsRef = useRef<number[]>([]);
   const claimedRef = useRef<Set<string>>(new Set());
+  const runningRef = useRef(false);
 
   useEffect(() => {
     jobsRef.current = jobs;
@@ -118,6 +119,7 @@ export function useBatchQueue(concurrency = DEFAULT_CONCURRENCY) {
   const clearJobs = useCallback(() => {
     cancelRef.current = true;
     claimedRef.current.clear();
+    runningRef.current = false;
     setRunning(false);
     setJobs([]);
     jobsRef.current = [];
@@ -135,11 +137,13 @@ export function useBatchQueue(concurrency = DEFAULT_CONCURRENCY) {
       jobsRef.current = next;
       return next;
     });
+    runningRef.current = false;
     setRunning(false);
   }, []);
 
   const runQueue = useCallback(async () => {
-    if (running) return;
+    if (runningRef.current) return;
+    runningRef.current = true;
     cancelRef.current = false;
     claimedRef.current.clear();
     setRunning(true);
@@ -194,32 +198,46 @@ export function useBatchQueue(concurrency = DEFAULT_CONCURRENCY) {
       }
     };
 
-    const pool = Array.from({ length: Math.max(1, concurrency) }, () => worker());
-    await Promise.all(pool);
-    setRunning(false);
-  }, [claimNextPending, concurrency, running, updateJob]);
+    try {
+      const pool = Array.from({ length: Math.max(1, concurrency) }, () => worker());
+      await Promise.all(pool);
+    } finally {
+      runningRef.current = false;
+      setRunning(false);
+    }
+  }, [claimNextPending, concurrency, updateJob]);
 
   const retryFailed = useCallback(() => {
+    if (runningRef.current) return;
+
     claimedRef.current.clear();
+    cancelRef.current = false;
+
+    let revived = 0;
     setJobs((prev) => {
-      const next = prev.map((job) =>
-        job.status === "error"
-          ? {
-              ...job,
-              status: "pending" as const,
-              error: null,
-              result: null,
-              startedAt: null,
-              finishedAt: null,
-              durationMs: null,
-              attempts: 0,
-            }
-          : job
-      );
+      const next = prev.map((job) => {
+        if (job.status !== "error") return job;
+        revived += 1;
+        return {
+          ...job,
+          status: "pending" as const,
+          error: null,
+          result: null,
+          startedAt: null,
+          finishedAt: null,
+          durationMs: null,
+          attempts: 0,
+        };
+      });
       jobsRef.current = next;
       return next;
     });
-  }, []);
+
+    if (revived === 0) return;
+
+    // Start processing immediately — resetting to pending alone left jobs idle.
+    void runQueue();
+  }, [runQueue]);
 
   const completed = jobs.filter(
     (j) => j.status === "done" || j.status === "error" || j.status === "cancelled"

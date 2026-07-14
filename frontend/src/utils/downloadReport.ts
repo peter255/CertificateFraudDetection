@@ -1,10 +1,15 @@
 /**
- * PDF investigation report — mirrors the post-analysis ResultsDashboard content.
+ * PDF investigation report — mirrors the ResultsDashboard layout and wording
+ * so the exported file is as clear as the on-screen analysis.
  */
 
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { VerificationResult, VerdictType } from "../types/verification";
+import type {
+  TamperRegion,
+  VerificationResult,
+  VerdictType,
+} from "../types/verification";
 import {
   ORGANIZATION_NAME,
   PRODUCT_NAME,
@@ -12,10 +17,12 @@ import {
   BRAND_LOGO_PDF_PATH,
 } from "../branding/constants";
 import {
+  categoryRiskLabel,
   categorySummaryForReport,
   clampSummary,
   computeAnalysisDisplayScores,
   confOf,
+  overallRiskLabel,
   signalDescription,
   signalTitle,
   verdictFallback,
@@ -30,17 +37,20 @@ const COLORS = {
   line: [226, 232, 240] as [number, number, number],
   white: [255, 255, 255] as [number, number, number],
   soft: [248, 250, 252] as [number, number, number],
+  danger: [197, 15, 31] as [number, number, number],
+  warning: [217, 119, 6] as [number, number, number],
+  success: [16, 124, 16] as [number, number, number],
 };
 
 const VERDICT_STYLE: Record<
   VerdictType,
   { label: string; rgb: [number, number, number]; bg: [number, number, number] }
 > = {
-  authentic: { label: "Trusted", rgb: [16, 124, 16], bg: [240, 253, 244] },
-  suspicious: { label: "Suspicious", rgb: [217, 119, 6], bg: [255, 251, 235] },
+  authentic: { label: "Trusted", rgb: COLORS.success, bg: [240, 253, 244] },
+  suspicious: { label: "Suspicious", rgb: COLORS.warning, bg: [255, 251, 235] },
   fraudulent: {
     label: "Potentially Fraudulent",
-    rgb: [197, 15, 31],
+    rgb: COLORS.danger,
     bg: [254, 242, 242],
   },
 };
@@ -49,6 +59,13 @@ const SIGNAL_STATUS_LABEL: Record<string, string> = {
   pass: "Passed",
   warning: "Warning",
   fail: "Failed",
+};
+
+const SEVERITY_LABEL: Record<TamperRegion["severity"], string> = {
+  critical: "CRITICAL",
+  high: "HIGH",
+  medium: "MEDIUM",
+  low: "LOW",
 };
 
 type JsPdfWithTables = jsPDF & {
@@ -76,6 +93,13 @@ function ensureSpace(doc: jsPDF, y: number, needed: number): number {
   if (y + needed < pageHeight - 18) return y;
   doc.addPage();
   return 22;
+}
+
+function riskTone(label: string): [number, number, number] {
+  const key = label.toUpperCase();
+  if (key.includes("HIGH") || key.includes("CRITICAL")) return COLORS.danger;
+  if (key.includes("MEDIUM") || key.includes("ELEVATED")) return COLORS.warning;
+  return COLORS.success;
 }
 
 function drawFooter(doc: jsPDF, page: number, total: number): void {
@@ -157,6 +181,21 @@ function drawKeyValueTable(doc: jsPDF, y: number, rows: TableRow[]): number {
       1: { cellWidth: "auto" },
     },
     body: rows,
+    didParseCell: (data) => {
+      if (data.section !== "body" || data.column.index !== 1) return;
+      const raw = String(data.cell.raw || "");
+      // Color the metric value when it embeds a risk chip like "50 / 100  ·  ELEVATED"
+      if (/\bCRITICAL\b|\bHIGH RISK\b/i.test(raw)) {
+        data.cell.styles.textColor = COLORS.danger;
+        data.cell.styles.fontStyle = "bold";
+      } else if (/\bELEVATED\b|\bMEDIUM\b/i.test(raw)) {
+        data.cell.styles.textColor = COLORS.warning;
+        data.cell.styles.fontStyle = "bold";
+      } else if (/\bLOW RISK\b|\bLOW\b/i.test(raw) && /·/.test(raw)) {
+        data.cell.styles.textColor = COLORS.success;
+        data.cell.styles.fontStyle = "bold";
+      }
+    },
   });
 
   return ((doc as JsPdfWithTables).lastAutoTable?.finalY || y) + 10;
@@ -186,20 +225,40 @@ function imageFormatFromDataUrl(dataUrl: string): "PNG" | "JPEG" | "WEBP" {
   return "PNG";
 }
 
-function drawFindingCategory(
+function drawCategoryBlock(
   doc: jsPDF,
   y: number,
   contentWidth: number,
   title: string,
+  riskLabel: string,
+  score: number,
   summary: string,
   signals: VerificationResult["signals"],
   prefix: string
 ): number {
-  y = drawSectionTitle(doc, title, y);
+  y = ensureSpace(doc, y, 22);
+
+  // Title row with same risk chip wording as the website
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(...COLORS.navy);
+  doc.text(title.toUpperCase(), 16, y);
+
+  const chip = `${riskLabel}  ·  ${score}/100`;
+  doc.setFontSize(9);
+  doc.setTextColor(...riskTone(riskLabel));
+  doc.text(chip, 16 + contentWidth, y, { align: "right" });
+  y += 5;
+
+  doc.setDrawColor(...COLORS.line);
+  doc.setLineWidth(0.3);
+  doc.line(16, y, 16 + contentWidth, y);
+  y += 6;
 
   const hasSummary = Boolean(summary.trim());
   if (hasSummary) {
-    return drawParagraphBox(doc, summary.trim(), y, contentWidth);
+    y = drawParagraphBox(doc, summary.trim(), y, contentWidth);
+    return y;
   }
 
   const items =
@@ -255,9 +314,9 @@ function drawFindingCategory(
     didParseCell: (data) => {
       if (data.section !== "body" || data.column.index !== 0) return;
       const raw = String(data.cell.raw || "").toLowerCase();
-      if (raw === "failed") data.cell.styles.textColor = [197, 15, 31];
-      else if (raw === "warning") data.cell.styles.textColor = [217, 119, 6];
-      else if (raw === "passed") data.cell.styles.textColor = [16, 124, 16];
+      if (raw === "failed") data.cell.styles.textColor = COLORS.danger;
+      else if (raw === "warning") data.cell.styles.textColor = COLORS.warning;
+      else if (raw === "passed") data.cell.styles.textColor = COLORS.success;
     },
   });
 
@@ -266,7 +325,8 @@ function drawFindingCategory(
 
 /**
  * Build and download a PDF that mirrors the analysis results screen.
- */export async function downloadVerificationReport(
+ */
+export async function downloadVerificationReport(
   result: VerificationResult,
   fileName = "certificate"
 ): Promise<void> {
@@ -283,15 +343,17 @@ function drawFindingCategory(
   const displayName = truncate(fileName, 42);
 
   const scores = computeAnalysisDisplayScores(result);
+  const criticalLabel = overallRiskLabel(
+    result.report.riskLevel,
+    scores.riskScore
+  );
+  const textRisk = categoryRiskLabel(scores.buckets.text);
+  const imageRisk = categoryRiskLabel(scores.buckets.image);
+  const pdfRisk = categoryRiskLabel(scores.buckets.pdf);
+
   const consolidated =
     clampSummary((result.aiSummary || "").trim()) ||
     verdictFallback(result.verdict);
-
-  const heatmapUrl =
-    typeof result.heatmapUrl === "string" && result.heatmapUrl.trim()
-      ? result.heatmapUrl.trim()
-      : null;
-  const heatmapDataUrl = heatmapUrl ? await fetchImageAsDataUrl(heatmapUrl) : null;
 
   // ── Header ────────────────────────────────────────────────────────────────
   doc.setFillColor(...COLORS.navy);
@@ -344,7 +406,7 @@ function drawFindingCategory(
 
   let y = 58;
 
-  // Verdict strip (same labels as UI decision)
+  // Verdict strip — same decision label as the UI
   doc.setFillColor(...verdict.bg);
   doc.setDrawColor(...verdict.rgb);
   doc.setLineWidth(0.6);
@@ -355,27 +417,51 @@ function drawFindingCategory(
   doc.text(verdict.label.toUpperCase(), 22, y + 8);
   y += 20;
 
-  // Scores — same cards as ResultsDashboard
+  // Analysis Scores — same metrics and labels as ResultsDashboard
   y = drawSectionTitle(doc, "Analysis Scores", y);
   const scoreRows: TableRow[] = [
-    ["Risk Score", `${Math.round(scores.riskScore)}/ 100`],
-    ["Fraud Probability", `${Math.round(scores.fraudProbability)}%`],
+    [
+      "Risk Score",
+      `${Math.round(scores.riskScore)} / 100  ·  ${criticalLabel}`,
+    ],
+    [
+      "Fraud Probability",
+      `${Math.round(scores.fraudProbability)}%`,
+    ],
     [
       "AI Probability",
       scores.aiProbability != null ? `${scores.aiProbability}%` : "—",
     ],
-    ["Text Logic", `${scores.textScore}/ 100`],
-    ["Image Forensics", `${scores.imageScore}/ 100`],
-    ["File Structure", `${scores.pdfScore}/ 100`],
+    [
+      "Text Logic",
+      `${scores.textScore} / 100  ·  ${textRisk.label}`,
+    ],
+    [
+      "Image Forensics",
+      `${scores.imageScore} / 100  ·  ${imageRisk.label}`,
+    ],
+    [
+      "File Structure",
+      `${scores.pdfScore} / 100  ·  ${pdfRisk.label}`,
+    ],
   ];
   y = drawKeyValueTable(doc, y, scoreRows);
 
-  // Consolidated Verdict
+  // Consolidated Verdict — same narrative as the website
   y = drawSectionTitle(doc, "Consolidated Verdict", y);
   y = drawParagraphBox(doc, consolidated, y, contentWidth);
 
-  // Detailed Findings — visual evidence first, then category analysis below
+  // Detailed Findings — navigable visual evidence only (same list as the UI panel)
   y = drawSectionTitle(doc, "Detailed Findings", y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(...COLORS.muted);
+  doc.text(
+    "Localized visual evidence only — each item has a page and bounding box on the document.",
+    16,
+    y
+  );
+  y += 6;
 
   const regions = (result.tamperRegions || []).filter(
     (r) =>
@@ -417,73 +503,73 @@ function drawFindingCategory(
       alternateRowStyles: { fillColor: COLORS.soft },
       columnStyles: {
         0: { cellWidth: 10 },
-        1: { cellWidth: 38 },
-        2: { cellWidth: 22 },
+        1: { cellWidth: 42 },
+        2: { cellWidth: 24 },
         3: { cellWidth: 14 },
         4: { cellWidth: "auto" },
       },
-      head: [["#", "Region", "Severity", "Page", "Description"]],
+      head: [["#", "Finding", "Severity", "Page", "Description"]],
       body: regions.slice(0, 24).map((region, i) => [
         String(i + 1),
-        truncate(region.label, 40),
-        region.severity,
+        truncate(region.label, 42),
+        SEVERITY_LABEL[region.severity],
         String(region.page),
-        truncate(region.description, 120),
+        truncate(region.description, 140),
       ]),
+      didParseCell: (data) => {
+        if (data.section !== "body" || data.column.index !== 2) return;
+        const raw = String(data.cell.raw || "").toUpperCase();
+        data.cell.styles.fontStyle = "bold";
+        if (raw === "CRITICAL" || raw === "HIGH") {
+          data.cell.styles.textColor = COLORS.danger;
+        } else if (raw === "MEDIUM") {
+          data.cell.styles.textColor = COLORS.warning;
+        } else {
+          data.cell.styles.textColor = COLORS.success;
+        }
+      },
     });
     y = (doc.lastAutoTable?.finalY || y) + 10;
   }
 
-  y = drawFindingCategory(
+  // Category analysis — same three blocks as the website
+  y = drawSectionTitle(doc, "Category Analysis", y);
+
+  y = drawCategoryBlock(
     doc,
     y,
     contentWidth,
     "Text Manipulation",
+    textRisk.label,
+    textRisk.score,
     categorySummaryForReport(result, "text", scores.buckets.text),
     scores.buckets.text,
     "TXT"
   );
 
-  y = drawFindingCategory(
+  y = drawCategoryBlock(
     doc,
     y,
     contentWidth,
     "Image Manipulation",
+    imageRisk.label,
+    imageRisk.score,
     categorySummaryForReport(result, "image", scores.buckets.image),
     scores.buckets.image,
     "IMG"
   );
 
-  y = drawFindingCategory(
+  y = drawCategoryBlock(
     doc,
     y,
     contentWidth,
     "File Structure",
+    pdfRisk.label,
+    pdfRisk.score,
     categorySummaryForReport(result, "pdf", scores.buckets.pdf),
     scores.buckets.pdf,
     "FILE"
   );
-
-  // Heatmap overlay (when the engine provided one — not a synthetic region)
-  if (heatmapDataUrl) {
-    y = drawSectionTitle(doc, "Evidence Heatmap", y);
-    const imgW = contentWidth;
-    const imgH = 72;
-    y = ensureSpace(doc, y, imgH + 6);
-    try {
-      doc.addImage(
-        heatmapDataUrl,
-        imageFormatFromDataUrl(heatmapDataUrl),
-        16,
-        y,
-        imgW,
-        imgH
-      );
-      y += imgH + 8;
-    } catch {
-      // Skip unreadable heatmap
-    }
-  }
 
   // Closing note
   y = ensureSpace(doc, y, 20);
@@ -493,7 +579,7 @@ function drawFindingCategory(
   doc.text(
     wrapText(
       doc,
-      "This report mirrors the on-screen analysis results for investigation support.",
+      "This report mirrors the on-screen analysis results. Scores, risk labels, detailed findings, and category summaries use the same data shown in the Fraud Detection System.",
       contentWidth
     ),
     16,

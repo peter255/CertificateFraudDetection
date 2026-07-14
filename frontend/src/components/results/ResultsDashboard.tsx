@@ -27,10 +27,11 @@ import DocumentViewer, { isValidOverlayRegion } from "../viewer/DocumentViewer";
 import { downloadVerificationReport } from "../../utils/downloadReport";
 import {
   buildLocalCategorySummary,
-  categoryRisk,
+  categoryRiskLabel,
   clampSummary,
   computeAnalysisDisplayScores,
   confOf,
+  overallRiskLabel,
   verdictFallback,
 } from "../../utils/findingsDisplay";
 import { VS } from "../../theme";
@@ -67,9 +68,7 @@ function isNavigableVisualFinding(region: TamperRegion): boolean {
 }
 
 function riskLabel(level: RiskLevel, score: number): string {
-  if (score >= 75 || level === "high") return "CRITICAL";
-  if (score >= 40 || level === "medium") return "ELEVATED";
-  return "LOW";
+  return overallRiskLabel(level, score);
 }
 
 function scoreColor(value: number, invert = false): string {
@@ -88,19 +87,14 @@ function statusColor(status: SignalStatus): string {
 function categoryRiskUi(
   signals: Signal[]
 ): { label: string; color: string; score: number } {
-  const { score } = categoryRisk(signals);
-  if (!signals.length) {
-    return { label: "LOW RISK", color: VS.accent, score };
+  const { label, score } = categoryRiskLabel(signals);
+  if (label === "HIGH RISK") {
+    return { label, color: VS.danger, score };
   }
-  const fails = signals.filter((s) => s.status === "fail").length;
-  const warns = signals.filter((s) => s.status === "warning").length;
-  if (fails > 0 || score >= 55) {
-    return { label: "HIGH RISK", color: VS.danger, score };
+  if (label === "MEDIUM") {
+    return { label, color: VS.warning, score };
   }
-  if (warns > 0 || score >= 25) {
-    return { label: "MEDIUM", color: VS.warning, score };
-  }
-  return { label: "LOW RISK", color: VS.accent, score };
+  return { label, color: VS.accent, score };
 }
 
 function refCode(signal: Signal, index: number, prefix: string): string {

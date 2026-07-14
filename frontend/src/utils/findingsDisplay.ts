@@ -3,7 +3,7 @@
  * so both surfaces show the same scores, buckets, and summaries.
  */
 
-import type { Signal, VerificationResult } from "../types/verification";
+import type { RiskLevel, Signal, VerificationResult } from "../types/verification";
 
 export type FindingBucket = "text" | "image" | "pdf";
 
@@ -160,6 +160,33 @@ export function categoryRisk(signals: Signal[]): { score: number } {
     return { score: Math.max(score, 35) };
   }
   return { score: Math.min(score, 18) };
+}
+
+/** Same overall risk chip as ResultsDashboard (CRITICAL / ELEVATED / LOW). */
+export function overallRiskLabel(level: RiskLevel, score: number): string {
+  if (score >= 75 || level === "high") return "CRITICAL";
+  if (score >= 40 || level === "medium") return "ELEVATED";
+  return "LOW";
+}
+
+/** Same category chip as ResultsDashboard (HIGH RISK / MEDIUM / LOW RISK). */
+export function categoryRiskLabel(signals: Signal[]): {
+  label: string;
+  score: number;
+} {
+  const { score } = categoryRisk(signals);
+  if (!signals.length) {
+    return { label: "LOW RISK", score };
+  }
+  const fails = signals.filter((s) => s.status === "fail").length;
+  const warns = signals.filter((s) => s.status === "warning").length;
+  if (fails > 0 || score >= 55) {
+    return { label: "HIGH RISK", score };
+  }
+  if (warns > 0 || score >= 25) {
+    return { label: "MEDIUM", score };
+  }
+  return { label: "LOW RISK", score };
 }
 
 export function confOf(signal: Signal): number {
