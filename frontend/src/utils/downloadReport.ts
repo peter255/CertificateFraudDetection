@@ -360,15 +360,15 @@ export async function downloadVerificationReport(
   // Scores — same cards as ResultsDashboard
   y = drawSectionTitle(doc, "Analysis Scores", y);
   const scoreRows: TableRow[] = [
-    ["Risk Score", `${Math.round(scores.riskScore)}/100`],
+    ["Risk Score", `${Math.round(scores.riskScore)}/ 100`],
     ["Fraud Probability", `${Math.round(scores.fraudProbability)}%`],
     [
       "AI Probability",
       scores.aiProbability != null ? `${scores.aiProbability}%` : "—",
     ],
-    ["Text Logic", String(scores.textScore)],
-    ["Image Forensics", String(scores.imageScore)],
-    ["File Structure", String(scores.pdfScore)],
+    ["Text Logic", `${scores.textScore}/ 100`],
+    ["Image Forensics", `${scores.imageScore}/ 100`],
+    ["File Structure", `${scores.pdfScore}/ 100`],
   ];
   y = drawKeyValueTable(doc, y, scoreRows);
 

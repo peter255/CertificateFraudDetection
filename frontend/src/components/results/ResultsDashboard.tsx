@@ -552,8 +552,8 @@ export default function ResultsDashboard({
                   <Box
                     component="span"
                     sx={{ fontSize: "1rem", color: VS.textMuted, fontWeight: 500 }}
-                  > 
-                    /100
+                  >
+                    / 100
                   </Box>
                 </Typography>
                 <Box
@@ -731,6 +731,17 @@ export default function ResultsDashboard({
                   }}
                 >
                   {item.value}
+                  <Box
+                    component="span"
+                    sx={{
+                      fontSize: "0.75rem",
+                      color: VS.textMuted,
+                      fontWeight: 500,
+                      ml: 0.25,
+                    }}
+                  >
+                    / 100
+                  </Box>
                 </Typography>
                 <ScoreBar value={item.value} color={scoreColor(item.value)} />
               </Box>
