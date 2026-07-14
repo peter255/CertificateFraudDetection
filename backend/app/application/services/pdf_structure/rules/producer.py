@@ -121,8 +121,9 @@ class SuspiciousProducerRule:
                 "creator": context.metadata.creator,
             },
             recommendation=(
-                "Flag for review — image editors as PDF producers are suspicious indicators, "
-                "not proof of fraud."
+                "This is a forensic warning indicator (design/image tooling as producer). "
+                "Recommend additional analysis when other independent tampering indicators "
+                "are also present; alone it is not proof of fraud."
             ),
             confidence=0.85,
         )
@@ -143,16 +144,16 @@ class UnknownProducerRule:
             rule_id=self.rule_id,
             severity="info",
             status="pass",
-            title="Unknown PDF producer",
+            title="Unrecognized PDF producer string",
             description=(
-                "The PDF Producer field does not match commonly recognized document generators. "
-                "An unrecognized producer alone is not a fraud indicator "
-                "(browser/Skia and similar legitimate tooling are treated as known)."
+                "Document characteristic: the Producer field does not match the built-in list "
+                "of common generators. Browser/Skia/Chrome producers are treated as known and "
+                "are not flagged here. An unrecognized string alone is not evidence of manipulation."
             ),
             evidence={"producer": producer},
             recommendation=(
-                "Research the producer string for issuer tooling norms. "
-                "Elevate only when combined with independent forensic indicators."
+                "Informational only. Additional analysis is not recommended unless independent "
+                "forensic indicators of potential tampering are present."
             ),
             confidence=0.6,
         )

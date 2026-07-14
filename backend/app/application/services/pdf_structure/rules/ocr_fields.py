@@ -55,20 +55,21 @@ class OcrMissingImportantFieldsRule:
         # OCR gaps / extraction failures are informational only — never fraud by themselves.
         if not has_any_text:
             description = (
-                "Azure Document Intelligence did not extract readable certificate text. "
-                "OCR extraction failure alone is not a fraud indicator."
+                "Document characteristic: OCR did not extract readable certificate text. "
+                "This reflects extraction/OCR limitations and is not evidence of manipulation."
             )
         else:
             description = (
-                "Azure Document Intelligence did not extract one or more certificate fields "
-                f"({', '.join(missing)}). Missing OCR fields alone are not fraud indicators."
+                "Document characteristic: OCR did not extract one or more certificate fields "
+                f"({', '.join(missing)}). Field extraction gaps are common OCR limitations "
+                "and are not evidence of manipulation."
             )
 
         return finding(
             rule_id=self.rule_id,
             severity="info",
             status="pass",
-            title="OCR missing important certificate fields",
+            title="OCR field extraction gaps",
             description=description,
             evidence={
                 "missing_fields": missing,
@@ -77,9 +78,9 @@ class OcrMissingImportantFieldsRule:
                 "ocr_extraction_failed": not has_any_text,
             },
             recommendation=(
-                "Manually verify whether the fields are present on the document. "
-                "Treat OCR gaps as extraction limitations unless corroborated by "
-                "independent forensic indicators."
+                "Informational only. Confirm fields visually if needed. "
+                "Recommend additional analysis only when independent forensic "
+                "indicators of potential tampering are present."
             ),
             confidence=0.75 if has_any_text else 0.7,
         )

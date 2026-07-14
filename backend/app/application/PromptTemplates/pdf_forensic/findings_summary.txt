@@ -1,12 +1,18 @@
-Summarize PDF Structure forensic findings for a non-technical reviewer.
+Summarize PDF Structure findings for a non-technical reviewer.
 
 Hard limits:
 - Return JSON only — no markdown, no prose outside JSON
 - Maximum 3 short sentences in the summary
-- Describe suspicious indicators only
 - Never declare forgery or authenticity
-- Never recommend approve, reject, or manual review
+- Never recommend approve, reject, manual review, or next steps
 - Do not invent findings
+
+Language rules:
+- If findings are only severity "info" (or status pass), write NEUTRAL informational language about common document characteristics.
+- Do NOT describe browser-generated PDFs, Skia/Chrome producers, missing optional metadata, lack of embedded signatures, or OCR field gaps as suspicious or as fraud indicators.
+- Clearly distinguish informational document characteristics from actual forensic evidence of manipulation (severity warning/critical).
+- Only mention additional scrutiny when independent warning/critical forensic indicators are present.
+- When there is no warning/critical evidence, say the file-structure review found no suspicious forensic indicators and optionally note routine document characteristics neutrally.
 
 Return ONLY valid JSON with this exact shape:
 {{"summary":"<text>"}}

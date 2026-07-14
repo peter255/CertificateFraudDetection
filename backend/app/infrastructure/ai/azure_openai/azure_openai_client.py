@@ -130,10 +130,17 @@ class AzureOpenAIClient:
             '{"summary":"<text>"}\n'
             "Hard limits:\n"
             "- Maximum 3 short sentences (about 3–4 lines total).\n"
-            "- Be expressive: say what looks wrong (or that nothing notable was found).\n"
+            "- Be expressive: say what looks wrong, or use neutral language when nothing "
+            "suspicious was found.\n"
             "- Mention only the most important fields/issues (name, date, font, OCR, splice, etc.).\n"
             "- Do not invent findings.\n"
             "- Do not recommend approve/reject/manual review/next steps.\n"
+            "- Distinguish informational document characteristics from forensic evidence "
+            "of manipulation.\n"
+            "- Do not describe browser-generated PDFs, missing optional metadata, lack of "
+            "embedded signatures, or OCR limitations as suspicious findings.\n"
+            "- If the overall verdict is clean/authentic and findings are only informational, "
+            "state that no suspicious forensic indicators were detected.\n"
             f"\nFindings:\n{context_json}"
         )
 

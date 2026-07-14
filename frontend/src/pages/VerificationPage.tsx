@@ -75,15 +75,7 @@ function SplitLayout({
           alignItems: { md: "flex-start" },
         }}
       >
-        <Box
-          sx={{
-            flex: 1,
-            minWidth: 0,
-            width: { xs: "100%", md: "auto" },
-          }}
-        >
-          {right}
-        </Box>
+        {/* Document evidence — left on desktop, first on mobile */}
         <Box
           sx={{
             flexShrink: 0,
@@ -96,10 +88,19 @@ function SplitLayout({
             maxHeight: { xs: 420, md: "calc(100vh - 104px)" },
             display: "flex",
             flexDirection: "column",
-            order: { xs: -1, md: 0 },
           }}
         >
           {left}
+        </Box>
+        {/* Steps / actions — right on desktop */}
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            width: { xs: "100%", md: "auto" },
+          }}
+        >
+          {right}
         </Box>
       </Box>
     </Box>

@@ -31,6 +31,7 @@ import {
   clampSummary,
   computeAnalysisDisplayScores,
   confOf,
+  fileStructureDisplaySummary,
   overallRiskLabel,
   pdfStructureRiskLabel,
   verdictFallback,
@@ -1105,9 +1106,15 @@ export default function ResultsDashboard({
             return riskUiFromLabel(pdfRisk.label, pdfRisk.score);
           })()}
           summary={clampSummary(
-            result.pdfStructureSummary?.trim() ||
-              buildLocalCategorySummary("File structure", buckets.pdf) ||
-              ""
+            fileStructureDisplaySummary(
+              buckets.pdf,
+              result.pdfStructureSummary,
+              {
+                verdict: result.verdict,
+                riskScore,
+                fraudScore: fraudProbability,
+              }
+            )
           )}
         />
       </Box>

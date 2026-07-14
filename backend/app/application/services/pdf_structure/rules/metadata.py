@@ -17,15 +17,16 @@ class MissingCreationDateRule:
             rule_id=self.rule_id,
             severity="info",
             status="pass",
-            title="Missing creation date",
+            title="Creation date not present in metadata",
             description=(
-                "PDF metadata does not include a creation date. "
-                "This is a metadata limitation, not a fraud indicator by itself."
+                "Document characteristic: the PDF does not list a creation date in metadata. "
+                "Optional metadata fields are often absent on browser-generated or lightly tagged PDFs "
+                "and are not evidence of manipulation."
             ),
             evidence={"creation_date": None, "is_pdf": True},
             recommendation=(
-                "Note the missing creation timestamp for provenance context only; "
-                "do not treat it as evidence of manipulation on its own."
+                "Informational only. Additional analysis is not recommended unless independent "
+                "forensic indicators of tampering are present."
             ),
             confidence=0.8,
         )
@@ -43,15 +44,14 @@ class MissingProducerRule:
             rule_id=self.rule_id,
             severity="info",
             status="pass",
-            title="Missing producer",
+            title="Producer field not present in metadata",
             description=(
-                "PDF metadata does not include a Producer field. "
-                "Missing producer metadata alone is not a fraud indicator."
+                "Document characteristic: the PDF does not list a Producer field. "
+                "Missing optional producer metadata is common and is not evidence of manipulation."
             ),
             evidence={"producer": None},
             recommendation=(
-                "Record the absence for provenance review; elevate only when "
-                "combined with independent forensic indicators."
+                "Informational only. Do not recommend further review based solely on missing producer metadata."
             ),
             confidence=0.75,
         )
@@ -69,13 +69,15 @@ class MissingCreatorRule:
             rule_id=self.rule_id,
             severity="info",
             status="pass",
-            title="Missing creator",
+            title="Creator field not present in metadata",
             description=(
-                "PDF metadata does not include a Creator field. "
-                "Creator absence alone is not conclusive."
+                "Document characteristic: the PDF does not list a Creator field. "
+                "This optional metadata gap is not evidence of manipulation."
             ),
             evidence={"creator": None},
-            recommendation="Creator absence alone is not conclusive; combine with other indicators.",
+            recommendation=(
+                "Informational only. Additional analysis is not warranted from creator absence alone."
+            ),
             confidence=0.65,
         )
 
@@ -103,11 +105,11 @@ class EmptyMetadataRule:
             rule_id=self.rule_id,
             severity="info",
             status="pass",
-            title="Empty PDF metadata",
+            title="Sparse or empty optional PDF metadata",
             description=(
-                "Core PDF metadata fields are empty or absent. "
-                "This can indicate metadata stripping or atypical tooling, "
-                "but empty metadata alone is not a fraud verdict."
+                "Document characteristic: core optional PDF metadata fields are empty or absent. "
+                "Browser-generated and many certificate exports commonly omit these fields; "
+                "this is not evidence of manipulation by itself."
             ),
             evidence={
                 "page_count": context.metadata.page_count,
@@ -115,8 +117,8 @@ class EmptyMetadataRule:
                 "document_properties": context.metadata.document_properties,
             },
             recommendation=(
-                "Treat empty metadata as an informational note. Elevate risk only when "
-                "independent forensic indicators corroborate suspicion."
+                "Informational only. Recommend additional analysis only when independent "
+                "forensic indicators of potential tampering are present."
             ),
             confidence=0.8,
         )

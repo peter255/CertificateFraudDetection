@@ -267,7 +267,7 @@ def build_flags_summary(context: dict[str, Any]) -> str:
 
     return (
         f"Result: {verdict_label}. "
-        "No material fraud flags stood out in this scan."
+        "No suspicious forensic indicators of manipulation stood out in this scan."
     )
 
 

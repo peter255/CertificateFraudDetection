@@ -118,7 +118,12 @@ class PdfStructureAnalysisService:
 
         # Contextual composites first — they are the stronger, explainable combinations.
         findings = _dedupe_findings([*contextual_findings, *atomic_findings, *llm_findings])
-        summary = llm_summary or _build_deterministic_summary(findings)
+        # When there is no warning/critical forensic evidence, always use neutral
+        # informational language — do not let an LLM reframe common PDF traits as suspicion.
+        if _has_forensic_evidence(findings):
+            summary = llm_summary or _build_deterministic_summary(findings)
+        else:
+            summary = _build_deterministic_summary(findings)
 
         duration_ms = int((time.perf_counter() - started) * 1000)
         logger.info(
@@ -203,9 +208,24 @@ def _dedupe_findings(findings: list[PdfStructureFinding]) -> list[PdfStructureFi
     return unique
 
 
+def _has_forensic_evidence(findings: list[PdfStructureFinding]) -> bool:
+    """True when findings include actual forensic indicators (not info-only traits)."""
+    for item in findings:
+        if item.rule_id.startswith("CTX_"):
+            return True
+        if item.severity in {"warning", "critical"}:
+            return True
+        if item.status in {"warning", "fail"}:
+            return True
+    return False
+
+
 def _build_deterministic_summary(findings: list[PdfStructureFinding]) -> str | None:
     if not findings:
-        return "No PDF structure or metadata inconsistencies were identified by forensic rules."
+        return (
+            "File-structure review found no suspicious forensic indicators. "
+            "No PDF structure or metadata inconsistencies were identified."
+        )
 
     contextual = [f for f in findings if f.rule_id.startswith("CTX_")]
     critical = [f for f in findings if f.severity == "critical"]
@@ -230,17 +250,27 @@ def _build_deterministic_summary(findings: list[PdfStructureFinding]) -> str | N
             if not item.rule_id.startswith("CTX_") and item.severity != "critical"
         ][:3]
         if titles:
-            parts.append("Warning indicators: " + "; ".join(titles) + ".")
-    if not parts and infos:
-        parts.append(
-            "Informational PDF structure notes only (not fraud indicators by themselves): "
-            + "; ".join(item.title for item in infos[:3])
-            + "."
+            parts.append("Forensic warning indicators: " + "; ".join(titles) + ".")
+
+    if parts:
+        # Real forensic evidence present — keep concise and distinct from info notes.
+        if infos:
+            parts.append(
+                "Separate informational document characteristics were also noted "
+                "(not treated as manipulation evidence)."
+            )
+        return " ".join(parts)
+
+    # Info-only / clean path — neutral informational language only.
+    if infos:
+        characteristics = "; ".join(item.title for item in infos[:3])
+        return (
+            "File-structure review found no suspicious forensic indicators of manipulation. "
+            f"Informational document characteristics noted: {characteristics}. "
+            "These are common PDF/OCR traits and are not evidence of tampering."
         )
-    elif not parts:
-        parts.append(
-            "Informational PDF structure notes: "
-            + "; ".join(item.title for item in findings[:3])
-            + "."
-        )
-    return " ".join(parts)
+
+    return (
+        "File-structure review found no suspicious forensic indicators. "
+        "Observed notes are informational document characteristics only."
+    )

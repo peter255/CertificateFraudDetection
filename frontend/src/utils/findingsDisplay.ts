@@ -3,7 +3,13 @@
  * so both surfaces show the same scores, buckets, and summaries.
  */
 
-import type { RiskLevel, Signal, VerificationResult } from "../types/verification";
+import type {
+  RiskLevel,
+  Signal,
+  SignalStatus,
+  TamperRegion,
+  VerificationResult,
+} from "../types/verification";
 
 export type FindingBucket = "text" | "image" | "pdf";
 
@@ -126,46 +132,65 @@ export function buildLocalCategorySummary(
 }
 
 /**
- * Category risk from engine signal statuses/severities — not a fixed badge.
- * Empty bucket → low score (no evidence of risk in that layer).
+ * Pure evidence-based category score (0–100).
+ * No fixed baseline — 0 when there is no suspicious forensic evidence.
+ * Scores rise only from actual fail/warning evidence, not from running analysis.
  */
 export function categoryRisk(signals: Signal[]): { score: number } {
   if (!signals.length) {
-    return { score: 8 };
+    return { score: 0 };
   }
 
   let failWeight = 0;
   let warnWeight = 0;
   for (const s of signals) {
     const sev = (s.severity || "").toLowerCase();
-    // Informational findings never contribute to category risk.
-    if (sev === "info" || sev === "low" || s.status === "pass") continue;
+    // Informational notes never contribute.
+    if (sev === "info") continue;
+
+    // Elevated severity always counts, even if status was mapped to pass.
     if (s.status === "fail" || sev === "critical" || sev === "high") {
       failWeight += sev === "critical" ? 2 : 1.4;
-    } else if (
-      s.status === "warning" ||
-      sev === "medium" ||
-      sev === "warning"
-    ) {
-      warnWeight += 1;
+      continue;
     }
+    if (s.status === "warning" || sev === "medium" || sev === "warning") {
+      warnWeight += 1;
+      continue;
+    }
+    // severity low / status pass → no contribution
   }
 
   if (failWeight === 0 && warnWeight === 0) {
-    return { score: 8 };
+    return { score: 0 };
   }
 
-  const totalWeight = Math.max(signals.length, failWeight + warnWeight);
-  const ratio = (failWeight * 2 + warnWeight) / (totalWeight * 2);
-  const score = Math.round(Math.min(100, ratio * 100));
+  // Evidence-only points — no artificial floor. Caps at 100.
+  const points = failWeight * 38 + warnWeight * 20;
+  return { score: Math.min(100, Math.round(points)) };
+}
 
-  if (failWeight > 0 || score >= 55) {
-    return { score: Math.max(score, 62) };
-  }
-  if (warnWeight > 0 || score >= 25) {
-    return { score: Math.max(score, 35) };
-  }
-  return { score: Math.min(score, 18) };
+function severityToStatus(
+  severity: TamperRegion["severity"] | string | null | undefined
+): SignalStatus {
+  const sev = (severity || "").toLowerCase();
+  if (sev === "critical" || sev === "high") return "fail";
+  if (sev === "medium" || sev === "warning") return "warning";
+  return "pass";
+}
+
+/** Convert localized visual regions into signals so Text/Image scores reflect analysis. */
+export function signalsFromTamperRegions(regions: TamperRegion[] | undefined | null): Signal[] {
+  if (!regions?.length) return [];
+  return regions.map((region) => ({
+    id: `region-${region.id}`,
+    category: region.label || "Visual evidence",
+    description: region.description || region.label || "Localized finding",
+    status: severityToStatus(region.severity),
+    layer: region.layer || "visual",
+    severity: region.severity,
+    confidence: region.confidence ?? null,
+    fieldLabel: region.label,
+  }));
 }
 
 /**
@@ -196,7 +221,7 @@ function isPdfInformationalSignal(signal: Signal): boolean {
     .join(" ")
     .toLowerCase();
   if (
-    /ocr missing|missing (creation date|producer|creator)|empty pdf metadata|unknown pdf producer|metadata limitation|extraction failure|not a fraud indicator/.test(
+    /ocr (missing|field extraction)|missing (creation date|producer|creator)|sparse or empty optional|empty pdf metadata|unknown pdf producer|unrecognized pdf producer|metadata limitation|extraction (failure|gaps)|not (a fraud indicator|evidence of manipulation)|document characteristic/.test(
       hay
     )
   ) {
@@ -206,8 +231,64 @@ function isPdfInformationalSignal(signal: Signal): boolean {
 }
 
 /**
- * File Structure score: elevate only when multiple independent forensic
- * indicators support suspicion. Align with overall CLEAN verdicts.
+ * Neutral File Structure summary when CLEAN / no forensic indicators.
+ * Distinguishes informational document characteristics from manipulation evidence.
+ */
+export function fileStructureDisplaySummary(
+  signals: Signal[],
+  fromApi: string | null | undefined,
+  opts?: {
+    verdict?: VerificationResult["verdict"];
+    riskScore?: number;
+    fraudScore?: number | null;
+  }
+): string {
+  const forensic = signals.filter((s) => !isPdfInformationalSignal(s));
+  const infoOnly = signals.filter((s) => isPdfInformationalSignal(s));
+  const cleanOverall =
+    opts?.verdict === "authentic" &&
+    (opts.riskScore ?? 0) <= 10 &&
+    (opts.fraudScore == null || opts.fraudScore <= 10);
+
+  // Language depends on whether forensic evidence exists — not on the display score.
+  if (cleanOverall && forensic.length === 0) {
+    if (infoOnly.length > 0) {
+      const titles = infoOnly
+        .map((s) => signalTitle(s))
+        .filter(Boolean)
+        .slice(0, 3);
+      const listed = titles.length ? ` Noted characteristics: ${titles.join("; ")}.` : "";
+      return clampSummary(
+        "File-structure review found no suspicious forensic indicators of manipulation." +
+          listed +
+          " Common PDF/OCR traits (metadata gaps, browser producers, extraction limits) are informational only."
+      );
+    }
+    return clampSummary(
+      "File-structure review found no suspicious forensic indicators. " +
+        "No PDF structure inconsistencies were identified."
+    );
+  }
+
+  if (forensic.length === 0) {
+    return clampSummary(
+      (fromApi || "").trim() ||
+        "File-structure review found no suspicious forensic indicators. " +
+          "Observed notes are informational document characteristics only."
+    );
+  }
+
+  return clampSummary(
+    (fromApi || "").trim() ||
+      buildLocalCategorySummary("File structure", forensic) ||
+      ""
+  );
+}
+
+/**
+ * File Structure score: evidence-based only (baseline 0).
+ * Elevate when multiple independent forensic indicators support suspicion.
+ * Align with overall CLEAN verdicts — no invented minimum score.
  */
 export function pdfStructureCategoryRisk(
   signals: Signal[],
@@ -219,7 +300,7 @@ export function pdfStructureCategoryRisk(
 ): { score: number } {
   const forensic = signals.filter((s) => !isPdfInformationalSignal(s));
   if (!forensic.length) {
-    return { score: 8 };
+    return { score: 0 };
   }
 
   let fails = 0;
@@ -235,19 +316,18 @@ export function pdfStructureCategoryRisk(
 
   const independent = fails + warns;
   if (independent === 0) {
-    return { score: 8 };
+    return { score: 0 };
   }
 
-  // A single supportive warning is not enough for HIGH RISK.
+  const base = categoryRisk(forensic).score;
+
+  // A single supportive warning is weak evidence — keep proportional, no floor.
   if (independent === 1 && fails === 0) {
-    return { score: 28 };
+    return { score: Math.min(base, 28) };
   }
   if (independent === 1 && fails > 0) {
-    return { score: 42 };
+    return { score: Math.min(base, 48) };
   }
-
-  // Two or more independent forensic indicators may elevate.
-  const base = categoryRisk(forensic).score;
 
   const verdict = opts?.verdict;
   const riskScore = opts?.riskScore ?? 0;
@@ -261,10 +341,9 @@ export function pdfStructureCategoryRisk(
     (fraudScore == null || fraudScore <= 10);
 
   if (cleanOverall) {
-    // Keep File Structure consistent with a CLEAN overall verdict unless
-    // multiple strong forensic fails are present.
+    // CLEAN overall → File Structure stays 0 unless multiple strong fails exist.
     if (fails < 2) {
-      return { score: Math.min(base, 18) };
+      return { score: 0 };
     }
     return { score: Math.min(base, 40) };
   }
@@ -285,16 +364,19 @@ export function categoryRiskLabel(signals: Signal[]): {
   score: number;
 } {
   const { score } = categoryRisk(signals);
-  if (!signals.length || score <= 18) {
-    return { label: "LOW RISK", score: Math.max(score, signals.length ? score : 8) };
+  if (score <= 0) {
+    return { label: "LOW RISK", score: 0 };
   }
   const fails = signals.filter((s) => {
     if (isPdfInformationalSignal(s)) return false;
-    return s.status === "fail";
+    const sev = (s.severity || "").toLowerCase();
+    return s.status === "fail" || sev === "critical" || sev === "high";
   }).length;
   const warns = signals.filter((s) => {
     if (isPdfInformationalSignal(s)) return false;
-    return s.status === "warning";
+    const sev = (s.severity || "").toLowerCase();
+    if (s.status === "fail" || sev === "critical" || sev === "high") return false;
+    return s.status === "warning" || sev === "medium" || sev === "warning";
   }).length;
   if (fails > 0 || score >= 55) {
     return { label: "HIGH RISK", score };
@@ -315,9 +397,10 @@ export function pdfStructureRiskLabel(
   }
 ): { label: string; score: number } {
   const { score } = pdfStructureCategoryRisk(signals, opts);
-  if (score <= 18) return { label: "LOW RISK", score };
+  if (score <= 0) return { label: "LOW RISK", score: 0 };
   if (score >= 55) return { label: "HIGH RISK", score };
-  return { label: "MEDIUM", score };
+  if (score >= 25) return { label: "MEDIUM", score };
+  return { label: "LOW RISK", score };
 }
 
 export function confOf(signal: Signal): number {
@@ -351,7 +434,10 @@ export function verdictFallback(verdict: VerificationResult["verdict"]): string 
   if (verdict === "suspicious") {
     return "Mixed forensic signals leave authenticity uncertain. Key flags need closer attention.";
   }
-  return "Cross-layer checks support authenticity. No material fraud flags stood out.";
+  return (
+    "Cross-layer checks support authenticity. " +
+    "No suspicious forensic indicators of manipulation stood out."
+  );
 }
 
 /** Scores as shown on the results dashboard after analysis. */
@@ -374,7 +460,10 @@ export function computeAnalysisDisplayScores(result: VerificationResult) {
         ? Math.round(result.aiDetection.probability * 10) / 10
         : null;
 
-  const buckets = bucketSignals(result.signals);
+  const regionSignals = signalsFromTamperRegions(result.tamperRegions);
+  // Merge engine signals with localized visual regions so Text/Image scores
+  // track the same evidence shown in Detailed Findings.
+  const buckets = bucketSignals([...result.signals, ...regionSignals]);
   const pdfScore = pdfStructureCategoryRisk(buckets.pdf, {
     verdict: result.verdict,
     riskScore,
@@ -407,12 +496,19 @@ export function categorySummaryForReport(
         ? result.imageManipulationSummary
         : result.pdfStructureSummary;
 
+  if (bucket === "pdf") {
+    const scores = computeAnalysisDisplayScores(result);
+    return fileStructureDisplaySummary(signals, fromApi, {
+      verdict: result.verdict,
+      riskScore: scores.riskScore,
+      fraudScore: scores.fraudProbability,
+    });
+  }
+
   const title =
     bucket === "text"
       ? "Text manipulation"
-      : bucket === "image"
-        ? "Image manipulation"
-        : "File structure";
+      : "Image manipulation";
 
   return clampSummary(
     (fromApi || "").trim() || buildLocalCategorySummary(title, signals) || ""
