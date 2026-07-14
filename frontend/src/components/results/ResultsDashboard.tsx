@@ -900,10 +900,10 @@ export default function ResultsDashboard({
 
 function verdictFallback(verdict: VerdictType): string {
   if (verdict === "fraudulent") {
-    return "Multiple forensic layers indicate probable document manipulation. Manual review is strongly recommended before acceptance.";
+    return "Multiple forensic layers indicate probable document manipulation based on the consolidated flags.";
   }
   if (verdict === "suspicious") {
-    return "Mixed signals were detected across analysis layers. The document requires human review before a final trust decision.";
+    return "Mixed signals were detected across analysis layers. Review the detailed findings for each detected flag.";
   }
   return "Cross-layer analysis supports document authenticity. No material fraud indicators were consolidated into a critical verdict.";
 }

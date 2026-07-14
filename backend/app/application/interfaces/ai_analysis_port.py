@@ -18,6 +18,12 @@ class IAiAnalysisPort(Protocol):
 
     async def analyze(self, certificate: Certificate, findings: tuple[VendorFinding, ...]) -> str: ...
 
+    async def generate_summary(
+        self,
+        *,
+        context: dict[str, Any],
+    ) -> str | None: ...
+
     async def estimate_ai_probability(
         self,
         *,

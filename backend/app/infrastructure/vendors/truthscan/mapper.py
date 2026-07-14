@@ -195,7 +195,7 @@ def _build_summary(
     return {
         "authentic": "The document presents indicators consistent with authenticity.",
         "fraudulent": "The document shows signs of digital manipulation or AI generation.",
-        "inconclusive": "The analysis was inconclusive. Manual review is recommended.",
+        "inconclusive": "The analysis was inconclusive based on the available forensic signals.",
     }.get(status, "Analysis complete.")
 
 

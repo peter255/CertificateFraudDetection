@@ -388,11 +388,25 @@ function humanizeKey(key: string): string {
 
 function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
   const analysis = data.analysis || {};
-  const summary = scrubEngineName(
+  // Prefer backend Azure OpenAI / flags summary — never recommendation-style narratives.
+  const rawSummary =
+    data.ai_summary ||
     (typeof analysis.reasoning === "string" && analysis.reasoning.trim()) ||
-      data.ai_summary ||
-      data.report?.summary ||
-      ""
+    data.report?.summary ||
+    "";
+  const flags = [
+    ...(analysis.key_indicators || []),
+    ...(analysis.visual_patterns || []),
+    ...(analysis.metadata_notes || []),
+  ].filter((f): f is string => typeof f === "string" && f.trim().length > 0);
+  const summary = scrubEngineName(
+    rawSummary && !isRecommendationNarrative(rawSummary)
+      ? rawSummary
+      : buildFlagsExecutiveSummary(
+          analysis.verdict_label || data.overall_status || data.final_result,
+          flags,
+          null
+        )
   );
 
   // Prefer curated backend findings; fall back to remapping older shapes.
@@ -1075,6 +1089,72 @@ function explainFraudType(type: string): string {
   return meaning ? `${label} — ${meaning}` : label;
 }
 
+/** Vendor executive_summary often restates recommendations — never show those as the verdict narrative. */
+function isRecommendationNarrative(text: string): boolean {
+  const lowered = text.toLowerCase();
+  return (
+    /\bmanual review\b/.test(lowered) ||
+    /\brecommend(?:ed|ation|s)?\b/.test(lowered) ||
+    /\b(?:approve|reject)\b/.test(lowered) ||
+    /\breview is required\b/.test(lowered) ||
+    /\breview-level\b/.test(lowered) ||
+    /\bautomatic reject\b/.test(lowered) ||
+    /\bnext steps?\b/.test(lowered) ||
+    /\bsuggested action\b/.test(lowered)
+  );
+}
+
+function collectV2Flags(data: EngineV2ApiResponse): string[] {
+  const layerDetails = asRecord(data.layer_details);
+  const llmReport = asRecord(layerDetails.llm_report);
+  const flags: string[] = [];
+  const push = (value: string | null | undefined) => {
+    const trimmed = (value || "").trim();
+    if (!trimmed || isRecommendationNarrative(trimmed)) return;
+    if (!flags.some((f) => f.toLowerCase() === trimmed.toLowerCase())) {
+      flags.push(trimmed);
+    }
+  };
+
+  const fraudTypes = data.fraud_types?.length ? data.fraud_types : data.fraud?.types || [];
+  for (const type of fraudTypes) {
+    push(explainFraudType(type));
+  }
+
+  for (const factor of asStringList(llmReport.risk_factors)) {
+    push(factor);
+  }
+
+  for (const signal of data.signals || []) {
+    push(
+      optionalString(signal.description) ||
+        optionalString(signal.fraud_type) ||
+        optionalString(signal.check) ||
+        optionalString(signal.detector_label)
+    );
+  }
+
+  return flags;
+}
+
+function buildFlagsExecutiveSummary(
+  verdict: string | null | undefined,
+  flags: string[],
+  fraudScore: number | null
+): string {
+  const verdictLabel = (verdict || "unknown").replace(/_/g, " ");
+  const scoreBit =
+    fraudScore != null && Number.isFinite(fraudScore) ? ` Fraud score ${fraudScore}/100.` : "";
+  if (flags.length > 0) {
+    return scrubEngineName(
+      `Verification classified this document as ${verdictLabel}.${scoreBit} Detected flags: ${flags.join("; ")}.`
+    );
+  }
+  return scrubEngineName(
+    `Verification classified this document as ${verdictLabel}.${scoreBit} No discrete fraud flags were reported.`
+  );
+}
+
 function mapV2Findings(data: EngineV2ApiResponse): Finding[] {
   const findings: Finding[] = [];
   const layerDetails = asRecord(data.layer_details);
@@ -1432,16 +1512,18 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
   const signals = mapV2Signals(data);
   const findings = mapV2Findings(data);
 
-  const execSummary =
+  const execSummaryRaw =
     (typeof data.executive_summary === "string" && data.executive_summary.trim()) ||
     (typeof llmReport.executive_summary === "string" && llmReport.executive_summary.trim()) ||
     "";
+  // Never display recommendation-style vendor narratives in CONSOLIDATED VERDICT.
+  const execSummary = isRecommendationNarrative(execSummaryRaw) ? "" : execSummaryRaw;
+  const flags = collectV2Flags(data);
 
-  // Keep the top summary short — Key Findings carry the detail.
+  // Prefer Azure/backend flags summary; otherwise build from detected flags.
   const summary = scrubEngineName(
     execSummary ||
-      `This document was classified as ${data.verdict || "Unknown"}` +
-        (fraudScore != null ? ` (fraud score ${fraudScore}/100).` : ".")
+      buildFlagsExecutiveSummary(data.verdict || data.fraud?.verdict, flags, fraudScore)
   );
 
   const documentType =

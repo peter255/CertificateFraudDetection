@@ -19,6 +19,8 @@ _API_VERSION = "2024-12-01-preview"
 _MAX_CONTEXT_CHARS = 8_000
 # Reasoning models spend a large share of the budget on hidden reasoning tokens.
 _MAX_COMPLETION_TOKENS = 2_000
+# Summary needs headroom after reasoning — 2k was entirely consumed by reasoning_tokens.
+_MAX_SUMMARY_COMPLETION_TOKENS = 8_000
 
 
 class AzureOpenAIClient:
@@ -41,7 +43,53 @@ class AzureOpenAIClient:
         )
 
     async def analyze(self, certificate: Certificate, findings: tuple[VendorFinding, ...]) -> str:
-        raise NotImplementedError
+        context: dict[str, Any] = {
+            "document_type": str(certificate.document_type),
+            "findings": [
+                {
+                    "vendor": str(f.vendor),
+                    "status": str(f.status),
+                    "confidence_score": f.confidence_score,
+                    "raw_response": f.raw_response,
+                }
+                for f in findings
+            ],
+        }
+        summary = await self.generate_summary(context=context)
+        return summary or ""
+
+    async def generate_summary(self, *, context: dict[str, Any]) -> str | None:
+        if not self.is_configured():
+            return None
+
+        context_json = json.dumps(_slim_summary_context(context), ensure_ascii=False, default=str)
+        if len(context_json) > _MAX_CONTEXT_CHARS:
+            context_json = context_json[:_MAX_CONTEXT_CHARS] + "…"
+
+        prompt = (
+            "Write a forensic executive summary as JSON only:\n"
+            '{"summary":"<paragraph>"}\n'
+            "Rules: include EVERY item in detected_flags; describe findings only; "
+            "never recommend approve/reject/manual review/next steps; do not invent flags.\n"
+            f"Context:\n{context_json}"
+        )
+
+        message_content = await self._chat_completion(
+            prompt,
+            max_completion_tokens=_MAX_SUMMARY_COMPLETION_TOKENS,
+            reasoning_effort="low",
+        )
+        if not message_content:
+            return None
+
+        summary = _parse_summary(message_content)
+        if summary is None:
+            logger.warning("Could not parse executive summary from: %s", message_content[:300])
+            return None
+        if _looks_like_recommendation(summary):
+            logger.warning("Azure summary looked like a recommendation; discarding.")
+            return None
+        return summary
 
     async def estimate_ai_probability(
         self,
@@ -53,15 +101,8 @@ class AzureOpenAIClient:
         if not self.is_configured():
             return None
 
-        endpoint = self._settings.azure_openai_endpoint.rstrip("/")
-        deployment = self._settings.azure_openai_deployment.strip()
-        url = (
-            f"{endpoint}/openai/deployments/{deployment}/chat/completions"
-            f"?api-version={_API_VERSION}"
-        )
-
         content_type = _detect_content_type(document_content, filename)
-        context_json = json.dumps(_slim_context(context), ensure_ascii=False, default=str)
+        context_json = json.dumps(_slim_probability_context(context), ensure_ascii=False, default=str)
         if len(context_json) > _MAX_CONTEXT_CHARS:
             context_json = context_json[:_MAX_CONTEXT_CHARS] + "…"
 
@@ -96,21 +137,69 @@ class AzureOpenAIClient:
                 }
             )
 
+        message_content = await self._chat_completion_multimodal(user_content)
+        if not message_content:
+            return None
+
+        probability = _parse_probability(message_content)
+        if probability is None:
+            logger.warning("Could not parse AI probability from: %s", message_content[:300])
+        return probability
+
+    async def _chat_completion(
+        self,
+        prompt: str,
+        *,
+        max_completion_tokens: int = _MAX_COMPLETION_TOKENS,
+        reasoning_effort: str | None = None,
+    ) -> str | None:
+        user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        return await self._chat_completion_multimodal(
+            user_content,
+            max_completion_tokens=max_completion_tokens,
+            reasoning_effort=reasoning_effort,
+        )
+
+    async def _chat_completion_multimodal(
+        self,
+        user_content: list[dict[str, Any]],
+        *,
+        max_completion_tokens: int = _MAX_COMPLETION_TOKENS,
+        reasoning_effort: str | None = None,
+    ) -> str | None:
+        endpoint = self._settings.azure_openai_endpoint.rstrip("/")
+        deployment = self._settings.azure_openai_deployment.strip()
+        url = (
+            f"{endpoint}/openai/deployments/{deployment}/chat/completions"
+            f"?api-version={_API_VERSION}"
+        )
+
         # gpt-5-mini rejects `max_tokens` and often rejects non-default temperature.
-        payload = {
+        payload: dict[str, Any] = {
             "messages": [{"role": "user", "content": user_content}],
-            "max_completion_tokens": _MAX_COMPLETION_TOKENS,
+            "max_completion_tokens": max_completion_tokens,
         }
+        if reasoning_effort:
+            payload["reasoning_effort"] = reasoning_effort
 
         headers = {
             "api-key": self._settings.azure_openai_api_key,
             "Content-Type": "application/json",
         }
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(url, headers=headers, json=payload)
+            if response.status_code >= 400 and reasoning_effort:
+                # Older deployments may reject reasoning_effort — retry without it.
+                logger.warning(
+                    "Azure OpenAI request failed with reasoning_effort (%s): %s",
+                    response.status_code,
+                    response.text[:300],
+                )
+                payload.pop("reasoning_effort", None)
+                response = await client.post(url, headers=headers, json=payload)
+
             if response.status_code >= 400:
-                # Retry once without image if multimodal request failed.
                 detail = response.text[:500]
                 logger.warning(
                     "Azure OpenAI request failed (%s): %s",
@@ -120,7 +209,7 @@ class AzureOpenAIClient:
                 if len(user_content) > 1:
                     text_only = {
                         "messages": [{"role": "user", "content": [user_content[0]]}],
-                        "max_completion_tokens": _MAX_COMPLETION_TOKENS,
+                        "max_completion_tokens": max_completion_tokens,
                     }
                     response = await client.post(url, headers=headers, json=text_only)
                     if response.status_code >= 400:
@@ -142,18 +231,46 @@ class AzureOpenAIClient:
         )
         if not isinstance(message_content, str) or not message_content.strip():
             logger.warning(
-                "Azure OpenAI returned an empty AI probability response. usage=%s",
+                "Azure OpenAI returned an empty response. usage=%s",
                 body.get("usage"),
             )
             return None
-
-        probability = _parse_probability(message_content)
-        if probability is None:
-            logger.warning("Could not parse AI probability from: %s", message_content[:300])
-        return probability
+        return message_content
 
 
-def _slim_context(context: dict[str, Any]) -> dict[str, Any]:
+def _slim_summary_context(context: dict[str, Any]) -> dict[str, Any]:
+    """Pass only flag-oriented fields — never recommendation / executive_summary."""
+    slim: dict[str, Any] = {}
+    for key in (
+        "engine",
+        "verdict",
+        "overall_status",
+        "final_result",
+        "fraud_types",
+        "fraud_score",
+        "risk_level",
+        "detected_flags",
+        "signals",
+        "ml_label",
+        "ml_score",
+        "ocr_label",
+        "ocr_score",
+        "key_indicators",
+        "visual_patterns",
+        "metadata_notes",
+        "reasoning",
+        "raw_score",
+        "llm_findings",
+        "provenance",
+        "document_type",
+        "findings",
+    ):
+        if key in context and context[key] not in (None, "", [], {}):
+            slim[key] = context[key]
+    return slim
+
+
+def _slim_probability_context(context: dict[str, Any]) -> dict[str, Any]:
     """Keep only compact fields so reasoning models stay within budget."""
     slim: dict[str, Any] = {}
     for key in (
@@ -204,6 +321,49 @@ def _slim_context(context: dict[str, Any]) -> dict[str, Any]:
             }
 
     return slim
+
+
+def _looks_like_recommendation(text: str) -> bool:
+    lowered = text.lower()
+    markers = (
+        "manual review",
+        "recommend",
+        "approve",
+        "reject",
+        "next step",
+        "suggested action",
+        "should be reviewed",
+        "requires review",
+        "review is required",
+    )
+    return any(marker in lowered for marker in markers)
+
+
+def _parse_summary(raw: str) -> str | None:
+    text = raw.strip()
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            for key in ("summary", "executive_summary", "ai_summary"):
+                value = payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    except json.JSONDecodeError:
+        pass
+
+    match = re.search(r'"summary"\s*:\s*"((?:\\.|[^"\\])*)"', text)
+    if match:
+        try:
+            return json.loads(f'"{match.group(1)}"').strip()
+        except json.JSONDecodeError:
+            cleaned = match.group(1).replace('\\"', '"').strip()
+            if cleaned:
+                return cleaned
+
+    # Fallback: treat whole reply as summary if it looks like prose (not JSON).
+    if text and not text.startswith("{") and len(text) > 40:
+        return text
+    return None
 
 
 def _parse_probability(raw: str) -> float | None:

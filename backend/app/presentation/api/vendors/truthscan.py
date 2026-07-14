@@ -3,10 +3,14 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from app.application.services.ai_probability_enrichment import AiProbabilityEnrichmentService
+from app.application.services.ai_summary_enrichment import AiSummaryEnrichmentService
 from app.infrastructure.vendors.truthscan.client import TruthScanClient
 from app.infrastructure.vendors.truthscan.dependencies import provide_truthscan_client
 from app.infrastructure.vendors.truthscan.models import TruthScanVerifyResponse
-from app.presentation.dependencies.ai_probability import provide_ai_probability_enrichment
+from app.presentation.dependencies.ai_probability import (
+    provide_ai_probability_enrichment,
+    provide_ai_summary_enrichment,
+)
 
 router = APIRouter(prefix="/vendors/v1", tags=["vendors:v1"])
 
@@ -30,6 +34,7 @@ async def verify_with_engine_v1(
     ),
     client: TruthScanClient = Depends(provide_truthscan_client),
     ai_probability_service: AiProbabilityEnrichmentService = Depends(provide_ai_probability_enrichment),
+    ai_summary_service: AiSummaryEnrichmentService = Depends(provide_ai_summary_enrichment),
 ) -> TruthScanVerifyResponse:
     raw_content = await file.read()
     response = await client.verify(
@@ -41,6 +46,22 @@ async def verify_with_engine_v1(
     )
 
     analysis = response.analysis
+    enrichment_context = {
+        "engine": "v1",
+        "final_result": response.final_result,
+        "overall_status": response.overall_status,
+        "raw_score": response.raw_score,
+        "ml_label": analysis.ml_label,
+        "ml_score": analysis.ml_score,
+        "ocr_label": analysis.ocr_label,
+        "ocr_score": analysis.ocr_score,
+        "key_indicators": analysis.key_indicators,
+        "visual_patterns": analysis.visual_patterns,
+        "metadata_notes": analysis.metadata_notes,
+        "reasoning": analysis.reasoning,
+        "signals": [signal.model_dump(exclude_none=True) for signal in response.signals[:16]],
+    }
+
     ai_probability, ai_probability_source = await ai_probability_service.enrich(
         document_content=raw_content,
         filename=file.filename or "certificate.bin",
@@ -49,28 +70,17 @@ async def verify_with_engine_v1(
             analysis.raw_query_response,
         ],
         raw_score=response.raw_score,
-        context={
-            "engine": "v1",
-            "final_result": response.final_result,
-            "overall_status": response.overall_status,
-            "raw_score": response.raw_score,
-            "ml_label": analysis.ml_label,
-            "ml_score": analysis.ml_score,
-            "ocr_label": analysis.ocr_label,
-            "ocr_score": analysis.ocr_score,
-            "key_indicators": analysis.key_indicators,
-            "visual_patterns": analysis.visual_patterns,
-            "metadata_notes": analysis.metadata_notes,
-            "reasoning": analysis.reasoning,
-        },
+        context=enrichment_context,
     )
 
-    if ai_probability is not None:
-        return response.model_copy(
-            update={
-                "ai_probability": ai_probability,
-                "ai_probability_source": ai_probability_source,
-            }
-        )
+    ai_summary = await ai_summary_service.enrich(context=enrichment_context)
 
-    return response
+    updates: dict = {
+        # Always overwrite vendor ai_summary — never keep recommendation-style narratives.
+        "ai_summary": ai_summary,
+    }
+    if ai_probability is not None:
+        updates["ai_probability"] = ai_probability
+        updates["ai_probability_source"] = ai_probability_source
+
+    return response.model_copy(update=updates)

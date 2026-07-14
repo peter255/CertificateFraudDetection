@@ -272,6 +272,6 @@ def _default_summary(status: VerificationStatus) -> str:
     return {
         VerificationStatus.AUTHENTIC: "The document presents indicators consistent with authenticity.",
         VerificationStatus.FRAUDULENT: "The document shows signs of digital manipulation or AI generation.",
-        VerificationStatus.INCONCLUSIVE: "The analysis was inconclusive. Manual review is recommended.",
+        VerificationStatus.INCONCLUSIVE: "The analysis was inconclusive based on the available forensic signals.",
         VerificationStatus.PENDING: "Analysis is pending.",
     }[status]
