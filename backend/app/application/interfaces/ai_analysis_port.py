@@ -39,3 +39,9 @@ class IAiAnalysisPort(Protocol):
         filename: str,
         context: dict[str, Any],
     ) -> float | None: ...
+
+    async def generate_json_completion(
+        self,
+        *,
+        prompt: str,
+    ) -> str | None: ...

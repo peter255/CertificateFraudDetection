@@ -145,3 +145,11 @@ class PaperworkVerifyResponse(BaseModel):
         default=None,
         description="Azure OpenAI plain-English summary of Image Manipulation findings.",
     )
+    pdf_structure_summary: str | None = Field(
+        default=None,
+        description="Forensic PDF Structure Analysis summary (OCR + metadata + rules + LLM).",
+    )
+    pdf_structure_findings: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Structured PDF structure forensic findings.",
+    )

@@ -213,6 +213,20 @@ class AzureOpenAIClient:
             logger.warning("Could not parse AI probability from: %s", message_content[:300])
         return probability
 
+    async def generate_json_completion(self, *, prompt: str) -> str | None:
+        """
+        Execute a caller-built prompt and return the raw completion text.
+
+        Prompt construction stays outside this client (e.g. PdfForensicPromptBuilder).
+        """
+        if not self.is_configured():
+            return None
+        return await self._chat_completion(
+            prompt,
+            max_completion_tokens=_MAX_SUMMARY_COMPLETION_TOKENS,
+            reasoning_effort="low",
+        )
+
     async def _chat_completion(
         self,
         prompt: str,

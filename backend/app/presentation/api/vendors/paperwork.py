@@ -6,13 +6,15 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from app.application.services.ai_probability_enrichment import AiProbabilityEnrichmentService
 from app.application.services.ai_summary_enrichment import AiSummaryEnrichmentService
+from app.application.services.pdf_structure_enrichment import PdfStructureEnrichmentService
 from app.infrastructure.vendors.paperwork.client import PaperworkClient
 from app.infrastructure.vendors.paperwork.dependencies import provide_paperwork_client
-from app.infrastructure.vendors.paperwork.models import PaperworkVerifyResponse
+from app.infrastructure.vendors.paperwork.models import PaperworkSignal, PaperworkVerifyResponse
 from app.presentation.dependencies.ai_probability import (
     provide_ai_probability_enrichment,
     provide_ai_summary_enrichment,
 )
+from app.presentation.dependencies.pdf_structure import provide_pdf_structure_enrichment
 
 router = APIRouter(prefix="/vendors/v2", tags=["vendors:v2"])
 
@@ -39,11 +41,13 @@ async def verify_with_engine_v2(
     client: PaperworkClient = Depends(provide_paperwork_client),
     ai_probability_service: AiProbabilityEnrichmentService = Depends(provide_ai_probability_enrichment),
     ai_summary_service: AiSummaryEnrichmentService = Depends(provide_ai_summary_enrichment),
+    pdf_structure_service: PdfStructureEnrichmentService = Depends(provide_pdf_structure_enrichment),
 ) -> PaperworkVerifyResponse:
     raw_content = await file.read()
+    filename = file.filename or "certificate.bin"
     response = await client.verify(
         raw_content,
-        filename=file.filename or "certificate.bin",
+        filename=filename,
         document_type=document_type or "auto",
         ocr_mode=ocr_mode or "auto",
     )
@@ -68,10 +72,11 @@ async def verify_with_engine_v2(
         ai_summary,
         text_manipulation_summary,
         image_manipulation_summary,
+        pdf_structure_analysis,
     ) = await asyncio.gather(
         ai_probability_service.enrich(
             document_content=raw_content,
-            filename=file.filename or "certificate.bin",
+            filename=filename,
             vendor_payloads=[
                 response.layer_details,
                 response.engine_results,
@@ -98,6 +103,11 @@ async def verify_with_engine_v2(
             visual_evidence=visual_payloads,
             context=enrichment_context,
         ),
+        pdf_structure_service.enrich(
+            content=raw_content,
+            filename=filename,
+            content_type=file.content_type,
+        ),
     )
 
     updates: dict = {
@@ -108,5 +118,31 @@ async def verify_with_engine_v2(
     if ai_probability is not None:
         updates["ai_probability"] = ai_probability
         updates["ai_probability_source"] = ai_probability_source
+
+    if pdf_structure_analysis is not None:
+        pdf_updates = PdfStructureEnrichmentService.as_v2_updates(pdf_structure_analysis)
+        updates["pdf_structure_summary"] = pdf_updates["pdf_structure_summary"]
+        updates["pdf_structure_findings"] = pdf_updates["pdf_structure_findings"]
+
+        pdf_signals = [
+            PaperworkSignal.model_validate(item)
+            for item in pdf_updates["pdf_structure_signals"]
+        ]
+        if pdf_signals:
+            updates["signals"] = [*response.signals, *pdf_signals]
+
+        profile = dict(response.structural_profile or {})
+        profile.update(pdf_updates["pdf_structure_profile"])
+        updates["structural_profile"] = profile
+
+        # Best-effort identity fill from Azure DI OCR when vendor OCR missed fields.
+        ocr = pdf_structure_analysis.ocr_fields
+        if ocr is not None:
+            if not response.holder_name and ocr.holder_name:
+                updates["holder_name"] = ocr.holder_name
+            if not response.issuer_name and ocr.issuer:
+                updates["issuer_name"] = ocr.issuer
+            if not response.issue_date and (ocr.issue_date or ocr.award_date):
+                updates["issue_date"] = ocr.issue_date or ocr.award_date
 
     return response.model_copy(update=updates)

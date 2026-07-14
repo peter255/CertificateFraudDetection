@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     azure_openai_endpoint: str = ""
     azure_openai_deployment: str = ""
 
+    azure_document_intelligence_endpoint: str = ""
+    azure_document_intelligence_key: str = ""
+    azure_document_intelligence_model: str = "prebuilt-document"
+    azure_document_intelligence_timeout: float = 120.0
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
 
 

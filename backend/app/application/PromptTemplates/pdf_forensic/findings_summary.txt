@@ -1,0 +1,15 @@
+Summarize PDF Structure forensic findings for a non-technical reviewer.
+
+Hard limits:
+- Return JSON only — no markdown, no prose outside JSON
+- Maximum 3 short sentences in the summary
+- Describe suspicious indicators only
+- Never declare forgery or authenticity
+- Never recommend approve, reject, or manual review
+- Do not invent findings
+
+Return ONLY valid JSON with this exact shape:
+{{"summary":"<text>"}}
+
+Findings:
+{findings}

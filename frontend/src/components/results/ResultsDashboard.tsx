@@ -12,17 +12,23 @@ import TextFieldsIcon from "@mui/icons-material/TextFields";
 import ImageIcon from "@mui/icons-material/Image";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
-import FlagOutlinedIcon from "@mui/icons-material/FlagOutlined";
 import type {
   RiskLevel,
   Signal,
   SignalStatus,
   TamperRegion,
   VerificationResult,
-  VerdictType,
 } from "../../types/verification";
 import DocumentViewer, { isValidOverlayRegion } from "../viewer/DocumentViewer";
 import { downloadVerificationReport } from "../../utils/downloadReport";
+import {
+  buildLocalCategorySummary,
+  categoryRisk,
+  clampSummary,
+  computeAnalysisDisplayScores,
+  confOf,
+  verdictFallback,
+} from "../../utils/findingsDisplay";
 import { VS } from "../../theme";
 
 type OverlayMode = "heatmap" | "polygons" | "both" | "none";
@@ -53,106 +59,22 @@ function statusColor(status: SignalStatus): string {
   return VS.accent;
 }
 
-function bucketForSignal(signal: Signal): "text" | "image" | "pdf" {
-  const hay = [
-    signal.category,
-    signal.layer,
-    signal.check,
-    signal.detector,
-    signal.description,
-    signal.evidenceClass,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  if (
-    /\bpdf\b|xmp|incremental|embedded.?font|structure|metadata|provenance|c2pa/.test(
-      hay
-    )
-  ) {
-    return "pdf";
-  }
-  if (
-    /\bimage\b|visual|copy.?move|splic|resampl|seal|pixel|heatmap|perceptual|forensic/.test(
-      hay
-    )
-  ) {
-    return "image";
-  }
-  return "text";
-}
-
-function clampSummary(text: string, maxSentences = 3, maxChars = 420): string {
-  let cleaned = text.replace(/\s+/g, " ").trim();
-  if (!cleaned) return cleaned;
-
-  const sentences = cleaned
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (sentences.length > maxSentences) {
-    cleaned = sentences.slice(0, maxSentences).join(" ");
-    if (!/[.!?]$/.test(cleaned)) cleaned += ".";
-  }
-
-  if (cleaned.length > maxChars) {
-    let cut = cleaned.slice(0, maxChars - 1);
-    const seps = [". ", "! ", "? ", "; ", ", ", " "];
-    for (const sep of seps) {
-      const idx = cut.lastIndexOf(sep);
-      if (idx >= Math.floor(maxChars * 0.55)) {
-        cut = cut.slice(0, idx + (sep.trim() ? 1 : 0));
-        break;
-      }
-    }
-    cleaned = cut.replace(/[ ,;]+$/g, "");
-    if (!/[.!?]$/.test(cleaned)) cleaned += ".";
-  }
-
-  return cleaned;
-}
-
-function buildLocalCategorySummary(title: string, signals: Signal[]): string | null {
-  const bits = signals
-    .map((s) => (s.description || s.check || s.fieldLabel || "").trim())
-    .filter(Boolean)
-    .map((bit) => (bit.length > 90 ? `${bit.slice(0, 89).replace(/[ ,;]+$/g, "")}…` : bit))
-    .slice(0, 2);
-  if (!bits.length) return null;
-  if (bits.length === 1) return clampSummary(bits[0]);
-  return clampSummary(
-    `${title} shows ${signals.length} key issues. ${bits[0]}. ${bits[1]}.`
-  );
-}
-
-function categoryRisk(
+function categoryRiskUi(
   signals: Signal[]
 ): { label: string; color: string; score: number } {
+  const { score } = categoryRisk(signals);
   if (!signals.length) {
-    return { label: "LOW RISK", color: VS.accent, score: 8 };
+    return { label: "LOW RISK", color: VS.accent, score };
   }
   const fails = signals.filter((s) => s.status === "fail").length;
   const warns = signals.filter((s) => s.status === "warning").length;
-  const ratio = (fails * 2 + warns) / (signals.length * 2);
-  const score = Math.round(ratio * 100);
   if (fails > 0 || score >= 55) {
-    return { label: "HIGH RISK", color: VS.danger, score: Math.max(score, 62) };
+    return { label: "HIGH RISK", color: VS.danger, score };
   }
   if (warns > 0 || score >= 25) {
-    return { label: "MEDIUM", color: VS.warning, score: Math.max(score, 35) };
+    return { label: "MEDIUM", color: VS.warning, score };
   }
-  return { label: "LOW RISK", color: VS.accent, score: Math.min(score, 18) };
-}
-
-function confOf(signal: Signal): number {
-  if (signal.confidence != null && Number.isFinite(signal.confidence)) {
-    const c = signal.confidence;
-    return c <= 1 ? Math.round(c * 100) : Math.round(c);
-  }
-  if (signal.status === "fail") return 92;
-  if (signal.status === "warning") return 71;
-  return 88;
+  return { label: "LOW RISK", color: VS.accent, score };
 }
 
 function refCode(signal: Signal, index: number, prefix: string): string {
@@ -303,7 +225,7 @@ function FindingCategory({
   /** Azure OpenAI plain-English summary — shown instead of dumping raw cards when present. */
   summary?: string | null;
 }) {
-  const risk = categoryRisk(signals);
+  const risk = categoryRiskUi(signals);
   const hasAiSummary = Boolean(summary?.trim());
   const displaySummary = hasAiSummary ? clampSummary(summary!.trim()) : "";
   const items =
@@ -445,44 +367,19 @@ export default function ResultsDashboard({
     [result.tamperRegions]
   );
 
-  const riskScore = result.report.riskScore ?? 0;
-  const fraudProbability =
-    result.fraudScore != null && Number.isFinite(result.fraudScore)
-      ? Math.round(result.fraudScore)
-      : result.verdict === "fraudulent"
-        ? Math.max(riskScore, result.confidence ?? 0)
-        : result.verdict === "suspicious"
-          ? Math.round((riskScore + (result.confidence ?? 50)) / 2)
-          : Math.min(riskScore, 18);
-
-  const aiProbability =
-    result.aiProbability != null && Number.isFinite(result.aiProbability)
-      ? Math.round(result.aiProbability * 10) / 10
-      : result.aiDetection?.probability != null &&
-          Number.isFinite(result.aiDetection.probability)
-        ? Math.round(result.aiDetection.probability * 10) / 10
-        : null;
+  const {
+    riskScore,
+    fraudProbability,
+    aiProbability,
+    textScore,
+    imageScore,
+    pdfScore,
+    buckets,
+  } = useMemo(() => computeAnalysisDisplayScores(result), [result]);
   const aiProbabilitySource = result.aiDetection?.source ?? null;
 
   const criticalLabel = riskLabel(result.report.riskLevel, riskScore);
   const criticalColor = scoreColor(riskScore);
-
-  const buckets = useMemo(() => {
-    const text: Signal[] = [];
-    const image: Signal[] = [];
-    const pdf: Signal[] = [];
-    for (const s of result.signals) {
-      const b = bucketForSignal(s);
-      if (b === "text") text.push(s);
-      else if (b === "image") image.push(s);
-      else pdf.push(s);
-    }
-    return { text, image, pdf };
-  }, [result.signals]);
-
-  const textScore = categoryRisk(buckets.text).score;
-  const imageScore = categoryRisk(buckets.image).score;
-  const pdfScore = categoryRisk(buckets.pdf).score;
 
   const showHeatmap =
     overlayMode === "heatmap" || overlayMode === "both"
@@ -915,6 +812,11 @@ export default function ResultsDashboard({
             icon={<InsertDriveFileIcon sx={{ fontSize: 18 }} />}
             signals={buckets.pdf}
             prefix="FILE"
+            summary={clampSummary(
+              result.pdfStructureSummary?.trim() ||
+                buildLocalCategorySummary("File structure", buckets.pdf) ||
+                ""
+            )}
           />
 
           {/* Actions */}
@@ -950,31 +852,6 @@ export default function ResultsDashboard({
             >
               {downloading ? "PREPARING…" : "EXPORT FULL REPORT"}
             </Button>
-            <Button
-              variant="outlined"
-              startIcon={<FlagOutlinedIcon />}
-              onClick={() => {
-                window.alert(
-                  "Document flagged for manual review. An analyst will be notified."
-                );
-              }}
-              sx={{
-                flex: 1,
-                minWidth: 180,
-                height: 48,
-                borderRadius: "8px",
-                fontWeight: 700,
-                letterSpacing: "0.04em",
-                borderColor: VS.borderStrong,
-                color: VS.text,
-                "&:hover": {
-                  borderColor: VS.text,
-                  backgroundColor: "rgba(255,255,255,0.04)",
-                },
-              }}
-            >
-              FLAG FOR REVIEW
-            </Button>
           </Box>
           <Button
             variant="text"
@@ -993,12 +870,3 @@ export default function ResultsDashboard({
   );
 }
 
-function verdictFallback(verdict: VerdictType): string {
-  if (verdict === "fraudulent") {
-    return "Strong manipulation signals appear across layers. The document looks altered.";
-  }
-  if (verdict === "suspicious") {
-    return "Mixed forensic signals leave authenticity uncertain. Key flags need closer attention.";
-  }
-  return "Cross-layer checks support authenticity. No material fraud flags stood out.";
-}

@@ -169,6 +169,8 @@ export interface VerificationResult {
   textManipulationSummary?: string | null;
   /** Azure OpenAI plain-English summary of Image Manipulation findings. */
   imageManipulationSummary?: string | null;
+  /** Forensic PDF Structure Analysis summary (OCR + metadata + rules + LLM). */
+  pdfStructureSummary?: string | null;
   signals: Signal[];
   report: ExecReport;
   vendorFindings: VendorFinding[];

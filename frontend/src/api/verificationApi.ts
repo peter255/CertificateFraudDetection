@@ -76,6 +76,8 @@ interface EngineV1ApiResponse {
   text_manipulation_summary?: string | null;
   /** Azure OpenAI plain-English summary of Image Manipulation findings. */
   image_manipulation_summary?: string | null;
+  pdf_structure_summary?: string | null;
+  pdf_structure_findings?: Array<Record<string, unknown>>;
   analysis?: {
     heatmap_url?: string | null;
     reasoning?: string;
@@ -207,6 +209,69 @@ interface EngineV2ApiResponse {
   ai_probability_source?: "vendor" | "azure_openai" | string | null;
   text_manipulation_summary?: string | null;
   image_manipulation_summary?: string | null;
+  pdf_structure_summary?: string | null;
+  pdf_structure_findings?: Array<Record<string, unknown>>;
+}
+
+function mapPdfStructureFindingsToSignals(
+  findings: Array<Record<string, unknown>> | undefined | null,
+  existing: Signal[] = []
+): Signal[] {
+  if (!Array.isArray(findings) || findings.length === 0) return [];
+
+  const existingDescriptions = new Set(
+    existing
+      .map((s) => (s.description || "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const existingIds = new Set(existing.map((s) => s.id));
+
+  const out: Signal[] = [];
+  findings.forEach((item, index) => {
+    const description = optionalString(item.description);
+    const title = optionalString(item.title);
+    const ruleId = optionalString(item.rule_id) || `pdf-structure-${index + 1}`;
+    if (!description) return;
+
+    const normalized = description.toLowerCase();
+    if (existingDescriptions.has(normalized)) return;
+    if (existingDescriptions.has(`pdf structure / metadata: ${normalized}`)) return;
+
+    const statusRaw = optionalString(item.status)?.toLowerCase();
+    const status: SignalStatus =
+      statusRaw === "pass" || statusRaw === "fail" || statusRaw === "warning"
+        ? statusRaw
+        : "warning";
+
+    const id = `pdf-structure-${ruleId}-${index + 1}`;
+    if (existingIds.has(id)) return;
+
+    out.push({
+      id,
+      category: "PDF Structure",
+      description: scrubEngineName(description),
+      status,
+      check: ruleId,
+      layer: "pdf_structure",
+      detector: "pdf_structure",
+      severity: optionalString(item.severity),
+      confidence:
+        typeof item.confidence === "number" && Number.isFinite(item.confidence)
+          ? item.confidence
+          : null,
+      fieldLabel: title,
+      evidenceClass: "pdf_structure",
+      extras: {
+        rule_id: ruleId,
+        title,
+        evidence: item.evidence ?? null,
+        recommendation: item.recommendation ?? null,
+      },
+    });
+    existingDescriptions.add(normalized);
+  });
+
+  return out;
 }
 
 function emptyTechnical() {
@@ -508,21 +573,28 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
       typeof data.image_manipulation_summary === "string" && data.image_manipulation_summary.trim()
         ? scrubEngineName(data.image_manipulation_summary.trim())
         : null,
-    signals: data.signals
-      .filter((s) => {
-        const description = (s.description || "").trim().toLowerCase();
-        const category = (s.category || "").trim().toLowerCase();
-        if (!description && !category) return false;
-        if (["pending", "not provided", "not available", "n/a"].includes(description)) return false;
-        if (category === "pending") return false;
-        return Boolean((s.description || "").trim());
-      })
-      .map((s) => ({
-      id: s.id,
-      category: s.category,
-      description: scrubEngineName(s.description),
-      status: s.status as SignalStatus,
-    })),
+    pdfStructureSummary:
+      typeof data.pdf_structure_summary === "string" && data.pdf_structure_summary.trim()
+        ? scrubEngineName(data.pdf_structure_summary.trim())
+        : null,
+    signals: (() => {
+      const mapped = data.signals
+        .filter((s) => {
+          const description = (s.description || "").trim().toLowerCase();
+          const category = (s.category || "").trim().toLowerCase();
+          if (!description && !category) return false;
+          if (["pending", "not provided", "not available", "n/a"].includes(description)) return false;
+          if (category === "pending") return false;
+          return Boolean((s.description || "").trim());
+        })
+        .map((s) => ({
+          id: s.id,
+          category: s.category,
+          description: scrubEngineName(s.description),
+          status: s.status as SignalStatus,
+        }));
+      return [...mapped, ...mapPdfStructureFindingsToSignals(data.pdf_structure_findings, mapped)];
+    })(),
     report: {
       // Narrative lives only in aiSummary — Executive Summary card.
       summary: "",
@@ -1593,7 +1665,11 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
       typeof data.image_manipulation_summary === "string" && data.image_manipulation_summary.trim()
         ? scrubEngineName(data.image_manipulation_summary.trim())
         : null,
-    signals,
+    pdfStructureSummary:
+      typeof data.pdf_structure_summary === "string" && data.pdf_structure_summary.trim()
+        ? scrubEngineName(data.pdf_structure_summary.trim())
+        : null,
+    signals: [...signals, ...mapPdfStructureFindingsToSignals(data.pdf_structure_findings, signals)],
     report: {
       // Narrative lives only in aiSummary — Executive Summary card.
       summary: "",

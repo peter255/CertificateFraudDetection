@@ -1,22 +1,25 @@
 /**
- * Professional PDF investigation report — Engine V1 / V2.
- * Concise sections; only actual response data; no vendor names.
+ * PDF investigation report — mirrors the post-analysis ResultsDashboard content.
  */
 
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import type {
-  RiskLevel,
-  Signal,
-  VerificationResult,
-  VerdictType,
-} from "../types/verification";
+import type { VerificationResult, VerdictType } from "../types/verification";
 import {
   ORGANIZATION_NAME,
   PRODUCT_NAME,
   REPORT_TITLE,
   BRAND_LOGO_PDF_PATH,
 } from "../branding/constants";
+import {
+  categorySummaryForReport,
+  clampSummary,
+  computeAnalysisDisplayScores,
+  confOf,
+  signalDescription,
+  signalTitle,
+  verdictFallback,
+} from "./findingsDisplay";
 
 const COLORS = {
   navy: [15, 41, 66] as [number, number, number],
@@ -35,19 +38,11 @@ const VERDICT_STYLE: Record<
 > = {
   authentic: { label: "Trusted", rgb: [16, 124, 16], bg: [240, 253, 244] },
   suspicious: { label: "Suspicious", rgb: [217, 119, 6], bg: [255, 251, 235] },
-  fraudulent: { label: "Potentially Fraudulent", rgb: [197, 15, 31], bg: [254, 242, 242] },
-};
-
-const RISK_STYLE: Record<RiskLevel, { label: string; rgb: [number, number, number] }> = {
-  low: { label: "Low", rgb: [16, 124, 16] },
-  medium: { label: "Medium", rgb: [217, 119, 6] },
-  high: { label: "High", rgb: [197, 15, 31] },
-};
-
-const RECOMMENDATION_LABEL: Record<string, string> = {
-  approve: "Approve",
-  reject: "Reject — Do Not Accept",
-  manual_review: "Escalate for Manual Review",
+  fraudulent: {
+    label: "Potentially Fraudulent",
+    rgb: [197, 15, 31],
+    bg: [254, 242, 242],
+  },
 };
 
 const SIGNAL_STATUS_LABEL: Record<string, string> = {
@@ -70,40 +65,6 @@ function safeFileStem(name: string): string {
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   return `${text.slice(0, Math.max(0, max - 1))}…`;
-}
-
-function isKnownValue(value: string | null | undefined): value is string {
-  if (value == null) return false;
-  const v = value.trim();
-  if (!v) return false;
-  const normalized = v.toLowerCase();
-  return (
-    normalized !== "unknown" &&
-    normalized !== "—" &&
-    normalized !== "-" &&
-    normalized !== "n/a" &&
-    normalized !== "pending" &&
-    normalized !== "none"
-  );
-}
-
-function formatDate(iso?: string | null): string | null {
-  if (!iso || !isKnownValue(iso)) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso.trim();
-  return d.toLocaleString([], {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatDuration(ms: number | null | undefined): string | null {
-  if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
-  if (ms < 1000) return `${Math.round(ms)} ms`;
-  return `${(ms / 1000).toFixed(1)} s`;
 }
 
 function wrapText(doc: jsPDF, text: string, maxWidth: number): string[] {
@@ -129,7 +90,9 @@ function drawFooter(doc: jsPDF, page: number, total: number): void {
   doc.setFontSize(8);
   doc.setTextColor(...COLORS.muted);
   doc.text(`${PRODUCT_NAME} · Confidential · ${ORGANIZATION_NAME}`, 16, pageHeight - 7);
-  doc.text(`Page ${page} of ${total}`, pageWidth - 16, pageHeight - 7, { align: "right" });
+  doc.text(`Page ${page} of ${total}`, pageWidth - 16, pageHeight - 7, {
+    align: "right",
+  });
 }
 
 function drawSectionTitle(doc: jsPDF, title: string, y: number): number {
@@ -147,7 +110,12 @@ function drawSectionTitle(doc: jsPDF, title: string, y: number): number {
   return y + 8;
 }
 
-function drawParagraphBox(doc: jsPDF, text: string, y: number, contentWidth: number): number {
+function drawParagraphBox(
+  doc: jsPDF,
+  text: string,
+  y: number,
+  contentWidth: number
+): number {
   const lines = wrapText(doc, text, contentWidth - 8);
   const height = Math.max(14, lines.length * 4.2 + 8);
   y = ensureSpace(doc, y, height);
@@ -201,7 +169,8 @@ async function fetchImageAsDataUrl(url: string): Promise<string | null> {
     const blob = await response.blob();
     return await new Promise<string | null>((resolve) => {
       const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+      reader.onload = () =>
+        resolve(typeof reader.result === "string" ? reader.result : null);
       reader.onerror = () => resolve(null);
       reader.readAsDataURL(blob);
     });
@@ -211,125 +180,93 @@ async function fetchImageAsDataUrl(url: string): Promise<string | null> {
 }
 
 function imageFormatFromDataUrl(dataUrl: string): "PNG" | "JPEG" | "WEBP" {
-  if (dataUrl.startsWith("data:image/jpeg") || dataUrl.startsWith("data:image/jpg")) return "JPEG";
+  if (dataUrl.startsWith("data:image/jpeg") || dataUrl.startsWith("data:image/jpg"))
+    return "JPEG";
   if (dataUrl.startsWith("data:image/webp")) return "WEBP";
   return "PNG";
 }
 
-function conciseSignalDescription(signal: Signal): string {
-  const raw = (signal.description || "").trim();
-  if (!raw) return "";
-  // Keep the leading finding; drop long trailing metadata chains.
-  const primary = raw.split(" — ")[0]?.trim() || raw;
-  return truncate(primary, 140);
-}
+function drawFindingCategory(
+  doc: jsPDF,
+  y: number,
+  contentWidth: number,
+  title: string,
+  summary: string,
+  signals: VerificationResult["signals"],
+  prefix: string
+): number {
+  y = drawSectionTitle(doc, title, y);
 
-function groupSignals(signals: Signal[]): Array<{ category: string; items: Signal[] }> {
-  const map = new Map<string, Signal[]>();
-  for (const signal of signals) {
-    const category = (signal.category || "Forensic Indicator").trim();
-    const list = map.get(category) ?? [];
-    list.push(signal);
-    map.set(category, list);
-  }
-  return [...map.entries()].map(([category, items]) => ({ category, items }));
-}
-
-function buildExecutiveSummary(result: VerificationResult): string | null {
-  const summary = (result.aiSummary || "").trim();
-  const aiExplanation =
-    result.aiDetection?.supported && isKnownValue(result.aiDetection.explanation)
-      ? result.aiDetection.explanation.trim()
-      : null;
-
-  const parts = [
-    isKnownValue(summary) ? summary : null,
-    aiExplanation,
-  ].filter(Boolean) as string[];
-
-  return parts.length ? parts.join("\n\n") : null;
-}
-
-function buildDocumentRows(result: VerificationResult, fileName: string): TableRow[] {
-  const rows: TableRow[] = [];
-  if (isKnownValue(fileName)) rows.push(["File Name", fileName]);
-  if (isKnownValue(result.certificateId)) rows.push(["Verification ID", result.certificateId]);
-  if (isKnownValue(result.documentType)) rows.push(["Document Type", result.documentType]);
-  if (isKnownValue(result.fileKind)) rows.push(["File Kind", result.fileKind]);
-  if (result.isScan === true) rows.push(["Scan", "Yes"]);
-  if (result.isScan === false) rows.push(["Scan", "No"]);
-  if (isKnownValue(result.holderName)) rows.push(["Holder", result.holderName]);
-  if (isKnownValue(result.issuingAuthority)) {
-    rows.push(["Issuing Authority", result.issuingAuthority]);
-  }
-  if (isKnownValue(result.issueDate)) rows.push(["Issue Date", result.issueDate]);
-  return rows;
-}
-
-/** Scores + risk only — verdict is shown once in the header strip. */
-function buildAssessmentRows(result: VerificationResult): TableRow[] {
-  const risk = RISK_STYLE[result.report.riskLevel] ?? RISK_STYLE.medium;
-  const rows: TableRow[] = [["Risk Level", risk.label]];
-
-  if (Number.isFinite(result.confidence)) {
-    rows.push(["Model Confidence", `${result.confidence}%`]);
+  // Match ResultsDashboard: AI/category summary replaces raw signal cards when present.
+  const hasSummary = Boolean(summary.trim());
+  if (hasSummary) {
+    return drawParagraphBox(doc, summary.trim(), y, contentWidth);
   }
 
-  const detection = result.aiDetection;
-  if (detection?.supported) {
-    rows.push(["AI Generated Content", detection.label]);
-    if (detection.probability != null && Number.isFinite(detection.probability)) {
-      rows.push(["AI Probability", `${detection.probability}%`]);
-    } else if (detection.label === "Likely AI Generated") {
-      rows.push(["AI Generated", "Yes"]);
-    } else if (detection.label === "Likely Human Generated") {
-      rows.push(["AI Generated", "No"]);
-    }
-  } else {
-    rows.push(["AI Detection", "Not Available"]);
-  }
+  const items =
+    signals.length > 0
+      ? signals
+      : [
+          {
+            id: `${prefix}-ok`,
+            category: title,
+            description: "No anomalies detected in this layer.",
+            status: "pass" as const,
+          },
+        ];
 
-  if (result.engineTrustScore != null && Number.isFinite(result.engineTrustScore)) {
-    rows.push(["Trust Score", `${result.engineTrustScore}/100`]);
-  }
-  if (result.fraudScore != null && Number.isFinite(result.fraudScore)) {
-    rows.push(["Fraud Score", `${result.fraudScore}/100`]);
-  }
-  return rows;
-}
+  const body = items.slice(0, 16).map((signal, index) => {
+    const status = SIGNAL_STATUS_LABEL[signal.status] || signal.status;
+    const code = `${prefix}-${String(index + 1).padStart(2, "0")}`;
+    const titleText = truncate(signalTitle(signal), 40);
+    const detail = truncate(signalDescription(signal) || titleText, 160);
+    const confidence = `${confOf(signal)}%`;
+    return [status, code, titleText, detail, confidence];
+  });
 
-/** Engine-specific output only — no confidence (Overview) or mirrored findings. */
-function buildAiAnalysisRows(result: VerificationResult): TableRow[] {
-  const rows: TableRow[] = [];
-  const engine = result.vendorFindings[0];
+  autoTable(doc, {
+    startY: y,
+    margin: { left: 16, right: 16 },
+    theme: "grid",
+    styles: {
+      font: "helvetica",
+      fontSize: 8,
+      cellPadding: 2.1,
+      textColor: COLORS.text,
+      lineColor: COLORS.line,
+      lineWidth: 0.2,
+      valign: "top",
+    },
+    headStyles: {
+      fillColor: COLORS.navyMid,
+      textColor: COLORS.white,
+      fontStyle: "bold",
+      fontSize: 8,
+    },
+    alternateRowStyles: { fillColor: COLORS.soft },
+    columnStyles: {
+      0: { cellWidth: 20, fontStyle: "bold" },
+      1: { cellWidth: 18 },
+      2: { cellWidth: 36 },
+      3: { cellWidth: "auto" },
+      4: { cellWidth: 18 },
+    },
+    head: [["Status", "Ref", "Finding", "Detail", "Conf."]],
+    body,
+    didParseCell: (data) => {
+      if (data.section !== "body" || data.column.index !== 0) return;
+      const raw = String(data.cell.raw || "").toLowerCase();
+      if (raw === "failed") data.cell.styles.textColor = [197, 15, 31];
+      else if (raw === "warning") data.cell.styles.textColor = [217, 119, 6];
+      else if (raw === "passed") data.cell.styles.textColor = [16, 124, 16];
+    },
+  });
 
-  if (engine && isKnownValue(engine.vendor)) {
-    rows.push(["Engine", engine.vendor]);
-  }
-  if (engine && isKnownValue(engine.status)) {
-    rows.push(["Engine Status", engine.status]);
-  }
-  if (engine && isKnownValue(engine.processingResult)) {
-    rows.push(["Processing Result", engine.processingResult]);
-  }
-
-  return rows;
-}
-
-/** Timeline timestamps only — status lives in Engine Analysis / Technical. */
-function buildTimelineRows(result: VerificationResult): TableRow[] {
-  const rows: TableRow[] = [];
-  const verified = formatDate(result.verifiedAt);
-  if (verified) rows.push(["Verified At", verified]);
-
-  const duration = formatDuration(result.engineDurationMs);
-  if (duration) rows.push(["Processing Time", duration]);
-
-  return rows;
+  return ((doc as JsPdfWithTables).lastAutoTable?.finalY || y) + 10;
 }
 
 /**
- * Build and download a professional PDF investigation report.
+ * Build and download a PDF that mirrors the analysis results screen.
  */
 export async function downloadVerificationReport(
   result: VerificationResult,
@@ -344,11 +281,13 @@ export async function downloadVerificationReport(
   const pageWidth = doc.internal.pageSize.getWidth();
   const contentWidth = pageWidth - 32;
   const verdict = VERDICT_STYLE[result.verdict] ?? VERDICT_STYLE.suspicious;
-  const recommendation =
-    RECOMMENDATION_LABEL[result.report.recommendation] ||
-    (isKnownValue(result.report.recommendation) ? result.report.recommendation : null);
   const generatedAt = new Date().toLocaleString();
   const displayName = truncate(fileName, 42);
+
+  const scores = computeAnalysisDisplayScores(result);
+  const consolidated =
+    clampSummary((result.aiSummary || "").trim()) ||
+    verdictFallback(result.verdict);
 
   const heatmapUrl =
     typeof result.heatmapUrl === "string" && result.heatmapUrl.trim()
@@ -362,11 +301,9 @@ export async function downloadVerificationReport(
   doc.setFillColor(...COLORS.accent);
   doc.rect(0, 48, pageWidth, 1.5, "F");
 
-  // Logo slot: raster PNG preferred for jsPDF; falls back to MOHESR mark
   const logoDataUrl = await fetchImageAsDataUrl(BRAND_LOGO_PDF_PATH);
   if (logoDataUrl) {
     try {
-      // Landscape wordmark — keep modest height in the navy header band
       doc.addImage(logoDataUrl, "PNG", 16, 12, 42, 11);
     } catch {
       /* ignore unsupported formats */
@@ -409,20 +346,7 @@ export async function downloadVerificationReport(
 
   let y = 58;
 
-  // Official metadata block
-  y = drawSectionTitle(doc, "Report Information", y);
-  y = drawKeyValueTable(doc, y, [
-    ["Report Title", REPORT_TITLE],
-    ["Prepared by", PRODUCT_NAME],
-    ["Organization", ORGANIZATION_NAME],
-    ["Verification Date", generatedAt],
-    ...(result.certificateId?.trim()
-      ? [["Verification ID", result.certificateId.trim().slice(0, 12).toUpperCase()] as TableRow]
-      : []),
-    ["Document", displayName],
-  ]);
-
-  // Compact verdict strip (not repeated later as a full overview table).
+  // Verdict strip (same labels as UI decision)
   doc.setFillColor(...verdict.bg);
   doc.setDrawColor(...verdict.rgb);
   doc.setLineWidth(0.6);
@@ -433,110 +357,68 @@ export async function downloadVerificationReport(
   doc.text(verdict.label.toUpperCase(), 22, y + 8);
   y += 20;
 
-  // 1) Executive Summary
-  const executiveSummary = buildExecutiveSummary(result);
-  if (executiveSummary) {
-    y = drawSectionTitle(doc, "Executive Summary", y);
-    y = drawParagraphBox(doc, executiveSummary, y, contentWidth);
-  }
+  // Scores — same cards as ResultsDashboard
+  y = drawSectionTitle(doc, "Analysis Scores", y);
+  const scoreRows: TableRow[] = [
+    ["Risk Score", `${Math.round(scores.riskScore)}/100`],
+    ["Fraud Probability", `${Math.round(scores.fraudProbability)}%`],
+    [
+      "AI Probability",
+      scores.aiProbability != null ? `${scores.aiProbability}%` : "—",
+    ],
+    ["Text Logic", String(scores.textScore)],
+    ["Image Forensics", String(scores.imageScore)],
+    ["File Structure", String(scores.pdfScore)],
+  ];
+  y = drawKeyValueTable(doc, y, scoreRows);
 
-  // 2) Overall Assessment
-  const assessmentRows = buildAssessmentRows(result);
-  if (assessmentRows.length) {
-    y = drawSectionTitle(doc, "Overall Assessment", y);
-    y = drawKeyValueTable(doc, y, assessmentRows);
-  }
+  // Consolidated Verdict
+  y = drawSectionTitle(doc, "Consolidated Verdict", y);
+  y = drawParagraphBox(doc, consolidated, y, contentWidth);
 
-  // 3) Document Information
-  const documentRows = buildDocumentRows(result, fileName);
-  if (documentRows.length) {
-    y = drawSectionTitle(doc, "Document Information", y);
-    y = drawKeyValueTable(doc, y, documentRows);
-  }
+  // Detailed Findings — same three categories as the UI
+  y = drawSectionTitle(doc, "Detailed Findings", y);
 
-  // 4) AI Analysis
-  const aiRows = buildAiAnalysisRows(result);
-  if (aiRows.length) {
-    y = drawSectionTitle(doc, "AI Analysis", y);
-    y = drawKeyValueTable(doc, y, aiRows);
-  }
-
-  // 5) Forensic Findings (signals only — not the executive finding cards)
-  const realSignals = result.signals.filter(
-    (s) => isKnownValue(s.description) || isKnownValue(s.category)
+  y = drawFindingCategory(
+    doc,
+    y,
+    contentWidth,
+    "Text Manipulation",
+    categorySummaryForReport(result, "text", scores.buckets.text),
+    scores.buckets.text,
+    "TXT"
   );
-  if (realSignals.length) {
-    y = drawSectionTitle(doc, "Forensic Findings", y);
-    const groups = groupSignals(realSignals);
-    const body: string[][] = [];
 
-    for (const group of groups) {
-      for (const signal of group.items.slice(0, 8)) {
-        const description = conciseSignalDescription(signal);
-        if (!description && !isKnownValue(signal.category)) continue;
-        body.push([
-          SIGNAL_STATUS_LABEL[signal.status] || signal.status,
-          group.category,
-          description || group.category,
-        ]);
-      }
-    }
+  y = drawFindingCategory(
+    doc,
+    y,
+    contentWidth,
+    "Image Manipulation",
+    categorySummaryForReport(result, "image", scores.buckets.image),
+    scores.buckets.image,
+    "IMG"
+  );
 
-    if (body.length) {
-      // Cap total rows for concision.
-      const capped = body.slice(0, 24);
-      autoTable(doc, {
-        startY: y,
-        margin: { left: 16, right: 16 },
-        theme: "grid",
-        styles: {
-          font: "helvetica",
-          fontSize: 8,
-          cellPadding: 2.1,
-          textColor: COLORS.text,
-          lineColor: COLORS.line,
-          lineWidth: 0.2,
-          valign: "top",
-        },
-        headStyles: {
-          fillColor: COLORS.navyMid,
-          textColor: COLORS.white,
-          fontStyle: "bold",
-          fontSize: 8,
-        },
-        alternateRowStyles: { fillColor: COLORS.soft },
-        columnStyles: {
-          0: { cellWidth: 22, fontStyle: "bold" },
-          1: { cellWidth: 40 },
-          2: { cellWidth: "auto" },
-        },
-        head: [["Status", "Category", "Finding"]],
-        body: capped,
-        didParseCell: (data) => {
-          if (data.section !== "body" || data.column.index !== 0) return;
-          const raw = String(data.cell.raw || "").toLowerCase();
-          if (raw === "failed") data.cell.styles.textColor = [197, 15, 31];
-          else if (raw === "warning") data.cell.styles.textColor = [217, 119, 6];
-          else if (raw === "passed") data.cell.styles.textColor = [16, 124, 16];
-        },
-      });
-      y = (doc.lastAutoTable?.finalY || y) + 10;
-    }
-  }
+  y = drawFindingCategory(
+    doc,
+    y,
+    contentWidth,
+    "File Structure",
+    categorySummaryForReport(result, "pdf", scores.buckets.pdf),
+    scores.buckets.pdf,
+    "FILE"
+  );
 
-  // 6) Evidence (spatial only — never invent boxes)
+  // Evidence overlays (left panel on results screen)
   const regions = (result.tamperRegions || []).filter(
-    (r) => Array.isArray(r.bbox) && r.bbox.length === 4 && r.imageWidth > 0 && r.imageHeight > 0
+    (r) =>
+      Array.isArray(r.bbox) &&
+      r.bbox.length === 4 &&
+      r.imageWidth > 0 &&
+      r.imageHeight > 0
   );
-  y = drawSectionTitle(doc, "Evidence", y);
-  if (!regions.length && !heatmapDataUrl) {
-    y = ensureSpace(doc, y, 14);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(...COLORS.muted);
-    doc.text("No suspicious regions were provided by the verification engine.", 16, y + 4);
-    y += 14;
-  } else if (regions.length || heatmapDataUrl) {
+  if (regions.length || heatmapDataUrl) {
+    y = drawSectionTitle(doc, "Evidence Overlays", y);
 
     if (regions.length) {
       autoTable(doc, {
@@ -583,33 +465,19 @@ export async function downloadVerificationReport(
       const imgH = 72;
       y = ensureSpace(doc, y, imgH + 6);
       try {
-        doc.addImage(heatmapDataUrl, imageFormatFromDataUrl(heatmapDataUrl), 16, y, imgW, imgH);
+        doc.addImage(
+          heatmapDataUrl,
+          imageFormatFromDataUrl(heatmapDataUrl),
+          16,
+          y,
+          imgW,
+          imgH
+        );
         y += imgH + 8;
       } catch {
-        // Skip unreadable heatmap — never invent evidence.
+        // Skip unreadable heatmap
       }
     }
-  }
-
-  // 7) Recommendation
-  if (recommendation) {
-    y = drawSectionTitle(doc, "Recommendation", y);
-    y = ensureSpace(doc, y, 18);
-    doc.setFillColor(...verdict.bg);
-    doc.setDrawColor(...verdict.rgb);
-    doc.roundedRect(16, y, contentWidth, 14, 2, 2, "FD");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(...verdict.rgb);
-    doc.text(recommendation, 22, y + 9);
-    y += 22;
-  }
-
-  // 8) Verification Timeline
-  const timelineRows = buildTimelineRows(result);
-  if (timelineRows.length) {
-    y = drawSectionTitle(doc, "Verification Timeline", y);
-    y = drawKeyValueTable(doc, y, timelineRows);
   }
 
   // Closing note
@@ -620,7 +488,7 @@ export async function downloadVerificationReport(
   doc.text(
     wrapText(
       doc,
-      "This report summarizes automated forensic analysis for investigation support. Final acceptance decisions should combine these findings with organizational policy and human review.",
+      "This report mirrors the on-screen analysis results for investigation support.",
       contentWidth
     ),
     16,

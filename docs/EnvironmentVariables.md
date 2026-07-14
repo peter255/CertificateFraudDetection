@@ -53,6 +53,15 @@ cp frontend/.env.example frontend/.env
 | `AZURE_OPENAI_ENDPOINT` | Resource endpoint | `https://your-resource.openai.azure.com/` | Optional |
 | `AZURE_OPENAI_DEPLOYMENT` | Deployment / model name | `gpt-4o` | Optional |
 
+### Azure Document Intelligence (optional PDF Structure)
+
+| Variable | Purpose | Example | Required |
+|----------|---------|---------|----------|
+| `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` | Document Intelligence endpoint | `https://your-resource.cognitiveservices.azure.com/` | Optional |
+| `AZURE_DOCUMENT_INTELLIGENCE_KEY` | Document Intelligence API key | `…` | Optional |
+| `AZURE_DOCUMENT_INTELLIGENCE_MODEL` | Model id | `prebuilt-document` | Optional (default `prebuilt-document`) |
+| `AZURE_DOCUMENT_INTELLIGENCE_TIMEOUT` | HTTP timeout (seconds) | `120` | Optional (default `120`) |
+
 > Naming note: `TRUTHSCAN_*` and `PAPERWORK_*` are internal settings keys for Engine V1 / V2 adapters. Product docs and the UI refer only to **Verification Engine V1** and **Verification Engine V2**.
 
 ---

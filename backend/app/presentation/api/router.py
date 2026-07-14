@@ -33,3 +33,6 @@ def _include_vendor(import_path: str, router_attr: str = "router") -> None:
 # Each vendor is registered independently. Add a third vendor by appending one call.
 _include_vendor("app.presentation.api.vendors.truthscan")
 _include_vendor("app.presentation.api.vendors.paperwork")
+
+# First-party forensic modules (non-vendor). Failures are isolated the same way.
+_include_vendor("app.presentation.api.pdf_structure")

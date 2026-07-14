@@ -6,13 +6,15 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from app.application.services.ai_probability_enrichment import AiProbabilityEnrichmentService
 from app.application.services.ai_summary_enrichment import AiSummaryEnrichmentService
+from app.application.services.pdf_structure_enrichment import PdfStructureEnrichmentService
 from app.infrastructure.vendors.truthscan.client import TruthScanClient
 from app.infrastructure.vendors.truthscan.dependencies import provide_truthscan_client
-from app.infrastructure.vendors.truthscan.models import TruthScanVerifyResponse
+from app.infrastructure.vendors.truthscan.models import TruthScanSignal, TruthScanVerifyResponse
 from app.presentation.dependencies.ai_probability import (
     provide_ai_probability_enrichment,
     provide_ai_summary_enrichment,
 )
+from app.presentation.dependencies.pdf_structure import provide_pdf_structure_enrichment
 
 router = APIRouter(prefix="/vendors/v1", tags=["vendors:v1"])
 
@@ -37,11 +39,13 @@ async def verify_with_engine_v1(
     client: TruthScanClient = Depends(provide_truthscan_client),
     ai_probability_service: AiProbabilityEnrichmentService = Depends(provide_ai_probability_enrichment),
     ai_summary_service: AiSummaryEnrichmentService = Depends(provide_ai_summary_enrichment),
+    pdf_structure_service: PdfStructureEnrichmentService = Depends(provide_pdf_structure_enrichment),
 ) -> TruthScanVerifyResponse:
     raw_content = await file.read()
+    filename = file.filename or "certificate.bin"
     response = await client.verify(
         raw_content,
-        filename=file.filename or "certificate.bin",
+        filename=filename,
         document_type=document_type,
         holder_name=holder_name or file.filename or "Unknown",
         issuer_name=issuer_name or "Unknown",
@@ -75,10 +79,11 @@ async def verify_with_engine_v1(
         ai_summary,
         text_manipulation_summary,
         image_manipulation_summary,
+        pdf_structure_analysis,
     ) = await asyncio.gather(
         ai_probability_service.enrich(
             document_content=raw_content,
-            filename=file.filename or "certificate.bin",
+            filename=filename,
             vendor_payloads=[
                 analysis.model_dump(),
                 analysis.raw_query_response,
@@ -100,6 +105,11 @@ async def verify_with_engine_v1(
             ],
             context=v1_context,
         ),
+        pdf_structure_service.enrich(
+            content=raw_content,
+            filename=filename,
+            content_type=file.content_type,
+        ),
     )
 
     updates: dict = {
@@ -110,5 +120,16 @@ async def verify_with_engine_v1(
     if ai_probability is not None:
         updates["ai_probability"] = ai_probability
         updates["ai_probability_source"] = ai_probability_source
+
+    if pdf_structure_analysis is not None:
+        pdf_updates = PdfStructureEnrichmentService.as_v1_updates(pdf_structure_analysis)
+        updates["pdf_structure_summary"] = pdf_updates["pdf_structure_summary"]
+        updates["pdf_structure_findings"] = pdf_updates["pdf_structure_findings"]
+        pdf_signals = [
+            TruthScanSignal.model_validate(item)
+            for item in pdf_updates["pdf_structure_signals"]
+        ]
+        if pdf_signals:
+            updates["signals"] = [*response.signals, *pdf_signals]
 
     return response.model_copy(update=updates)
