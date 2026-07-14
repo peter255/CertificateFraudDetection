@@ -27,6 +27,7 @@ import {
   signalTitle,
   verdictFallback,
 } from "./findingsDisplay";
+import { humanizeLabel, sanitizeFindingText } from "./findingLabels";
 
 const COLORS = {
   navy: [15, 41, 66] as [number, number, number],
@@ -459,7 +460,7 @@ export async function downloadVerificationReport(
   doc.setFontSize(8);
   doc.setTextColor(...COLORS.muted);
   doc.text(
-    "Localized visual evidence only — each item has a page and bounding box on the document.",
+    "Select a finding to highlight its location in the document. Localized visual evidence only.",
     16,
     y
   );
@@ -513,10 +514,10 @@ export async function downloadVerificationReport(
       head: [["#", "Finding", "Severity", "Page", "Description"]],
       body: regions.slice(0, 24).map((region, i) => [
         String(i + 1),
-        truncate(region.label, 42),
+        truncate(humanizeLabel(region.label) || region.label, 42),
         SEVERITY_LABEL[region.severity],
         String(region.page),
-        truncate(region.description, 140),
+        truncate(sanitizeFindingText(region.description) || region.description, 140),
       ]),
       didParseCell: (data) => {
         if (data.section !== "body" || data.column.index !== 2) return;

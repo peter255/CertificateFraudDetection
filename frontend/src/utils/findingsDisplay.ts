@@ -10,6 +10,7 @@ import type {
   TamperRegion,
   VerificationResult,
 } from "../types/verification";
+import { humanizeLabel, sanitizeFindingText } from "./findingLabels";
 
 export type FindingBucket = "text" | "image" | "pdf";
 
@@ -414,17 +415,18 @@ export function confOf(signal: Signal): number {
 }
 
 export function signalTitle(signal: Signal): string {
-  return (
+  const raw = (
     signal.fieldLabel ||
     signal.check ||
     signal.category ||
     signal.detector ||
     "Finding"
   ).trim();
+  return humanizeLabel(raw) || raw;
 }
 
 export function signalDescription(signal: Signal): string {
-  return (signal.description || signal.check || signal.fieldLabel || "").trim();
+  return sanitizeFindingText(signal.description || signal.check || signal.fieldLabel || "") || "";
 }
 
 export function verdictFallback(verdict: VerificationResult["verdict"]): string {

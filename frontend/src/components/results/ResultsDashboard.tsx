@@ -30,12 +30,16 @@ import {
   categoryRiskLabel,
   clampSummary,
   computeAnalysisDisplayScores,
-  confOf,
   fileStructureDisplaySummary,
   overallRiskLabel,
   pdfStructureRiskLabel,
   verdictFallback,
 } from "../../utils/findingsDisplay";
+import {
+  humanizeLabel,
+  sanitizeFindingText,
+  shortenFindingDescription,
+} from "../../utils/findingLabels";
 import { VS } from "../../theme";
 
 interface ResultsDashboardProps {
@@ -173,15 +177,16 @@ function FindingCard({
   title,
   description,
   code,
-  confidence,
   color,
 }: {
   title: string;
   description: string;
   code: string;
-  confidence: number;
   color: string;
 }) {
+  const friendlyTitle = humanizeLabel(title) || title;
+  const shortDescription = shortenFindingDescription(description) || description;
+
   return (
     <Box
       sx={{
@@ -204,7 +209,7 @@ function FindingCard({
         <Typography
           sx={{ fontSize: "0.875rem", fontWeight: 600, color: VS.text, lineHeight: 1.35 }}
         >
-          {title}
+          {friendlyTitle}
         </Typography>
         <Typography
           sx={{
@@ -222,26 +227,20 @@ function FindingCard({
           fontSize: "0.8125rem",
           color: VS.textSecondary,
           lineHeight: 1.5,
-          mb: 1.25,
         }}
       >
-        {description}
+        {shortDescription}
       </Typography>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
-        <Box sx={{ flex: 1 }}>
-          <ScoreBar value={confidence} color={color} />
-        </Box>
-        <Typography
-          sx={{
-            fontSize: "0.6875rem",
-            color: VS.textMuted,
-            fontFamily: VS.mono,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {confidence}% conf.
-        </Typography>
-      </Box>
+      {/* color kept for left accent via border on failure statuses */}
+      <Box
+        sx={{
+          mt: 1.25,
+          height: 2,
+          borderRadius: 1,
+          backgroundColor: `${color}55`,
+          maxWidth: 48,
+        }}
+      />
     </Box>
   );
 }
@@ -382,7 +381,6 @@ function FindingCategory({
               }
               description={signal.description}
               code={refCode(signal, i, prefix)}
-              confidence={confOf(signal)}
               color={statusColor(signal.status)}
             />
           ))}
@@ -408,9 +406,11 @@ function VisualFindingCard({
       ? Math.round(region.confidence * 1000) / 10
       : null;
   const title =
-    region.label?.trim() ||
+    humanizeLabel(region.label) ||
     (region.description?.trim() ? "Suspicious region" : "Marked region");
-  const description = region.description?.trim() || "";
+  const fullDescription =
+    sanitizeFindingText(region.description) || title;
+  const shortDescription = shortenFindingDescription(fullDescription);
 
   return (
     <Box
@@ -494,7 +494,7 @@ function VisualFindingCard({
         </Typography>
       </Box>
 
-      {description ? (
+      {fullDescription ? (
         <Typography
           sx={{
             fontSize: "0.8125rem",
@@ -502,9 +502,13 @@ function VisualFindingCard({
             lineHeight: 1.5,
             mb: 1,
             pl: 4.25,
+            display: "-webkit-box",
+            WebkitLineClamp: active ? "unset" : 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
           }}
         >
-          {description}
+          {active ? fullDescription : shortDescription}
         </Typography>
       ) : null}
 
@@ -526,7 +530,7 @@ function VisualFindingCard({
         >
           PAGE {region.page}
         </Typography>
-        {confidencePct != null && (
+        {active && confidencePct != null && (
           <Typography
             sx={{
               fontSize: "0.6875rem",
@@ -535,7 +539,7 @@ function VisualFindingCard({
               whiteSpace: "nowrap",
             }}
           >
-            {confidencePct}% conf.
+            Confidence {confidencePct}%
           </Typography>
         )}
       </Box>
@@ -562,11 +566,20 @@ export default function ResultsDashboard({
   /**
    * Detailed Findings list — only navigable visual evidence.
    * Analytical / metadata / summary items are never included.
+   * Spatial duplicates (same page + bbox) are collapsed.
    */
-  const visualFindings = useMemo(
-    () => result.tamperRegions.filter(isNavigableVisualFinding),
-    [result.tamperRegions]
-  );
+  const visualFindings = useMemo(() => {
+    const list = result.tamperRegions.filter(isNavigableVisualFinding);
+    const seen = new Set<string>();
+    const unique: TamperRegion[] = [];
+    for (const region of list) {
+      const key = `${region.page}:${region.bbox.map((n) => Math.round(n)).join(",")}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(region);
+    }
+    return unique;
+  }, [result.tamperRegions]);
 
   // Keep selection only if it still exists — never auto-pick on load.
   useEffect(() => {
@@ -1031,7 +1044,7 @@ export default function ResultsDashboard({
                 }}
               >
                 {visualFindings.length > 0
-                  ? "Select a finding to jump to its location on the document."
+                  ? "Select a finding to highlight its location in the document."
                   : "No localized visual evidence was returned for this document."}
               </Typography>
             </Box>

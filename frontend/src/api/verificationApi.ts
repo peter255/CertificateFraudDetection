@@ -30,6 +30,12 @@ import {
   interpretBBox,
   type InterpretedBBox,
 } from "../utils/localization";
+import {
+  humanizeLabel,
+  normalizeFindingSeverity,
+  sanitizeFindingText,
+  spatialFindingKey,
+} from "../utils/findingLabels";
 
 // ── Engine V1 response DTO ───────────────────────────────────────────────────
 
@@ -468,9 +474,7 @@ function asStringList(value: unknown): string[] {
 }
 
 function humanizeKey(key: string): string {
-  return key
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return humanizeLabel(key) || key;
 }
 
 function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
@@ -661,12 +665,11 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
   });
 }
 
-function normalizeSeverity(raw: string | null | undefined): TamperRegion["severity"] {
-  const s = (raw || "").toLowerCase();
-  if (s === "critical") return "critical";
-  if (s === "high") return "high";
-  if (s === "low") return "low";
-  return "medium";
+function normalizeSeverity(
+  raw: string | null | undefined,
+  status?: string | null
+): TamperRegion["severity"] {
+  return normalizeFindingSeverity(raw, status);
 }
 
 /**
@@ -704,6 +707,7 @@ type TamperRegionInput = {
   label: string;
   description: string;
   severity?: string | null;
+  status?: string | null;
   bbox?: number[] | null;
   page?: number | null;
   imageWidth?: number | null;
@@ -725,6 +729,7 @@ function relatedBBoxCandidate(
     label: string;
     description: string;
     severity?: string | null;
+    status?: string | null;
     page?: number | null;
     imageWidth?: number | null;
     imageHeight?: number | null;
@@ -761,6 +766,7 @@ function relatedBBoxCandidate(
     description: parent.description,
     severity:
       (typeof related.severity === "string" ? related.severity : null) || parent.severity,
+    status: parent.status ?? null,
     bbox: Array.isArray(bboxRaw) ? (bboxRaw as number[]) : null,
     page,
     imageWidth,
@@ -804,23 +810,27 @@ function harvestNestedSpatialCandidates(
     if (!asBBox(bboxRaw)) return;
 
     const label =
-      (typeof raw.title === "string" && raw.title) ||
-      (typeof raw.field_label === "string" && raw.field_label) ||
-      (typeof raw.field === "string" && raw.field) ||
-      (typeof raw.type === "string" && raw.type) ||
-      (typeof raw.check === "string" && raw.check) ||
-      fallbackLabel;
+      humanizeLabel(
+        (typeof raw.title === "string" && raw.title) ||
+          (typeof raw.field_label === "string" && raw.field_label) ||
+          (typeof raw.field === "string" && raw.field) ||
+          (typeof raw.type === "string" && raw.type) ||
+          (typeof raw.check === "string" && raw.check) ||
+          fallbackLabel
+      ) || fallbackLabel;
     const description =
-      (typeof raw.description === "string" && raw.description) ||
-      (typeof raw.detail === "string" && raw.detail) ||
-      (typeof raw.location === "string" && raw.location) ||
-      label;
+      sanitizeFindingText(
+        (typeof raw.description === "string" && raw.description) ||
+          (typeof raw.detail === "string" && raw.detail) ||
+          label
+      ) || label;
 
     out.push({
       id: (typeof raw.id === "string" && raw.id) || fallbackId,
       label,
       description,
       severity: typeof raw.severity === "string" ? raw.severity : null,
+      status: typeof raw.status === "string" ? raw.status : null,
       bbox: Array.isArray(bboxRaw) ? (bboxRaw as number[]) : null,
       page: typeof raw.page === "number" ? raw.page : null,
       imageWidth:
@@ -906,18 +916,21 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
   const candidates: TamperRegionInput[] = [];
 
   for (const signal of [...(data.signals || []), ...(data.field_evidence || [])]) {
-    const label =
+    const label = humanizeLabel(
       signal.field_label ||
-      signal.field ||
-      signal.type ||
-      signal.check ||
-      "Anomaly";
-    const description = signal.description || signal.type || "Tamper indicator";
+        signal.field ||
+        signal.type ||
+        signal.check ||
+        "Anomaly"
+    ) || "Anomaly";
+    const description =
+      sanitizeFindingText(signal.description || signal.type || label) || label;
     const parent = {
       id: signal.id,
       label,
       description,
       severity: signal.severity,
+      status: signal.status,
       page: signal.page,
       imageWidth: signal.image_width,
       imageHeight: signal.image_height,
@@ -946,11 +959,17 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
   }
 
   for (const item of data.visual_evidence || []) {
+    const label =
+      humanizeLabel(
+        item.title || item.field_label || item.field || item.type || "Visual evidence"
+      ) || "Visual evidence";
     candidates.push({
       id: item.type,
-      label: item.title || item.field_label || item.field || item.type || "Visual evidence",
-      description: item.description || item.location || item.title || "Visual evidence",
+      label,
+      description:
+        sanitizeFindingText(item.description || item.title || label) || label,
       severity: item.severity,
+      status: null,
       bbox: item.bbox,
       page: item.page,
       imageWidth: item.image_width,
@@ -980,7 +999,8 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
   }
 
   const out: TamperRegion[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, number>(); // spatial key → index in out
+  const severityRank = { critical: 0, high: 1, medium: 2, low: 3 } as const;
 
   for (const input of candidates) {
     // Require an explicit engine bbox — never invent coordinates.
@@ -1014,15 +1034,37 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
     if (!interpreted) continue;
     const { xywh: bbox, raw, format, ambiguous } = interpreted;
 
-    const key = `${page}-${bbox.join(",")}-${input.label}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const label = humanizeLabel(input.label) || "Marked region";
+    const description =
+      sanitizeFindingText(input.description || label) || label;
+    const severity = normalizeSeverity(input.severity, input.status);
+
+    const key = spatialFindingKey(page, bbox);
+    const existingIdx = seen.get(key);
+    if (existingIdx != null) {
+      const existing = out[existingIdx];
+      // Keep the stronger severity / richer description; drop the duplicate.
+      if (severityRank[severity] < severityRank[existing.severity]) {
+        existing.severity = severity;
+      }
+      if (
+        description.length > existing.description.length &&
+        description !== label
+      ) {
+        existing.description = description;
+      }
+      if (label.length > existing.label.length) {
+        existing.label = label;
+      }
+      continue;
+    }
+    seen.set(key, out.length);
 
     out.push({
       id: String(input.id || key),
-      label: input.label,
-      description: scrubEngineName(input.description || input.label),
-      severity: normalizeSeverity(input.severity),
+      label,
+      description,
+      severity,
       bbox,
       rawBBox: raw,
       bboxFormat: format,
@@ -1036,12 +1078,12 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       bboxSource: optionalString(input.bboxSource),
       hasImage: typeof input.hasImage === "boolean" ? input.hasImage : null,
       hasCropImage: typeof input.hasCropImage === "boolean" ? input.hasCropImage : null,
-      extras: optionalRecord(input.extras),
+      // Never surface raw extras JSON in the customer UI.
+      extras: null,
     });
   }
 
-  const rank = { critical: 0, high: 1, medium: 2, low: 3 } as const;
-  out.sort((a, b) => rank[a.severity] - rank[b.severity]);
+  out.sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
   return out;
 }
 
@@ -1164,57 +1206,26 @@ function v2SignalCategory(signal: EngineV2Signal): string {
   return label ? humanizeKey(label) : "Forensic Indicator";
 }
 
+const INTERNAL_LOCATION_HINT = /\bbbox\b|\[|\{|xywh|xyxy/i;
+
 function v2SignalDescription(signal: EngineV2Signal): string {
   const parts: string[] = [];
 
-  if (signal.description) parts.push(signal.description);
+  const primary = sanitizeFindingText(signal.description);
+  if (primary) parts.push(primary);
 
   const meta: string[] = [];
-  if (signal.field_label || signal.field) {
-    meta.push(`Field: ${signal.field_label || signal.field}`);
+  const fieldName = humanizeLabel(signal.field_label || signal.field);
+  if (fieldName) meta.push(`Field: ${fieldName}`);
+  if (signal.location && !INTERNAL_LOCATION_HINT.test(signal.location)) {
+    meta.push(`Location: ${sanitizeFindingText(signal.location)}`);
   }
-  if (signal.location) meta.push(`Location: ${signal.location}`);
   if (signal.page != null) meta.push(`Page ${signal.page}`);
-  if (signal.bbox?.length === 4) {
-    meta.push("Spatial region marked on document");
-  }
-  if (signal.severity) meta.push(`Severity: ${signal.severity}`);
-  if (signal.evidence_class) meta.push(`Evidence: ${signal.evidence_class}`);
-  if (signal.confidence != null) {
-    meta.push(`Confidence: ${Math.round(signal.confidence * 1000) / 10}%`);
-  }
-  if (signal.fraud_type) meta.push(`Fraud type: ${signal.fraud_type}`);
+  if (signal.fraud_type) meta.push(`Fraud type: ${humanizeLabel(signal.fraud_type)}`);
   if (signal.generator) meta.push(`Generator: ${signal.generator}`);
   if (signal.issuer_name) meta.push(`Issuer: ${signal.issuer_name}`);
-  if (signal.issuer_category) meta.push(`Issuer category: ${signal.issuer_category}`);
-  // Internal stage / score-role / bbox-source tokens are developer-only — omit from customer UI.
-  if (signal.bbox_area_ratio != null) {
-    meta.push(`Marked area ratio: ${signal.bbox_area_ratio}`);
-  }
-  if (signal.field_fit_score != null) meta.push(`Field fit: ${signal.field_fit_score}`);
-  if (signal.field_importance != null) {
-    meta.push(`Field importance: ${signal.field_importance}`);
-  }
-  if (signal.field_assignment_source) {
-    meta.push(`Field assignment: ${signal.field_assignment_source}`);
-  }
-  if (signal.field_assignment_confidence != null) {
-    meta.push(
-      `Assignment confidence: ${Math.round(signal.field_assignment_confidence * 1000) / 10}%`
-    );
-  }
-  if (signal.related_bboxes?.length) {
-    meta.push(`Related bboxes: ${signal.related_bboxes.length}`);
-  }
-  if (signal.extras && Object.keys(signal.extras).length) {
-    meta.push(
-      Object.entries(signal.extras)
-        .map(([k, v]) => `${humanizeKey(k)}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
-        .join(" · ")
-    );
-  }
 
-  if (meta.length) parts.push(meta.join(" · "));
+  if (meta.length) parts.push(meta.filter(Boolean).join(" · "));
   return scrubEngineName(parts.filter(Boolean).join(" — "));
 }
 
@@ -1232,7 +1243,7 @@ function mapV2SignalFields(signal: EngineV2Signal): Omit<Signal, "id" | "categor
         : null,
     evidenceClass: optionalString(signal.evidence_class),
     field: optionalString(signal.field),
-    fieldLabel: optionalString(signal.field_label),
+    fieldLabel: humanizeLabel(signal.field_label || signal.field) || null,
     fraudType: optionalString(signal.fraud_type),
     generator: optionalString(signal.generator),
     issuerName: optionalString(signal.issuer_name),
@@ -1259,7 +1270,8 @@ function mapV2SignalFields(signal: EngineV2Signal): Omit<Signal, "id" | "categor
       Number.isFinite(signal.field_assignment_confidence)
         ? signal.field_assignment_confidence
         : null,
-    extras: optionalRecord(signal.extras),
+    // Never dump raw extras JSON into the customer UI.
+    extras: null,
   };
 }
 
@@ -1294,11 +1306,11 @@ function mapV2Signals(data: EngineV2ApiResponse): Signal[] {
     seen.add(key);
     const description = scrubEngineName(
       [
-        item.title || item.type || "",
-        item.description,
-        item.field_label || item.field ? `Field: ${item.field_label || item.field}` : "",
-        item.location ? `Location: ${item.location}` : "",
-        item.severity ? `Severity: ${item.severity}` : "",
+        humanizeLabel(item.title || item.type || "") || "",
+        sanitizeFindingText(item.description),
+        item.field_label || item.field
+          ? `Field: ${humanizeLabel(item.field_label || item.field)}`
+          : "",
       ]
         .filter(Boolean)
         .join(" — ")
@@ -1318,9 +1330,9 @@ function mapV2Signals(data: EngineV2ApiResponse): Signal[] {
           ? item.confidence
           : null,
       field: optionalString(item.field),
-      fieldLabel: optionalString(item.field_label),
+      fieldLabel: humanizeLabel(item.field_label || item.field) || null,
       bboxSource: optionalString(item.bbox_source),
-      extras: optionalRecord(item.extras),
+      extras: null,
     });
   });
 
