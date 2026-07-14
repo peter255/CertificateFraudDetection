@@ -84,8 +84,10 @@ function SplitLayout({
             maxWidth: { md: 560 },
             position: { md: "sticky" },
             top: { md: 72 },
-            height: { xs: 420, md: "calc(100vh - 104px)" },
-            maxHeight: { xs: 420, md: "calc(100vh - 104px)" },
+            // Grow with the PDF page; cap so very tall docs still scroll.
+            height: "auto",
+            maxHeight: { xs: "70vh", md: "calc(100vh - 104px)" },
+            alignSelf: { md: "flex-start" },
             display: "flex",
             flexDirection: "column",
           }}
@@ -428,7 +430,11 @@ export default function VerificationPage({
 
   // ── Uploaded / Analyzing split ────────────────────────────────────────────
   const leftPanel = (
-    <DocumentViewer file={file} onPageCountChange={setPageCount} />
+    <DocumentViewer
+      file={file}
+      onPageCountChange={setPageCount}
+      fitContent
+    />
   );
 
   let rightPanel: React.ReactNode;

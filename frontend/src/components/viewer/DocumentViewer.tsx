@@ -97,6 +97,13 @@ const scrollAreaSx = {
   backgroundColor: "#EEF2F7",
 };
 
+/** Size the preview to the rendered page instead of stretching to fill the panel. */
+const fitContentScrollAreaSx = {
+  flex: "0 0 auto",
+  overflow: "auto",
+  backgroundColor: "#EEF2F7",
+};
+
 interface OverlayLayerProps {
   regions: TamperRegion[];
   heatmapUrl: string | null;
@@ -561,6 +568,7 @@ interface ImageViewerProps {
   selectedRegionId: string | null;
   onSelectRegion?: (id: string) => void;
   debug?: boolean;
+  fitContent?: boolean;
 }
 
 function ImageViewer({
@@ -571,9 +579,10 @@ function ImageViewer({
   selectedRegionId,
   onSelectRegion,
   debug = false,
+  fitContent = false,
 }: ImageViewerProps) {
   return (
-    <Box sx={{ ...scrollAreaSx, p: 2.5 }}>
+    <Box sx={{ ...(fitContent ? fitContentScrollAreaSx : scrollAreaSx), p: 2.5 }}>
       {debug && (
         <Box
           sx={{
@@ -661,6 +670,7 @@ interface PdfViewerProps {
   selectedRegionId: string | null;
   onSelectRegion?: (id: string) => void;
   debug?: boolean;
+  fitContent?: boolean;
 }
 
 function PdfViewer({
@@ -674,6 +684,7 @@ function PdfViewer({
   selectedRegionId,
   onSelectRegion,
   debug = false,
+  fitContent = false,
 }: PdfViewerProps) {
   const measureRef = useRef<HTMLDivElement>(null);
   const pageBoxRef = useRef<HTMLDivElement>(null);
@@ -769,7 +780,19 @@ function PdfViewer({
   }, [onLoadError, hasOverlays]);
 
   return (
-    <Box ref={measureRef} sx={{ ...scrollAreaSx, p: useNativeFallback ? 0 : 2.5, position: "relative" }}>
+    <Box
+      ref={measureRef}
+      sx={{
+        ...(fitContent ? fitContentScrollAreaSx : scrollAreaSx),
+        p: useNativeFallback ? 0 : 2.5,
+        position: "relative",
+        // Keep a short placeholder while measuring so the panel does not collapse to 0.
+        minHeight:
+          fitContent && (isLoading || (baseWidth === 0 && !useNativeFallback))
+            ? 240
+            : undefined,
+      }}
+    >
       {debug && fileSurface && (
         <Box
           sx={{
@@ -837,7 +860,7 @@ function PdfViewer({
       )}
 
       {useNativeFallback ? (
-        <NativePdfFallback file={file} />
+        <NativePdfFallback file={file} fitContent={fitContent} />
       ) : (
         baseWidth > 0 && (
           <Box
@@ -913,7 +936,13 @@ function PdfViewer({
   );
 }
 
-function NativePdfFallback({ file }: { file: File }) {
+function NativePdfFallback({
+  file,
+  fitContent = false,
+}: {
+  file: File;
+  fitContent?: boolean;
+}) {
   const objectUrl = useMemo(() => URL.createObjectURL(file), [file]);
   useEffect(() => () => URL.revokeObjectURL(objectUrl), [objectUrl]);
 
@@ -924,11 +953,11 @@ function NativePdfFallback({ file }: { file: File }) {
       src={`${objectUrl}#view=FitH`}
       sx={{
         width: "100%",
-        height: "100%",
+        height: fitContent ? 480 : "100%",
         border: "none",
         backgroundColor: "#FFFFFF",
-        flex: 1,
-        minHeight: 0,
+        flex: fitContent ? "0 0 auto" : 1,
+        minHeight: fitContent ? 320 : 0,
       }}
     />
   );
@@ -1068,6 +1097,11 @@ interface DocumentViewerProps {
   currentPage?: number;
   onPageChange?: (page: number) => void;
   hideChrome?: boolean;
+  /**
+   * Size the panel to the rendered page instead of stretching to fill a
+   * fixed parent height (used on upload / analyzing split view).
+   */
+  fitContent?: boolean;
   /** Toggleable localization debug overlays (green raw / blue scaled). */
   debugLocalization?: boolean;
   onToggleDebugLocalization?: () => void;
@@ -1083,6 +1117,7 @@ export default function DocumentViewer({
   currentPage: controlledPage,
   onPageChange,
   hideChrome = false,
+  fitContent = false,
   debugLocalization = false,
   onToggleDebugLocalization,
 }: DocumentViewerProps) {
@@ -1167,7 +1202,7 @@ export default function DocumentViewer({
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
-        height: "100%",
+        height: fitContent ? "auto" : "100%",
         minHeight: 0,
         maxHeight: "100%",
         boxShadow: "none",
@@ -1201,6 +1236,7 @@ export default function DocumentViewer({
           selectedRegionId={selectedRegionId}
           onSelectRegion={onSelectRegion}
           debug={debugLocalization}
+          fitContent={fitContent}
         />
       )}
       {mode === "pdf" && file && (
@@ -1215,6 +1251,7 @@ export default function DocumentViewer({
           selectedRegionId={selectedRegionId}
           onSelectRegion={onSelectRegion}
           debug={debugLocalization}
+          fitContent={fitContent}
         />
       )}
 

@@ -80,9 +80,10 @@ def test_logical_consistency_prompt_includes_all_dynamic_sections(
 
     assert "Analyze metadata" in prompt
     assert "logical inconsistencies" in prompt
-    assert "suspicious indicators" in prompt
     assert "Never declare forgery" in prompt
     assert "Produce JSON only" in prompt or "JSON only" in prompt
+    assert "informational document characteristics" in prompt.lower()
+    assert "browser-generated" in prompt.lower()
 
     assert "OCR Result:" in prompt
     assert "Metadata:" in prompt

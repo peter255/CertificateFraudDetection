@@ -54,9 +54,12 @@ async def verify_with_engine_v1(
     analysis = response.analysis
     enrichment_context = {
         "engine": "v1",
+        "verdict": response.overall_status or response.final_result,
         "final_result": response.final_result,
         "overall_status": response.overall_status,
         "raw_score": response.raw_score,
+        "risk_score": response.raw_score,
+        "fraud_score": response.raw_score,
         "ml_label": analysis.ml_label,
         "ml_score": analysis.ml_score,
         "ocr_label": analysis.ocr_label,
@@ -65,13 +68,20 @@ async def verify_with_engine_v1(
         "visual_patterns": analysis.visual_patterns,
         "metadata_notes": analysis.metadata_notes,
         "reasoning": analysis.reasoning,
+        "document_type": document_type,
         "signals": [signal.model_dump(exclude_none=True) for signal in response.signals[:16]],
+        "has_localized_visual_evidence": False,
+        "localized_visual_count": 0,
     }
 
     signal_payloads = [signal.model_dump(exclude_none=True) for signal in response.signals]
     v1_context = {
         "verdict": response.overall_status,
-        "document_type": response.document_type,
+        "document_type": response.document_type if hasattr(response, "document_type") else document_type,
+        "has_localized_visual_evidence": False,
+        "localized_visual_count": 0,
+        "fraud_score": response.raw_score,
+        "risk_score": response.raw_score,
     }
 
     (

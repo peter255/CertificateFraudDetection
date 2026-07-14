@@ -19,6 +19,24 @@ from app.presentation.dependencies.pdf_structure import provide_pdf_structure_en
 router = APIRouter(prefix="/vendors/v2", tags=["vendors:v2"])
 
 
+def _is_localized_visual_payload(item: dict) -> bool:
+    page = item.get("page", item.get("page_number"))
+    try:
+        page_num = int(page) if page is not None else 0
+    except (TypeError, ValueError):
+        return False
+    if page_num < 1:
+        return False
+    bbox = item.get("bbox") or item.get("bounding_box") or item.get("box")
+    if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+        return False
+    try:
+        coords = [float(v) for v in bbox[:4]]
+    except (TypeError, ValueError):
+        return False
+    return any(abs(v) > 0 for v in coords)
+
+
 @router.post(
     "/verify",
     response_model=PaperworkVerifyResponse,
@@ -52,20 +70,37 @@ async def verify_with_engine_v2(
         ocr_mode=ocr_mode or "auto",
     )
 
+    signal_payloads = [signal.model_dump(exclude_none=True) for signal in response.signals]
+    visual_payloads = [
+        item.model_dump(exclude_none=True) for item in response.visual_evidence
+    ]
+    localized_visual = [
+        item
+        for item in visual_payloads
+        if _is_localized_visual_payload(item)
+    ]
+
     enrichment_context = {
         "engine": "v2",
         "verdict": response.verdict,
         "fraud_types": response.fraud_types,
         "fraud_score": response.fraud_score,
         "risk_level": response.risk_level,
+        "risk_score": response.fraud_score,
+        "document_type": response.document_type,
         "layer_details": response.layer_details,
         "signals": [signal.model_dump(exclude_none=True) for signal in response.signals[:16]],
+        "has_localized_visual_evidence": bool(localized_visual),
+        "localized_visual_count": len(localized_visual),
+        "localized_visual_findings": [
+            {
+                k: item.get(k)
+                for k in ("description", "label", "type", "page", "bbox", "severity", "confidence")
+                if item.get(k) not in (None, "", [], {})
+            }
+            for item in localized_visual[:12]
+        ],
     }
-
-    signal_payloads = [signal.model_dump(exclude_none=True) for signal in response.signals]
-    visual_payloads = [
-        item.model_dump(exclude_none=True) for item in response.visual_evidence
-    ]
 
     (
         (ai_probability, ai_probability_source),

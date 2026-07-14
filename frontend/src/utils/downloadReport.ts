@@ -21,7 +21,6 @@ import {
   categorySummaryForReport,
   clampSummary,
   computeAnalysisDisplayScores,
-  confOf,
   overallRiskLabel,
   pdfStructureRiskLabel,
   signalDescription,
@@ -279,8 +278,7 @@ function drawCategoryBlock(
     const code = `${prefix}-${String(index + 1).padStart(2, "0")}`;
     const titleText = truncate(signalTitle(signal), 40);
     const detail = truncate(signalDescription(signal) || titleText, 160);
-    const confidence = `${confOf(signal)}%`;
-    return [status, code, titleText, detail, confidence];
+    return [status, code, titleText, detail];
   });
 
   autoTable(doc, {
@@ -304,13 +302,12 @@ function drawCategoryBlock(
     },
     alternateRowStyles: { fillColor: COLORS.soft },
     columnStyles: {
-      0: { cellWidth: 20, fontStyle: "bold" },
+      0: { cellWidth: 22, fontStyle: "bold" },
       1: { cellWidth: 18 },
-      2: { cellWidth: 36 },
+      2: { cellWidth: 42 },
       3: { cellWidth: "auto" },
-      4: { cellWidth: 18 },
     },
-    head: [["Status", "Ref", "Finding", "Detail", "Conf."]],
+    head: [["Status", "Ref", "Finding", "Detail"]],
     body,
     didParseCell: (data) => {
       if (data.section !== "body" || data.column.index !== 0) return;

@@ -20,6 +20,13 @@ _RECOMMENDATION_MARKERS = (
     "review is required",
     "review-level",
     "automatic reject",
+    "further investigation",
+    "further forensic",
+    "additional analysis",
+)
+
+NO_LOCALIZED_VISUAL_EVIDENCE = (
+    "No localized visual evidence of document manipulation was identified."
 )
 
 
@@ -94,36 +101,28 @@ class AiSummaryEnrichmentService:
         visual_evidence: list[dict[str, Any]] | None = None,
         context: dict[str, Any] | None = None,
     ) -> str | None:
-        """Summarize Image Manipulation signals/evidence for a non-technical user via Azure OpenAI."""
-        combined = [*(signals or []), *(visual_evidence or [])]
-        image_findings = [
+        """Summarize Image Manipulation using localized visual evidence only."""
+        localized = [
             _normalize_finding(item)
-            for item in combined
-            if isinstance(item, dict) and _bucket_for_signal(item) == "image"
+            for item in (visual_evidence or [])
+            if isinstance(item, dict) and _is_localized_visual_evidence(item)
         ]
-        for item in visual_evidence or []:
-            if not isinstance(item, dict) or not item:
-                continue
-            normalized = _normalize_finding(item)
-            if _bucket_for_signal(normalized) == "pdf":
-                continue
-            if normalized not in image_findings:
-                image_findings.append(normalized)
 
-        image_findings = [
-            item
-            for item in image_findings
-            if item.get("description") or item.get("title") or item.get("check") or item.get("type")
-        ]
-        if not image_findings:
-            return None
+        # Detailed Findings narrative may only cite highlightable regions.
+        if not localized:
+            return NO_LOCALIZED_VISUAL_EVIDENCE
+
+        image_findings = localized[:24]
+        ctx = dict(context or {})
+        ctx["has_localized_visual_evidence"] = True
+        ctx["localized_visual_count"] = len(localized)
 
         if self._ai_client.is_configured():
             try:
                 generated = await self._ai_client.generate_category_summary(
                     category="Image Manipulation",
                     findings=image_findings,
-                    context=context or {},
+                    context=ctx,
                 )
                 if generated and not looks_like_recommendation(generated):
                     return generated
@@ -196,6 +195,44 @@ def _normalize_finding(item: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _is_localized_visual_evidence(item: dict[str, Any]) -> bool:
+    """True when an item can be highlighted on the document (page + bbox)."""
+    page = item.get("page", item.get("page_number"))
+    try:
+        page_num = int(page) if page is not None else 0
+    except (TypeError, ValueError):
+        return False
+    if page_num < 1:
+        return False
+
+    bbox = item.get("bbox") or item.get("bounding_box") or item.get("box")
+    if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+        return False
+    try:
+        coords = [float(v) for v in bbox[:4]]
+    except (TypeError, ValueError):
+        return False
+    return any(abs(v) > 0 for v in coords)
+
+
+def _verdict_is_clean(context: dict[str, Any]) -> bool:
+    verdict = str(
+        context.get("verdict")
+        or context.get("overall_status")
+        or context.get("final_result")
+        or ""
+    ).strip().lower()
+    return verdict in {
+        "clean",
+        "authentic",
+        "pass",
+        "passed",
+        "genuine",
+        "legitimate",
+        "low_risk",
+    }
+
+
 def _build_category_fallback(label: str, findings: list[dict[str, Any]]) -> str:
     bits: list[str] = []
     for item in findings[:3]:
@@ -214,10 +251,10 @@ def _build_category_fallback(label: str, findings: list[dict[str, Any]]) -> str:
                 short = short[:89].rstrip(" ,;") + "…"
             bits.append(short)
     if not bits:
-        return f"No clear {label.lower()} issues stood out in this scan."
+        return f"No verified {label.lower()} forensic indicators were identified in this examination."
     if len(bits) == 1:
         return f"{bits[0]}"
-    lead = f"{label} shows {len(bits)} key issues."
+    lead = f"{label} examination identified {len(bits)} material indicators."
     detail = " ".join(f"{bit}." if not bit.endswith((".", "!", "?", "…")) else bit for bit in bits[:2])
     return f"{lead} {detail}"
 
@@ -256,23 +293,37 @@ def build_flags_summary(context: dict[str, Any]) -> str:
         seen.add(lowered)
         unique_flags.append(key)
 
+    has_visual = bool(context.get("has_localized_visual_evidence"))
+    visual_note = (
+        ""
+        if has_visual
+        else f" {NO_LOCALIZED_VISUAL_EVIDENCE}"
+    )
+
     if unique_flags:
         top = unique_flags[:3]
         listed = ", ".join(top)
         extra = f" (+{len(unique_flags) - 3} more)" if len(unique_flags) > 3 else ""
         return (
-            f"Result: {verdict_label}. "
-            f"Main flags: {listed}{extra}."
+            f"Overall assessment: {verdict_label}. "
+            f"Primary forensic indicators: {listed}{extra}."
         )
 
+    if _verdict_is_clean(context):
+        return (
+            f"Overall assessment: {verdict_label}. "
+            "Cross-layer examination did not identify suspicious forensic indicators "
+            f"of document manipulation.{visual_note}"
+        ).strip()
+
     return (
-        f"Result: {verdict_label}. "
-        "No suspicious forensic indicators of manipulation stood out in this scan."
-    )
+        f"Overall assessment: {verdict_label}. "
+        f"No discrete suspicious forensic indicators stood out in this examination.{visual_note}"
+    ).strip()
 
 
 def _summary_context(context: dict[str, Any]) -> dict[str, Any]:
-    """Keep flag-oriented fields only — never pass recommendation text to the model."""
+    """Keep score + flag fields — never pass recommendation text to the model."""
     slim: dict[str, Any] = {}
 
     for key in (
@@ -283,6 +334,8 @@ def _summary_context(context: dict[str, Any]) -> dict[str, Any]:
         "fraud_types",
         "fraud_score",
         "risk_level",
+        "risk_score",
+        "ai_probability",
         "ml_label",
         "ml_score",
         "ocr_label",
@@ -292,6 +345,13 @@ def _summary_context(context: dict[str, Any]) -> dict[str, Any]:
         "metadata_notes",
         "reasoning",
         "raw_score",
+        "has_localized_visual_evidence",
+        "localized_visual_count",
+        "localized_visual_findings",
+        "text_score",
+        "image_score",
+        "pdf_score",
+        "document_type",
     ):
         value = context.get(key)
         if value not in (None, "", [], {}):

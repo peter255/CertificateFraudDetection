@@ -7,6 +7,8 @@ from typing import Any
 
 import httpx
 
+from app.application.PromptTemplates.loader import PromptTemplateLoader
+from app.application.PromptTemplates.names import ReportNarrativeTemplateNames
 from app.domain.entities.certificate import Certificate
 from app.domain.entities.verification_report import VendorFinding
 from app.infrastructure.configuration.settings import Settings
@@ -21,6 +23,8 @@ _MAX_CONTEXT_CHARS = 8_000
 _MAX_COMPLETION_TOKENS = 2_000
 # Summary needs headroom after reasoning — 2k was entirely consumed by reasoning_tokens.
 _MAX_SUMMARY_COMPLETION_TOKENS = 8_000
+
+_prompt_loader = PromptTemplateLoader()
 
 
 class AzureOpenAIClient:
@@ -66,16 +70,9 @@ class AzureOpenAIClient:
         if len(context_json) > _MAX_CONTEXT_CHARS:
             context_json = context_json[:_MAX_CONTEXT_CHARS] + "…"
 
-        prompt = (
-            "Write a short forensic verdict summary as JSON only:\n"
-            '{"summary":"<text>"}\n'
-            "Hard limits:\n"
-            "- Maximum 3 short sentences (about 3–4 lines total).\n"
-            "- Be expressive and concrete: name the key verdict and the most important flags.\n"
-            "- Prefer the strongest signals; do not list every minor detail.\n"
-            "- Findings only — never recommend approve/reject/manual review/next steps.\n"
-            "- Do not invent flags.\n"
-            f"Context:\n{context_json}"
+        prompt = _prompt_loader.render(
+            ReportNarrativeTemplateNames.EXECUTIVE_SUMMARY,
+            context=context_json,
         )
 
         message_content = await self._chat_completion(
@@ -117,31 +114,40 @@ class AzureOpenAIClient:
             "findings": slim_findings,
         }
         if context:
-            for key in ("verdict", "fraud_score", "risk_level", "document_type"):
+            for key in (
+                "verdict",
+                "overall_status",
+                "final_result",
+                "fraud_score",
+                "risk_level",
+                "risk_score",
+                "ai_probability",
+                "document_type",
+                "has_localized_visual_evidence",
+                "localized_visual_count",
+                "text_score",
+                "image_score",
+                "pdf_score",
+            ):
                 if context.get(key) not in (None, "", [], {}):
                     payload[key] = context[key]
 
-        context_json = json.dumps(payload, ensure_ascii=False, default=str)
+        findings_json = json.dumps(slim_findings, ensure_ascii=False, default=str)
+        context_json = json.dumps(
+            {k: v for k, v in payload.items() if k != "findings"},
+            ensure_ascii=False,
+            default=str,
+        )
+        if len(findings_json) > _MAX_CONTEXT_CHARS:
+            findings_json = findings_json[:_MAX_CONTEXT_CHARS] + "…"
         if len(context_json) > _MAX_CONTEXT_CHARS:
             context_json = context_json[:_MAX_CONTEXT_CHARS] + "…"
 
-        prompt = (
-            f"Summarize {category} findings for a non-technical reviewer as JSON only:\n"
-            '{"summary":"<text>"}\n'
-            "Hard limits:\n"
-            "- Maximum 3 short sentences (about 3–4 lines total).\n"
-            "- Be expressive: say what looks wrong, or use neutral language when nothing "
-            "suspicious was found.\n"
-            "- Mention only the most important fields/issues (name, date, font, OCR, splice, etc.).\n"
-            "- Do not invent findings.\n"
-            "- Do not recommend approve/reject/manual review/next steps.\n"
-            "- Distinguish informational document characteristics from forensic evidence "
-            "of manipulation.\n"
-            "- Do not describe browser-generated PDFs, missing optional metadata, lack of "
-            "embedded signatures, or OCR limitations as suspicious findings.\n"
-            "- If the overall verdict is clean/authentic and findings are only informational, "
-            "state that no suspicious forensic indicators were detected.\n"
-            f"\nFindings:\n{context_json}"
+        prompt = _prompt_loader.render(
+            ReportNarrativeTemplateNames.CATEGORY_SUMMARY,
+            category=category,
+            context=context_json,
+            findings=findings_json,
         )
 
         message_content = await self._chat_completion(
@@ -327,7 +333,7 @@ class AzureOpenAIClient:
 
 
 def _slim_summary_context(context: dict[str, Any]) -> dict[str, Any]:
-    """Pass only flag-oriented fields — never recommendation / executive_summary."""
+    """Pass score + flag fields for consistency — never recommendation text."""
     slim: dict[str, Any] = {}
     for key in (
         "engine",
@@ -337,6 +343,8 @@ def _slim_summary_context(context: dict[str, Any]) -> dict[str, Any]:
         "fraud_types",
         "fraud_score",
         "risk_level",
+        "risk_score",
+        "ai_probability",
         "detected_flags",
         "signals",
         "ml_label",
@@ -352,6 +360,12 @@ def _slim_summary_context(context: dict[str, Any]) -> dict[str, Any]:
         "provenance",
         "document_type",
         "findings",
+        "has_localized_visual_evidence",
+        "localized_visual_count",
+        "localized_visual_findings",
+        "text_score",
+        "image_score",
+        "pdf_score",
     ):
         if key in context and context[key] not in (None, "", [], {}):
             slim[key] = context[key]
@@ -456,6 +470,10 @@ def _slim_finding(item: dict[str, Any]) -> dict[str, Any]:
         "fraud_type",
         "evidence_class",
         "title",
+        "page",
+        "page_number",
+        "bbox",
+        "bounding_box",
     ):
         value = item.get(key)
         if value not in (None, "", [], {}):
