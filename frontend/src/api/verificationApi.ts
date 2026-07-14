@@ -770,6 +770,122 @@ function relatedBBoxCandidate(
   };
 }
 
+/**
+ * Pull spatial candidates from nested engine sections that are allowed to
+ * create visual findings. Items without a real bbox are skipped — never invented.
+ */
+function harvestNestedSpatialCandidates(
+  data: EngineV2ApiResponse
+): TamperRegionInput[] {
+  const out: TamperRegionInput[] = [];
+
+  const pushRecord = (
+    raw: Record<string, unknown>,
+    fallbackId: string,
+    fallbackLabel: string
+  ) => {
+    const bboxRaw = raw.bbox ?? raw.bounding_box ?? raw.box;
+    if (!asBBox(bboxRaw)) return;
+
+    const label =
+      (typeof raw.title === "string" && raw.title) ||
+      (typeof raw.field_label === "string" && raw.field_label) ||
+      (typeof raw.field === "string" && raw.field) ||
+      (typeof raw.type === "string" && raw.type) ||
+      (typeof raw.check === "string" && raw.check) ||
+      fallbackLabel;
+    const description =
+      (typeof raw.description === "string" && raw.description) ||
+      (typeof raw.detail === "string" && raw.detail) ||
+      (typeof raw.location === "string" && raw.location) ||
+      label;
+
+    out.push({
+      id: (typeof raw.id === "string" && raw.id) || fallbackId,
+      label,
+      description,
+      severity: typeof raw.severity === "string" ? raw.severity : null,
+      bbox: Array.isArray(bboxRaw) ? (bboxRaw as number[]) : null,
+      page: typeof raw.page === "number" ? raw.page : null,
+      imageWidth:
+        typeof raw.image_width === "number"
+          ? raw.image_width
+          : typeof raw.imageWidth === "number"
+            ? raw.imageWidth
+            : null,
+      imageHeight:
+        typeof raw.image_height === "number"
+          ? raw.image_height
+          : typeof raw.imageHeight === "number"
+            ? raw.imageHeight
+            : null,
+      location: typeof raw.location === "string" ? raw.location : null,
+      layer: typeof raw.layer === "string" ? raw.layer : null,
+      confidence: typeof raw.confidence === "number" ? raw.confidence : null,
+      bboxSource:
+        typeof raw.bbox_source === "string"
+          ? raw.bbox_source
+          : typeof raw.bboxSource === "string"
+            ? raw.bboxSource
+            : null,
+      bboxAreaRatio:
+        typeof raw.bbox_area_ratio === "number"
+          ? raw.bbox_area_ratio
+          : typeof raw.bboxAreaRatio === "number"
+            ? raw.bboxAreaRatio
+            : null,
+      hasImage: null,
+      hasCropImage: null,
+      extras: raw,
+    });
+  };
+
+  const pushList = (
+    list: unknown,
+    idPrefix: string,
+    fallbackLabel: string
+  ) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((item, index) => {
+      if (!item || typeof item !== "object") return;
+      pushRecord(
+        item as Record<string, unknown>,
+        `${idPrefix}-${index}`,
+        fallbackLabel
+      );
+    });
+  };
+
+  // Top-level scored_signals (when present and not already folded into signals)
+  pushList(
+    (data as EngineV2ApiResponse & { scored_signals?: unknown }).scored_signals,
+    "scored",
+    "Scored signal"
+  );
+
+  const layer = asRecord(data.layer_details);
+  const overlay = asRecord(layer.overlay_detector);
+  pushList(overlay.signals, "overlay", "Overlay signal");
+  pushList(overlay.scored_signals, "overlay-scored", "Overlay signal");
+
+  const llmVisual = asRecord(layer.llm_visual);
+  pushList(llmVisual.findings, "llm-visual", "Visual finding");
+
+  // Also check raw_result nesting when the vendor kept the original tree
+  const raw = asRecord(data.raw_result);
+  const rawLayer = asRecord(raw.layer_details);
+  if (Object.keys(rawLayer).length) {
+    const rawOverlay = asRecord(rawLayer.overlay_detector);
+    pushList(rawOverlay.signals, "raw-overlay", "Overlay signal");
+    pushList(rawOverlay.scored_signals, "raw-overlay-scored", "Overlay signal");
+    const rawLlm = asRecord(rawLayer.llm_visual);
+    pushList(rawLlm.findings, "raw-llm-visual", "Visual finding");
+  }
+  pushList(raw.scored_signals, "raw-scored", "Scored signal");
+
+  return out;
+}
+
 function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
   const candidates: TamperRegionInput[] = [];
 
@@ -834,6 +950,9 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
     });
   }
 
+  // Allowed nested sources — only items that already carry a bbox.
+  candidates.push(...harvestNestedSpatialCandidates(data));
+
   const dimsByPage = new Map<number, { w: number; h: number }>();
   for (const input of candidates) {
     const page = input.page && input.page > 0 ? input.page : 1;
@@ -848,7 +967,19 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
   const seen = new Set<string>();
 
   for (const input of candidates) {
-    const page = input.page && input.page > 0 ? input.page : 1;
+    // Require an explicit engine bbox — never invent coordinates.
+    if (!asBBox(input.bbox)) continue;
+
+    // Page defaults to 1 only when the engine omitted it (single-page convention).
+    // Reject non-positive / non-finite values — never invent a page for multi-page docs.
+    const page =
+      input.page == null
+        ? 1
+        : Number.isFinite(input.page) && input.page >= 1
+          ? input.page
+          : null;
+    if (page == null) continue;
+
     let imageWidth = Number(input.imageWidth);
     let imageHeight = Number(input.imageHeight);
     if (!Number.isFinite(imageWidth) || imageWidth <= 0 || !Number.isFinite(imageHeight) || imageHeight <= 0) {

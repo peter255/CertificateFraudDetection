@@ -1,9 +1,13 @@
 /**
  * ResultsDashboard — VERISCAN two-column forensic report layout.
  * Left: annotated document preview. Right: scores, verdict, findings, actions.
+ *
+ * DETAILED FINDINGS order:
+ * 1) Visual evidence list (page + bbox only — clickable navigation)
+ * 2) Text / Image / File Structure category cards below
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
@@ -31,13 +35,35 @@ import {
 } from "../../utils/findingsDisplay";
 import { VS } from "../../theme";
 
-type OverlayMode = "heatmap" | "polygons" | "both" | "none";
-
 interface ResultsDashboardProps {
   result: VerificationResult;
   file: File | null;
   onVerifyAnother: () => void;
   onPageCountChange?: (n: number) => void;
+}
+
+const SEVERITY_COLOR: Record<TamperRegion["severity"], string> = {
+  critical: VS.danger,
+  high: VS.danger,
+  medium: VS.warning,
+  low: VS.accent,
+};
+
+const SEVERITY_LABEL: Record<TamperRegion["severity"], string> = {
+  critical: "CRITICAL",
+  high: "HIGH",
+  medium: "MEDIUM",
+  low: "LOW",
+};
+
+/**
+ * A finding may appear in Detailed Findings only when it can navigate
+ * the viewer to a precise document location. Never invent coordinates.
+ */
+function isNavigableVisualFinding(region: TamperRegion): boolean {
+  if (!isValidOverlayRegion(region)) return false;
+  if (!Number.isFinite(region.page) || region.page < 1) return false;
+  return true;
 }
 
 function riskLabel(level: RiskLevel, score: number): string {
@@ -353,19 +379,195 @@ function FindingCategory({
   );
 }
 
+function VisualFindingCard({
+  region,
+  index,
+  active,
+  onSelect,
+}: {
+  region: TamperRegion;
+  index: number;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const color = SEVERITY_COLOR[region.severity];
+  const confidencePct =
+    region.confidence != null && Number.isFinite(region.confidence)
+      ? Math.round(region.confidence * 1000) / 10
+      : null;
+  const title =
+    region.label?.trim() ||
+    (region.description?.trim() ? "Suspicious region" : "Marked region");
+  const description = region.description?.trim() || "";
+
+  return (
+    <Box
+      component="button"
+      type="button"
+      onClick={onSelect}
+      sx={{
+        all: "unset",
+        boxSizing: "border-box",
+        display: "block",
+        width: "100%",
+        cursor: "pointer",
+        px: 1.75,
+        py: 1.5,
+        borderRadius: "8px",
+        border: `1px solid ${active ? color : VS.border}`,
+        backgroundColor: active ? `${color}14` : "rgba(255,255,255,0.02)",
+        boxShadow: active ? `0 0 0 1px ${color}55` : "none",
+        transition: "border-color 120ms ease, background-color 120ms ease",
+        "&:hover": {
+          borderColor: color,
+          backgroundColor: `${color}10`,
+        },
+        "&:focus-visible": {
+          outline: `2px solid ${VS.accent}`,
+          outlineOffset: 2,
+        },
+      }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 1.5,
+          mb: 0.5,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.25, minWidth: 0 }}>
+          <Box
+            sx={{
+              width: 22,
+              height: 22,
+              borderRadius: "5px",
+              backgroundColor: color,
+              color: VS.bg,
+              fontSize: "0.625rem",
+              fontWeight: 800,
+              fontFamily: VS.mono,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              mt: 0.15,
+            }}
+          >
+            {index + 1}
+          </Box>
+          <Typography
+            sx={{
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              color: VS.text,
+              lineHeight: 1.35,
+            }}
+          >
+            {title}
+          </Typography>
+        </Box>
+        <Typography
+          sx={{
+            fontSize: "0.625rem",
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            color,
+            fontFamily: VS.mono,
+            flexShrink: 0,
+          }}
+        >
+          {SEVERITY_LABEL[region.severity]}
+        </Typography>
+      </Box>
+
+      {description ? (
+        <Typography
+          sx={{
+            fontSize: "0.8125rem",
+            color: VS.textSecondary,
+            lineHeight: 1.5,
+            mb: 1,
+            pl: 4.25,
+          }}
+        >
+          {description}
+        </Typography>
+      ) : null}
+
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 1.25,
+          pl: 4.25,
+        }}
+      >
+        <Typography
+          sx={{
+            fontSize: "0.6875rem",
+            color: VS.textMuted,
+            fontFamily: VS.mono,
+          }}
+        >
+          PAGE {region.page}
+        </Typography>
+        {confidencePct != null && (
+          <Typography
+            sx={{
+              fontSize: "0.6875rem",
+              color: VS.textMuted,
+              fontFamily: VS.mono,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {confidencePct}% conf.
+          </Typography>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
 export default function ResultsDashboard({
   result,
   file,
   onVerifyAnother,
   onPageCountChange,
 }: ResultsDashboardProps) {
-  const [overlayMode, setOverlayMode] = useState<OverlayMode>("both");
   const [downloading, setDownloading] = useState(false);
+  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
+  const [activePage, setActivePage] = useState(1);
 
+  /** Overlay draw list — spatial regions only (never synthetic). */
   const validRegions = useMemo(
     () => result.tamperRegions.filter(isValidOverlayRegion),
     [result.tamperRegions]
   );
+
+  /**
+   * Detailed Findings list — only navigable visual evidence.
+   * Analytical / metadata / summary items are never included.
+   */
+  const visualFindings = useMemo(
+    () => result.tamperRegions.filter(isNavigableVisualFinding),
+    [result.tamperRegions]
+  );
+
+  // Keep selection only if it still exists — never auto-pick on load.
+  useEffect(() => {
+    if (!selectedRegionId) return;
+    if (!visualFindings.some((r) => r.id === selectedRegionId)) {
+      setSelectedRegionId(null);
+    }
+  }, [visualFindings, selectedRegionId]);
+
+  useEffect(() => {
+    const region = visualFindings.find((r) => r.id === selectedRegionId);
+    if (region) setActivePage(region.page);
+  }, [selectedRegionId, visualFindings]);
 
   const {
     riskScore,
@@ -381,12 +583,16 @@ export default function ResultsDashboard({
   const criticalLabel = riskLabel(result.report.riskLevel, riskScore);
   const criticalColor = scoreColor(riskScore);
 
-  const showHeatmap =
-    overlayMode === "heatmap" || overlayMode === "both"
-      ? result.heatmapUrl
-      : null;
-  const showRegions =
-    overlayMode === "polygons" || overlayMode === "both" ? validRegions : [];
+  // Draw only the selected finding — never every region at once.
+  // Nothing is drawn until the user picks a finding.
+  const showRegions = selectedRegionId
+    ? validRegions.filter((r) => r.id === selectedRegionId)
+    : [];
+
+  const selectFinding = (region: TamperRegion) => {
+    setSelectedRegionId(region.id);
+    setActivePage(region.page);
+  };
 
   const handleExport = async () => {
     if (downloading) return;
@@ -401,7 +607,11 @@ export default function ResultsDashboard({
     }
   };
 
-  const modes: OverlayMode[] = ["heatmap", "polygons", "both", "none"];
+  /** Locked row height — tall enough to show most of the document page. */
+  const viewerRowHeight = {
+    xs: "min(60vh, 600px)",
+    lg: "calc(100vh - 280px)",
+  };
 
   return (
     <Box
@@ -418,7 +628,9 @@ export default function ResultsDashboard({
           display: "grid",
           gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1.05fr) minmax(0, 0.95fr)" },
           gap: { xs: 2.5, lg: 3 },
-          alignItems: "start",
+          alignItems: "stretch",
+          height: { lg: viewerRowHeight.lg },
+          minHeight: { lg: viewerRowHeight.lg },
         }}
       >
         {/* ── Left: document + overlays ─────────────────────────────────── */}
@@ -428,23 +640,20 @@ export default function ResultsDashboard({
             border: `1px solid ${VS.border}`,
             backgroundColor: VS.bgCard,
             overflow: "hidden",
-            position: { lg: "sticky" },
-            top: { lg: 72 },
-            maxHeight: { lg: "calc(100vh - 96px)" },
             display: "flex",
             flexDirection: "column",
+            height: viewerRowHeight,
+            minHeight: viewerRowHeight,
+            maxHeight: viewerRowHeight,
           }}
         >
           <Box
             sx={{
               display: "flex",
               alignItems: "center",
-              justifyContent: "space-between",
-              gap: 1.5,
               px: 2,
               py: 1.25,
               borderBottom: `1px solid ${VS.border}`,
-              flexWrap: "wrap",
             }}
           >
             <Typography
@@ -457,65 +666,46 @@ export default function ResultsDashboard({
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
-                maxWidth: { xs: "100%", sm: 280 },
               }}
             >
               {(file?.name ?? "DOCUMENT").toUpperCase()}
             </Typography>
-
-            <Box sx={{ display: "flex", gap: 0.5 }}>
-              {modes.map((mode) => (
-                <Button
-                  key={mode}
-                  size="small"
-                  onClick={() => setOverlayMode(mode)}
-                  sx={{
-                    minWidth: 0,
-                    px: 1.1,
-                    py: 0.4,
-                    fontSize: "0.625rem",
-                    fontWeight: 700,
-                    letterSpacing: "0.06em",
-                    fontFamily: VS.mono,
-                    color: overlayMode === mode ? VS.bg : VS.textMuted,
-                    backgroundColor:
-                      overlayMode === mode ? VS.accent : "transparent",
-                    border: `1px solid ${
-                      overlayMode === mode ? VS.accent : VS.border
-                    }`,
-                    borderRadius: "6px",
-                    "&:hover": {
-                      backgroundColor:
-                        overlayMode === mode ? VS.accent : VS.accentDim,
-                      color: overlayMode === mode ? VS.bg : VS.accent,
-                    },
-                  }}
-                >
-                  {mode.toUpperCase()}
-                </Button>
-              ))}
-            </Box>
           </Box>
 
-          <Box sx={{ flex: 1, minHeight: { xs: 420, lg: 560 }, height: { lg: "100%" } }}>
+          <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
             <DocumentViewer
               file={file}
               regions={showRegions as TamperRegion[]}
-              heatmapUrl={showHeatmap}
+              heatmapUrl={null}
+              selectedRegionId={selectedRegionId}
+              onSelectRegion={setSelectedRegionId}
+              currentPage={activePage}
+              onPageChange={setActivePage}
               onPageCountChange={onPageCountChange}
               hideChrome
             />
           </Box>
         </Box>
 
-        {/* ── Right: analytics ──────────────────────────────────────────── */}
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {/* ── Right: analytics + visual findings (same fixed row height) ─ */}
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            height: { xs: "auto", lg: viewerRowHeight.lg },
+            minHeight: { xs: viewerRowHeight.xs, lg: viewerRowHeight.lg },
+            maxHeight: { lg: viewerRowHeight.lg },
+            overflow: { lg: "hidden" },
+          }}
+        >
           {/* Score summary */}
           <Box
             sx={{
               display: "grid",
               gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" },
               gap: 1.5,
+              flexShrink: 0,
             }}
           >
             <Box
@@ -693,6 +883,7 @@ export default function ResultsDashboard({
               display: "grid",
               gridTemplateColumns: "repeat(3, 1fr)",
               gap: 1.25,
+              flexShrink: 0,
             }}
           >
             {[
@@ -755,6 +946,7 @@ export default function ResultsDashboard({
               borderRadius: "12px",
               border: `1px solid ${VS.border}`,
               backgroundColor: VS.bgCard,
+              flexShrink: 0,
             }}
           >
             <Typography
@@ -782,7 +974,7 @@ export default function ResultsDashboard({
             </Typography>
           </Box>
 
-          {/* Detailed findings */}
+          {/* Detailed findings — fixed remaining height inside the locked row */}
           <Typography
             sx={{
               fontSize: "0.6875rem",
@@ -791,92 +983,162 @@ export default function ResultsDashboard({
               color: VS.textMuted,
               fontFamily: VS.mono,
               mt: 0.5,
+              flexShrink: 0,
             }}
           >
             DETAILED FINDINGS
           </Typography>
 
-          <FindingCategory
-            title="Text Manipulation"
-            icon={<TextFieldsIcon sx={{ fontSize: 18 }} />}
-            signals={buckets.text}
-            prefix="TXT"
-            summary={clampSummary(
-              result.textManipulationSummary?.trim() ||
-                buildLocalCategorySummary("Text manipulation", buckets.text) ||
-                ""
-            )}
-          />
-          <FindingCategory
-            title="Image Manipulation"
-            icon={<ImageIcon sx={{ fontSize: 18 }} />}
-            signals={buckets.image}
-            prefix="IMG"
-            summary={clampSummary(
-              result.imageManipulationSummary?.trim() ||
-                buildLocalCategorySummary("Image manipulation", buckets.image) ||
-                ""
-            )}
-          />
-          <FindingCategory
-            title="File Structure"
-            icon={<InsertDriveFileIcon sx={{ fontSize: 18 }} />}
-            signals={buckets.pdf}
-            prefix="FILE"
-            summary={clampSummary(
-              result.pdfStructureSummary?.trim() ||
-                buildLocalCategorySummary("File structure", buckets.pdf) ||
-                ""
-            )}
-          />
-
-          {/* Actions */}
           <Box
             sx={{
+              flex: 1,
+              minHeight: { xs: 280, lg: 0 },
+              height: { xs: 320 },
+              maxHeight: { xs: 320, lg: "none" },
               display: "flex",
-              flexDirection: { xs: "column", sm: "row" },
-              gap: 1.25,
-              pt: 0.5,
-              flexWrap: "wrap",
+              flexDirection: "column",
+              borderRadius: "10px",
+              border: `1px solid ${VS.border}`,
+              backgroundColor: VS.bgCard,
+              overflow: "hidden",
             }}
           >
-            <Button
-              variant="contained"
-              startIcon={<DownloadOutlinedIcon />}
-              onClick={handleExport}
-              disabled={downloading}
+            <Box
               sx={{
-                flex: 1,
-                minWidth: 180,
-                height: 48,
-                borderRadius: "8px",
-                fontWeight: 700,
-                letterSpacing: "0.04em",
-                backgroundColor: VS.danger,
-                color: "#fff",
-                boxShadow: `0 0 20px ${VS.danger}55`,
-                "&:hover": {
-                  backgroundColor: "#E03555",
-                  boxShadow: `0 0 28px ${VS.danger}77`,
-                },
+                px: 2,
+                py: 1.35,
+                borderBottom: `1px solid ${VS.border}`,
+                flexShrink: 0,
               }}
             >
-              {downloading ? "PREPARING…" : "EXPORT FULL REPORT"}
-            </Button>
+              <Typography
+                sx={{
+                  fontSize: "0.8125rem",
+                  color: VS.textSecondary,
+                  lineHeight: 1.5,
+                }}
+              >
+                {visualFindings.length > 0
+                  ? "Select a finding to jump to its location on the document."
+                  : "No localized visual evidence was returned for this document."}
+              </Typography>
+            </Box>
+
+            <Box
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                p: 1.5,
+                display: "flex",
+                flexDirection: "column",
+                gap: 1.25,
+                overflow: "auto",
+              }}
+            >
+              {visualFindings.map((region, index) => (
+                <VisualFindingCard
+                  key={region.id}
+                  region={region}
+                  index={index}
+                  active={region.id === selectedRegionId}
+                  onSelect={() => selectFinding(region)}
+                />
+              ))}
+            </Box>
           </Box>
-          <Button
-            variant="text"
-            onClick={onVerifyAnother}
-            sx={{
-              alignSelf: "flex-start",
-              fontSize: "0.8125rem",
-              color: VS.textMuted,
-            }}
-          >
-            Start New Analysis
-          </Button>
         </Box>
       </Box>
+
+      {/* Category analysis — full width under Viewer + Detailed Findings */}
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+          mt: { xs: 2.5, lg: 3 },
+        }}
+      >
+        <FindingCategory
+          title="Text Manipulation"
+          icon={<TextFieldsIcon sx={{ fontSize: 18 }} />}
+          signals={buckets.text}
+          prefix="TXT"
+          summary={clampSummary(
+            result.textManipulationSummary?.trim() ||
+              buildLocalCategorySummary("Text manipulation", buckets.text) ||
+              ""
+          )}
+        />
+        <FindingCategory
+          title="Image Manipulation"
+          icon={<ImageIcon sx={{ fontSize: 18 }} />}
+          signals={buckets.image}
+          prefix="IMG"
+          summary={clampSummary(
+            result.imageManipulationSummary?.trim() ||
+              buildLocalCategorySummary("Image manipulation", buckets.image) ||
+              ""
+          )}
+        />
+        <FindingCategory
+          title="File Structure"
+          icon={<InsertDriveFileIcon sx={{ fontSize: 18 }} />}
+          signals={buckets.pdf}
+          prefix="FILE"
+          summary={clampSummary(
+            result.pdfStructureSummary?.trim() ||
+              buildLocalCategorySummary("File structure", buckets.pdf) ||
+              ""
+          )}
+        />
+      </Box>
+
+      {/* Actions */}
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", sm: "row" },
+          gap: 1.25,
+          pt: 2.5,
+          flexWrap: "wrap",
+        }}
+      >
+        <Button
+          variant="contained"
+          startIcon={<DownloadOutlinedIcon />}
+          onClick={handleExport}
+          disabled={downloading}
+          sx={{
+            flex: 1,
+            minWidth: 180,
+            height: 48,
+            borderRadius: "8px",
+            fontWeight: 700,
+            letterSpacing: "0.04em",
+            backgroundColor: VS.danger,
+            color: "#fff",
+            boxShadow: `0 0 20px ${VS.danger}55`,
+            "&:hover": {
+              backgroundColor: "#E03555",
+              boxShadow: `0 0 28px ${VS.danger}77`,
+            },
+          }}
+        >
+          {downloading ? "PREPARING…" : "EXPORT FULL REPORT"}
+        </Button>
+      </Box>
+      <Button
+        variant="text"
+        onClick={onVerifyAnother}
+        sx={{
+          alignSelf: "flex-start",
+          fontSize: "0.8125rem",
+          color: VS.textMuted,
+          mt: 0.5,
+        }}
+      >
+        Start New Analysis
+      </Button>
     </Box>
   );
 }

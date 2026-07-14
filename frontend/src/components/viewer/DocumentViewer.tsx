@@ -79,7 +79,7 @@ export function isValidOverlayRegion(region: TamperRegion): boolean {
     return false;
   }
   if (w <= 0 || h <= 0 || region.imageWidth <= 0 || region.imageHeight <= 0) return false;
-  if (region.page != null && (!Number.isFinite(region.page) || region.page < 1)) return false;
+  if (!Number.isFinite(region.page) || region.page < 1) return false;
   return true;
 }
 

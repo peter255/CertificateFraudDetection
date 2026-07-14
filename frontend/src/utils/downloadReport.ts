@@ -197,7 +197,6 @@ function drawFindingCategory(
 ): number {
   y = drawSectionTitle(doc, title, y);
 
-  // Match ResultsDashboard: AI/category summary replaces raw signal cards when present.
   const hasSummary = Boolean(summary.trim());
   if (hasSummary) {
     return drawParagraphBox(doc, summary.trim(), y, contentWidth);
@@ -267,8 +266,7 @@ function drawFindingCategory(
 
 /**
  * Build and download a PDF that mirrors the analysis results screen.
- */
-export async function downloadVerificationReport(
+ */export async function downloadVerificationReport(
   result: VerificationResult,
   fileName = "certificate"
 ): Promise<void> {
@@ -376,8 +374,65 @@ export async function downloadVerificationReport(
   y = drawSectionTitle(doc, "Consolidated Verdict", y);
   y = drawParagraphBox(doc, consolidated, y, contentWidth);
 
-  // Detailed Findings — same three categories as the UI
+  // Detailed Findings — visual evidence first, then category analysis below
   y = drawSectionTitle(doc, "Detailed Findings", y);
+
+  const regions = (result.tamperRegions || []).filter(
+    (r) =>
+      Array.isArray(r.bbox) &&
+      r.bbox.length === 4 &&
+      Number.isFinite(r.page) &&
+      r.page >= 1 &&
+      r.imageWidth > 0 &&
+      r.imageHeight > 0
+  );
+
+  if (regions.length === 0) {
+    y = drawParagraphBox(
+      doc,
+      "No localized visual evidence was returned for this document.",
+      y,
+      contentWidth
+    );
+  } else {
+    autoTable(doc, {
+      startY: y,
+      margin: { left: 16, right: 16 },
+      theme: "grid",
+      styles: {
+        font: "helvetica",
+        fontSize: 8,
+        cellPadding: 2.1,
+        textColor: COLORS.text,
+        lineColor: COLORS.line,
+        lineWidth: 0.2,
+        valign: "top",
+      },
+      headStyles: {
+        fillColor: COLORS.navyMid,
+        textColor: COLORS.white,
+        fontStyle: "bold",
+        fontSize: 8,
+      },
+      alternateRowStyles: { fillColor: COLORS.soft },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 38 },
+        2: { cellWidth: 22 },
+        3: { cellWidth: 14 },
+        4: { cellWidth: "auto" },
+      },
+      head: [["#", "Region", "Severity", "Page", "Description"]],
+      body: regions.slice(0, 24).map((region, i) => [
+        String(i + 1),
+        truncate(region.label, 40),
+        region.severity,
+        String(region.page),
+        truncate(region.description, 120),
+      ]),
+    });
+    y = (doc.lastAutoTable?.finalY || y) + 10;
+  }
 
   y = drawFindingCategory(
     doc,
@@ -409,74 +464,24 @@ export async function downloadVerificationReport(
     "FILE"
   );
 
-  // Evidence overlays (left panel on results screen)
-  const regions = (result.tamperRegions || []).filter(
-    (r) =>
-      Array.isArray(r.bbox) &&
-      r.bbox.length === 4 &&
-      r.imageWidth > 0 &&
-      r.imageHeight > 0
-  );
-  if (regions.length || heatmapDataUrl) {
-    y = drawSectionTitle(doc, "Evidence Overlays", y);
-
-    if (regions.length) {
-      autoTable(doc, {
-        startY: y,
-        margin: { left: 16, right: 16 },
-        theme: "grid",
-        styles: {
-          font: "helvetica",
-          fontSize: 8,
-          cellPadding: 2.1,
-          textColor: COLORS.text,
-          lineColor: COLORS.line,
-          lineWidth: 0.2,
-          valign: "top",
-        },
-        headStyles: {
-          fillColor: COLORS.navyMid,
-          textColor: COLORS.white,
-          fontStyle: "bold",
-          fontSize: 8,
-        },
-        alternateRowStyles: { fillColor: COLORS.soft },
-        columnStyles: {
-          0: { cellWidth: 10 },
-          1: { cellWidth: 38 },
-          2: { cellWidth: 22 },
-          3: { cellWidth: 14 },
-          4: { cellWidth: "auto" },
-        },
-        head: [["#", "Region", "Severity", "Page", "Description"]],
-        body: regions.slice(0, 16).map((region, i) => [
-          String(i + 1),
-          region.label,
-          region.severity,
-          String(region.page),
-          truncate(region.description, 120),
-        ]),
-      });
-      y = (doc.lastAutoTable?.finalY || y) + 8;
-    }
-
-    if (heatmapDataUrl) {
-      const imgW = contentWidth;
-      const imgH = 72;
-      y = ensureSpace(doc, y, imgH + 6);
-      try {
-        doc.addImage(
-          heatmapDataUrl,
-          imageFormatFromDataUrl(heatmapDataUrl),
-          16,
-          y,
-          imgW,
-          imgH
-        );
-        y += imgH + 8;
-      } catch {
-        // Skip unreadable heatmap
-      }
+  // Heatmap overlay (when the engine provided one — not a synthetic region)
+  if (heatmapDataUrl) {
+    y = drawSectionTitle(doc, "Evidence Heatmap", y);
+    const imgW = contentWidth;
+    const imgH = 72;
+    y = ensureSpace(doc, y, imgH + 6);
+    try {
+      doc.addImage(
+        heatmapDataUrl,
+        imageFormatFromDataUrl(heatmapDataUrl),
+        16,
+        y,
+        imgW,
+        imgH
+      );
+      y += imgH + 8;
+    } catch {
+      // Skip unreadable heatmap
     }
   }
 
