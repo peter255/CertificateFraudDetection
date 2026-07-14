@@ -225,6 +225,11 @@ function mapPdfStructureFindingsToSignals(
       .filter(Boolean)
   );
   const existingIds = new Set(existing.map((s) => s.id));
+  const existingChecks = new Set(
+    existing
+      .map((s) => (s.check || "").trim().toLowerCase())
+      .filter(Boolean)
+  );
 
   const out: Signal[] = [];
   findings.forEach((item, index) => {
@@ -234,17 +239,26 @@ function mapPdfStructureFindingsToSignals(
     if (!description) return;
 
     const normalized = description.toLowerCase();
-    if (existingDescriptions.has(normalized)) return;
-    if (existingDescriptions.has(`pdf structure / metadata: ${normalized}`)) return;
-
-    const statusRaw = optionalString(item.status)?.toLowerCase();
-    const status: SignalStatus =
-      statusRaw === "pass" || statusRaw === "fail" || statusRaw === "warning"
-        ? statusRaw
-        : "warning";
+    const prefixed = `pdf structure / metadata: ${normalized}`;
+    if (existingDescriptions.has(normalized) || existingDescriptions.has(prefixed)) return;
+    if (existingChecks.has(ruleId.toLowerCase())) return;
 
     const id = `pdf-structure-${ruleId}-${index + 1}`;
     if (existingIds.has(id)) return;
+
+    const statusRaw = optionalString(item.status)?.toLowerCase();
+    const severity = optionalString(item.severity)?.toLowerCase();
+    let status: SignalStatus;
+    if (statusRaw === "pass" || statusRaw === "fail" || statusRaw === "warning") {
+      status = statusRaw;
+    } else if (severity === "critical" || severity === "high") {
+      status = "fail";
+    } else if (severity === "warning" || severity === "medium") {
+      status = "warning";
+    } else {
+      // info / unknown — do not invent elevated risk
+      status = "pass";
+    }
 
     out.push({
       id,
@@ -1030,18 +1044,40 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
 }
 
 function v2SignalStatus(signal: EngineV2Signal): SignalStatus {
+  // Prefer explicit engine status when present (e.g. PDF structure findings).
+  const explicit = (signal as EngineV2Signal & { status?: string | null }).status;
+  if (typeof explicit === "string") {
+    const s = explicit.trim().toLowerCase();
+    if (s === "pass" || s === "fail" || s === "warning") return s;
+  }
+  const extrasStatus =
+    signal.extras && typeof signal.extras === "object"
+      ? (signal.extras as Record<string, unknown>).status
+      : null;
+  if (typeof extrasStatus === "string") {
+    const s = extrasStatus.trim().toLowerCase();
+    if (s === "pass" || s === "fail" || s === "warning") return s;
+  }
+
   const evidence = (signal.evidence_class || "").toLowerCase();
   const severity = (signal.severity || "").toLowerCase();
 
-  if (evidence === "hard" || evidence === "strong" || severity === "critical" || severity === "high") {
+  if (
+    evidence === "hard" ||
+    evidence === "strong" ||
+    severity === "critical" ||
+    severity === "high"
+  ) {
     return "fail";
   }
-  if (evidence === "review" || severity === "medium") {
+  if (
+    evidence === "review" ||
+    severity === "medium" ||
+    severity === "warning"
+  ) {
     return "warning";
   }
-  if (evidence === "context" || severity === "low") {
-    return "warning";
-  }
+  // info / low / context / unknown → do not inflate risk
   return "pass";
 }
 
@@ -1227,9 +1263,8 @@ function mapV2Signals(data: EngineV2ApiResponse): Signal[] {
   const out: Signal[] = [];
 
   combined.forEach((signal, index) => {
-    // Spatial items belong on Document Tamper Map — do not re-list here.
-    if (asBBox(signal.bbox)) return;
-
+    // Keep spatial signals for category risk scoring (Text / Image / File).
+    // The Detailed Findings visual panel still draws from tamperRegions only.
     const key = signal.id || `${signal.type || "signal"}-${index}-${signal.description || ""}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -1246,11 +1281,8 @@ function mapV2Signals(data: EngineV2ApiResponse): Signal[] {
     });
   });
 
-  // Visual evidence with a bbox belongs on Document Tamper Map only.
-  // Surface as Forensic Indicators only when there is no spatial region.
+  // Visual evidence contributes to Image Manipulation risk even when it has a bbox.
   (data.visual_evidence || []).forEach((item, index) => {
-    if (asBBox(item.bbox)) return;
-
     const key = `visual-${item.type || "item"}-${item.field || ""}-${item.description || item.title || index}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -1272,9 +1304,8 @@ function mapV2Signals(data: EngineV2ApiResponse): Signal[] {
       description,
       status: v2SignalStatus({
         severity: item.severity,
-        evidence_class: "review",
       }),
-      layer: optionalString(item.layer),
+      layer: optionalString(item.layer) || "visual",
       severity: optionalString(item.severity),
       confidence:
         typeof item.confidence === "number" && Number.isFinite(item.confidence)

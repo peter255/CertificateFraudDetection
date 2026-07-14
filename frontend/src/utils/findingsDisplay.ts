@@ -8,6 +8,21 @@ import type { Signal, VerificationResult } from "../types/verification";
 export type FindingBucket = "text" | "image" | "pdf";
 
 export function bucketForSignal(signal: Signal): FindingBucket {
+  const layer = (signal.layer || "").toLowerCase();
+  // Prefer explicit engine layer over free-text keyword matching.
+  if (
+    /pdf|structure|metadata|provenance|c2pa|xmp/.test(layer) ||
+    signal.evidenceClass === "pdf_structure"
+  ) {
+    return "pdf";
+  }
+  if (/visual|image|overlay|pixel|heatmap|perceptual|forensic|copy.?move/.test(layer)) {
+    return "image";
+  }
+  if (/ocr|text|font|field|typography|llm.?text/.test(layer)) {
+    return "text";
+  }
+
   const hay = [
     signal.category,
     signal.layer,
@@ -21,17 +36,25 @@ export function bucketForSignal(signal: Signal): FindingBucket {
     .toLowerCase();
 
   if (
-    /\bpdf\b|xmp|incremental|embedded.?font|structure|metadata|provenance|c2pa/.test(
+    /\bpdf\b|xmp|incremental|embedded.?font|pdf.?structure|provenance|c2pa|\bmetadata\b/.test(
       hay
     )
   ) {
     return "pdf";
   }
   if (
-    /\bimage\b|visual|copy.?move|splic|resampl|seal|pixel|heatmap|perceptual|forensic/.test(
+    /\bimage\b|visual|copy.?move|splic|resampl|seal|pixel|heatmap|perceptual/.test(
       hay
     )
   ) {
+    // Field/OCR/text cues stay in text even with a weak visual label.
+    if (
+      /\b(?:ocr|font|text|typography|glyph|field.?valid|holder|issuer|name.?field|date.?field)\b/.test(
+        hay
+      )
+    ) {
+      return "text";
+    }
     return "image";
   }
   return "text";
@@ -102,18 +125,38 @@ export function buildLocalCategorySummary(
   );
 }
 
+/**
+ * Category risk from engine signal statuses/severities — not a fixed badge.
+ * Empty bucket → low score (no evidence of risk in that layer).
+ */
 export function categoryRisk(signals: Signal[]): { score: number } {
   if (!signals.length) {
     return { score: 8 };
   }
-  const fails = signals.filter((s) => s.status === "fail").length;
-  const warns = signals.filter((s) => s.status === "warning").length;
-  const ratio = (fails * 2 + warns) / (signals.length * 2);
-  const score = Math.round(ratio * 100);
-  if (fails > 0 || score >= 55) {
+
+  let failWeight = 0;
+  let warnWeight = 0;
+  for (const s of signals) {
+    const sev = (s.severity || "").toLowerCase();
+    if (s.status === "fail" || sev === "critical" || sev === "high") {
+      failWeight += sev === "critical" ? 2 : 1.4;
+    } else if (
+      s.status === "warning" ||
+      sev === "medium" ||
+      sev === "warning"
+    ) {
+      warnWeight += 1;
+    }
+  }
+
+  const totalWeight = Math.max(signals.length, failWeight + warnWeight);
+  const ratio = (failWeight * 2 + warnWeight) / (totalWeight * 2);
+  const score = Math.round(Math.min(100, ratio * 100));
+
+  if (failWeight > 0 || score >= 55) {
     return { score: Math.max(score, 62) };
   }
-  if (warns > 0 || score >= 25) {
+  if (warnWeight > 0 || score >= 25) {
     return { score: Math.max(score, 35) };
   }
   return { score: Math.min(score, 18) };

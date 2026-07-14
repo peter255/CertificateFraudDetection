@@ -1093,14 +1093,15 @@ export default function ResultsDashboard({
         />
       </Box>
 
-      {/* Actions */}
+      {/* Actions — side by side at page bottom */}
       <Box
         sx={{
           display: "flex",
-          flexDirection: { xs: "column", sm: "row" },
-          gap: 1.25,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 1.5,
           pt: 2.5,
-          flexWrap: "wrap",
+          width: "100%",
         }}
       >
         <Button
@@ -1110,7 +1111,6 @@ export default function ResultsDashboard({
           disabled={downloading}
           sx={{
             flex: 1,
-            minWidth: 180,
             height: 48,
             borderRadius: "8px",
             fontWeight: 700,
@@ -1126,19 +1126,27 @@ export default function ResultsDashboard({
         >
           {downloading ? "PREPARING…" : "EXPORT FULL REPORT"}
         </Button>
+        <Button
+          variant="outlined"
+          onClick={onVerifyAnother}
+          sx={{
+            flex: 1,
+            height: 48,
+            borderRadius: "8px",
+            fontWeight: 700,
+            letterSpacing: "0.04em",
+            color: VS.textSecondary,
+            borderColor: VS.borderStrong,
+            "&:hover": {
+              borderColor: VS.accent,
+              color: VS.accent,
+              backgroundColor: VS.accentDim,
+            },
+          }}
+        >
+          Start New Analysis
+        </Button>
       </Box>
-      <Button
-        variant="text"
-        onClick={onVerifyAnother}
-        sx={{
-          alignSelf: "flex-start",
-          fontSize: "0.8125rem",
-          color: VS.textMuted,
-          mt: 0.5,
-        }}
-      >
-        Start New Analysis
-      </Button>
     </Box>
   );
 }
