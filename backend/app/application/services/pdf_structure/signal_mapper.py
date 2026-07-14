@@ -22,6 +22,9 @@ def findings_to_signal_payloads(
     """
     signals: list[dict[str, Any]] = []
     for index, finding in enumerate(findings):
+        status = "pass" if finding.severity == "info" else finding.status
+        if status not in {"pass", "warning", "fail"}:
+            status = "pass" if finding.severity == "info" else "warning"
         signals.append(
             {
                 "id": f"pdf-structure-{finding.rule_id}-{index}",
@@ -39,7 +42,7 @@ def findings_to_signal_payloads(
                 "extras": {
                     "rule_id": finding.rule_id,
                     "title": finding.title,
-                    "status": finding.status,
+                    "status": status,
                     "evidence": finding.evidence,
                     "recommendation": finding.recommendation,
                 },
@@ -54,7 +57,12 @@ def findings_to_v1_signals(
     """Convert findings into Engine V1 signal shape (category/description/status)."""
     signals: list[dict[str, Any]] = []
     for index, finding in enumerate(findings):
-        status = finding.status if finding.status in {"pass", "warning", "fail"} else "warning"
+        if finding.severity == "info":
+            status = "pass"
+        elif finding.status in {"pass", "warning", "fail"}:
+            status = finding.status
+        else:
+            status = "pass"
         signals.append(
             {
                 "id": f"pdf-structure-{finding.rule_id}-{index}",

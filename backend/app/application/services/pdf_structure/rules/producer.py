@@ -142,12 +142,17 @@ class UnknownProducerRule:
         return finding(
             rule_id=self.rule_id,
             severity="info",
-            status="warning",
+            status="pass",
             title="Unknown PDF producer",
             description=(
-                "The PDF Producer field does not match commonly recognized document generators."
+                "The PDF Producer field does not match commonly recognized document generators. "
+                "An unrecognized producer alone is not a fraud indicator "
+                "(browser/Skia and similar legitimate tooling are treated as known)."
             ),
             evidence={"producer": producer},
-            recommendation="Research the producer string and compare against issuer tooling norms.",
+            recommendation=(
+                "Research the producer string for issuer tooling norms. "
+                "Elevate only when combined with independent forensic indicators."
+            ),
             confidence=0.6,
         )

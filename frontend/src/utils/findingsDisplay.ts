@@ -138,6 +138,8 @@ export function categoryRisk(signals: Signal[]): { score: number } {
   let warnWeight = 0;
   for (const s of signals) {
     const sev = (s.severity || "").toLowerCase();
+    // Informational findings never contribute to category risk.
+    if (sev === "info" || sev === "low" || s.status === "pass") continue;
     if (s.status === "fail" || sev === "critical" || sev === "high") {
       failWeight += sev === "critical" ? 2 : 1.4;
     } else if (
@@ -147,6 +149,10 @@ export function categoryRisk(signals: Signal[]): { score: number } {
     ) {
       warnWeight += 1;
     }
+  }
+
+  if (failWeight === 0 && warnWeight === 0) {
+    return { score: 8 };
   }
 
   const totalWeight = Math.max(signals.length, failWeight + warnWeight);
@@ -162,6 +168,110 @@ export function categoryRisk(signals: Signal[]): { score: number } {
   return { score: Math.min(score, 18) };
 }
 
+/**
+ * Rule IDs / cues that are informational OCR / metadata / tooling notes —
+ * never fraud indicators by themselves (browser/Skia producers included as known).
+ */
+const PDF_INFO_ONLY_RULES = new Set([
+  "ocr_missing_important_fields",
+  "pdf_missing_creation_date",
+  "pdf_missing_producer",
+  "pdf_missing_creator",
+  "pdf_unknown_producer",
+  "pdf_empty_metadata",
+]);
+
+function isPdfInformationalSignal(signal: Signal): boolean {
+  const sev = (signal.severity || "").toLowerCase();
+  if (sev === "info" || sev === "low") return true;
+  if (signal.status === "pass") return true;
+
+  const rule = (signal.check || signal.id || "").toLowerCase();
+  for (const id of PDF_INFO_ONLY_RULES) {
+    if (rule.includes(id)) return true;
+  }
+
+  const hay = [signal.description, signal.fieldLabel, signal.category]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (
+    /ocr missing|missing (creation date|producer|creator)|empty pdf metadata|unknown pdf producer|metadata limitation|extraction failure|not a fraud indicator/.test(
+      hay
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * File Structure score: elevate only when multiple independent forensic
+ * indicators support suspicion. Align with overall CLEAN verdicts.
+ */
+export function pdfStructureCategoryRisk(
+  signals: Signal[],
+  opts?: {
+    verdict?: VerificationResult["verdict"];
+    riskScore?: number;
+    fraudScore?: number | null;
+  }
+): { score: number } {
+  const forensic = signals.filter((s) => !isPdfInformationalSignal(s));
+  if (!forensic.length) {
+    return { score: 8 };
+  }
+
+  let fails = 0;
+  let warns = 0;
+  for (const s of forensic) {
+    const sev = (s.severity || "").toLowerCase();
+    if (s.status === "fail" || sev === "critical" || sev === "high") {
+      fails += 1;
+    } else if (s.status === "warning" || sev === "medium" || sev === "warning") {
+      warns += 1;
+    }
+  }
+
+  const independent = fails + warns;
+  if (independent === 0) {
+    return { score: 8 };
+  }
+
+  // A single supportive warning is not enough for HIGH RISK.
+  if (independent === 1 && fails === 0) {
+    return { score: 28 };
+  }
+  if (independent === 1 && fails > 0) {
+    return { score: 42 };
+  }
+
+  // Two or more independent forensic indicators may elevate.
+  const base = categoryRisk(forensic).score;
+
+  const verdict = opts?.verdict;
+  const riskScore = opts?.riskScore ?? 0;
+  const fraudScore =
+    opts?.fraudScore != null && Number.isFinite(opts.fraudScore)
+      ? opts.fraudScore
+      : null;
+  const cleanOverall =
+    verdict === "authentic" &&
+    riskScore <= 10 &&
+    (fraudScore == null || fraudScore <= 10);
+
+  if (cleanOverall) {
+    // Keep File Structure consistent with a CLEAN overall verdict unless
+    // multiple strong forensic fails are present.
+    if (fails < 2) {
+      return { score: Math.min(base, 18) };
+    }
+    return { score: Math.min(base, 40) };
+  }
+
+  return { score: base };
+}
+
 /** Same overall risk chip as ResultsDashboard (CRITICAL / ELEVATED / LOW). */
 export function overallRiskLabel(level: RiskLevel, score: number): string {
   if (score >= 75 || level === "high") return "CRITICAL";
@@ -175,11 +285,17 @@ export function categoryRiskLabel(signals: Signal[]): {
   score: number;
 } {
   const { score } = categoryRisk(signals);
-  if (!signals.length) {
-    return { label: "LOW RISK", score };
+  if (!signals.length || score <= 18) {
+    return { label: "LOW RISK", score: Math.max(score, signals.length ? score : 8) };
   }
-  const fails = signals.filter((s) => s.status === "fail").length;
-  const warns = signals.filter((s) => s.status === "warning").length;
+  const fails = signals.filter((s) => {
+    if (isPdfInformationalSignal(s)) return false;
+    return s.status === "fail";
+  }).length;
+  const warns = signals.filter((s) => {
+    if (isPdfInformationalSignal(s)) return false;
+    return s.status === "warning";
+  }).length;
   if (fails > 0 || score >= 55) {
     return { label: "HIGH RISK", score };
   }
@@ -187,6 +303,21 @@ export function categoryRiskLabel(signals: Signal[]): {
     return { label: "MEDIUM", score };
   }
   return { label: "LOW RISK", score };
+}
+
+/** File Structure chip — uses multi-indicator scoring. */
+export function pdfStructureRiskLabel(
+  signals: Signal[],
+  opts?: {
+    verdict?: VerificationResult["verdict"];
+    riskScore?: number;
+    fraudScore?: number | null;
+  }
+): { label: string; score: number } {
+  const { score } = pdfStructureCategoryRisk(signals, opts);
+  if (score <= 18) return { label: "LOW RISK", score };
+  if (score >= 55) return { label: "HIGH RISK", score };
+  return { label: "MEDIUM", score };
 }
 
 export function confOf(signal: Signal): number {
@@ -244,13 +375,22 @@ export function computeAnalysisDisplayScores(result: VerificationResult) {
         : null;
 
   const buckets = bucketSignals(result.signals);
+  const pdfScore = pdfStructureCategoryRisk(buckets.pdf, {
+    verdict: result.verdict,
+    riskScore,
+    fraudScore:
+      result.fraudScore != null && Number.isFinite(result.fraudScore)
+        ? result.fraudScore
+        : fraudProbability,
+  }).score;
+
   return {
     riskScore,
     fraudProbability,
     aiProbability,
     textScore: categoryRisk(buckets.text).score,
     imageScore: categoryRisk(buckets.image).score,
-    pdfScore: categoryRisk(buckets.pdf).score,
+    pdfScore,
     buckets,
   };
 }

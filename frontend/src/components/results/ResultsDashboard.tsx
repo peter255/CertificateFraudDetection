@@ -32,6 +32,7 @@ import {
   computeAnalysisDisplayScores,
   confOf,
   overallRiskLabel,
+  pdfStructureRiskLabel,
   verdictFallback,
 } from "../../utils/findingsDisplay";
 import { VS } from "../../theme";
@@ -88,6 +89,19 @@ function categoryRiskUi(
   signals: Signal[]
 ): { label: string; color: string; score: number } {
   const { label, score } = categoryRiskLabel(signals);
+  if (label === "HIGH RISK") {
+    return { label, color: VS.danger, score };
+  }
+  if (label === "MEDIUM") {
+    return { label, color: VS.warning, score };
+  }
+  return { label, color: VS.accent, score };
+}
+
+function riskUiFromLabel(
+  label: string,
+  score: number
+): { label: string; color: string; score: number } {
   if (label === "HIGH RISK") {
     return { label, color: VS.danger, score };
   }
@@ -237,6 +251,7 @@ function FindingCategory({
   signals,
   prefix,
   summary,
+  riskOverride,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -244,8 +259,10 @@ function FindingCategory({
   prefix: string;
   /** Azure OpenAI plain-English summary — shown instead of dumping raw cards when present. */
   summary?: string | null;
+  /** When set (e.g. File Structure), use multi-indicator scoring instead of raw status counts. */
+  riskOverride?: { label: string; color: string; score: number };
 }) {
-  const risk = categoryRiskUi(signals);
+  const risk = riskOverride ?? categoryRiskUi(signals);
   const hasAiSummary = Boolean(summary?.trim());
   const displaySummary = hasAiSummary ? clampSummary(summary!.trim()) : "";
   const items =
@@ -1079,6 +1096,14 @@ export default function ResultsDashboard({
           icon={<InsertDriveFileIcon sx={{ fontSize: 18 }} />}
           signals={buckets.pdf}
           prefix="FILE"
+          riskOverride={(() => {
+            const pdfRisk = pdfStructureRiskLabel(buckets.pdf, {
+              verdict: result.verdict,
+              riskScore,
+              fraudScore: fraudProbability,
+            });
+            return riskUiFromLabel(pdfRisk.label, pdfRisk.score);
+          })()}
           summary={clampSummary(
             result.pdfStructureSummary?.trim() ||
               buildLocalCategorySummary("File structure", buckets.pdf) ||

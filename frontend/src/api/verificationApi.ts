@@ -246,17 +246,19 @@ function mapPdfStructureFindingsToSignals(
     const id = `pdf-structure-${ruleId}-${index + 1}`;
     if (existingIds.has(id)) return;
 
+    // Prefer severity for informational findings — never inflate risk from status alone.
     const statusRaw = optionalString(item.status)?.toLowerCase();
     const severity = optionalString(item.severity)?.toLowerCase();
     let status: SignalStatus;
-    if (statusRaw === "pass" || statusRaw === "fail" || statusRaw === "warning") {
+    if (severity === "info" || severity === "low") {
+      status = "pass";
+    } else if (statusRaw === "pass" || statusRaw === "fail" || statusRaw === "warning") {
       status = statusRaw;
     } else if (severity === "critical" || severity === "high") {
       status = "fail";
     } else if (severity === "warning" || severity === "medium") {
       status = "warning";
     } else {
-      // info / unknown — do not invent elevated risk
       status = "pass";
     }
 
@@ -1044,6 +1046,12 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
 }
 
 function v2SignalStatus(signal: EngineV2Signal): SignalStatus {
+  const severity = (signal.severity || "").toLowerCase();
+  // Informational / low findings never elevate category risk.
+  if (severity === "info" || severity === "low") {
+    return "pass";
+  }
+
   // Prefer explicit engine status when present (e.g. PDF structure findings).
   const explicit = (signal as EngineV2Signal & { status?: string | null }).status;
   if (typeof explicit === "string") {
@@ -1060,7 +1068,6 @@ function v2SignalStatus(signal: EngineV2Signal): SignalStatus {
   }
 
   const evidence = (signal.evidence_class || "").toLowerCase();
-  const severity = (signal.severity || "").toLowerCase();
 
   if (
     evidence === "hard" ||
@@ -1077,7 +1084,6 @@ function v2SignalStatus(signal: EngineV2Signal): SignalStatus {
   ) {
     return "warning";
   }
-  // info / low / context / unknown → do not inflate risk
   return "pass";
 }
 

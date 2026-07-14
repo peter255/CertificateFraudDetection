@@ -210,6 +210,7 @@ def _build_deterministic_summary(findings: list[PdfStructureFinding]) -> str | N
     contextual = [f for f in findings if f.rule_id.startswith("CTX_")]
     critical = [f for f in findings if f.severity == "critical"]
     warnings = [f for f in findings if f.severity == "warning"]
+    infos = [f for f in findings if f.severity == "info"]
     parts: list[str] = []
 
     if contextual:
@@ -230,7 +231,13 @@ def _build_deterministic_summary(findings: list[PdfStructureFinding]) -> str | N
         ][:3]
         if titles:
             parts.append("Warning indicators: " + "; ".join(titles) + ".")
-    if not parts:
+    if not parts and infos:
+        parts.append(
+            "Informational PDF structure notes only (not fraud indicators by themselves): "
+            + "; ".join(item.title for item in infos[:3])
+            + "."
+        )
+    elif not parts:
         parts.append(
             "Informational PDF structure notes: "
             + "; ".join(item.title for item in findings[:3])

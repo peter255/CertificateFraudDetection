@@ -15,12 +15,18 @@ class MissingCreationDateRule:
             return None
         return finding(
             rule_id=self.rule_id,
-            severity="warning",
-            status="warning",
+            severity="info",
+            status="pass",
             title="Missing creation date",
-            description="PDF metadata does not include a creation date.",
+            description=(
+                "PDF metadata does not include a creation date. "
+                "This is a metadata limitation, not a fraud indicator by itself."
+            ),
             evidence={"creation_date": None, "is_pdf": True},
-            recommendation="Missing creation metadata can indicate stripping or non-standard export tooling.",
+            recommendation=(
+                "Note the missing creation timestamp for provenance context only; "
+                "do not treat it as evidence of manipulation on its own."
+            ),
             confidence=0.8,
         )
 
@@ -35,12 +41,18 @@ class MissingProducerRule:
             return None
         return finding(
             rule_id=self.rule_id,
-            severity="warning",
-            status="warning",
+            severity="info",
+            status="pass",
             title="Missing producer",
-            description="PDF metadata does not include a Producer field.",
+            description=(
+                "PDF metadata does not include a Producer field. "
+                "Missing producer metadata alone is not a fraud indicator."
+            ),
             evidence={"producer": None},
-            recommendation="Note the absence of producer software for provenance review.",
+            recommendation=(
+                "Record the absence for provenance review; elevate only when "
+                "combined with independent forensic indicators."
+            ),
             confidence=0.75,
         )
 
@@ -56,9 +68,12 @@ class MissingCreatorRule:
         return finding(
             rule_id=self.rule_id,
             severity="info",
-            status="warning",
+            status="pass",
             title="Missing creator",
-            description="PDF metadata does not include a Creator field.",
+            description=(
+                "PDF metadata does not include a Creator field. "
+                "Creator absence alone is not conclusive."
+            ),
             evidence={"creator": None},
             recommendation="Creator absence alone is not conclusive; combine with other indicators.",
             confidence=0.65,
@@ -86,19 +101,23 @@ class EmptyMetadataRule:
 
         return finding(
             rule_id=self.rule_id,
-            severity="warning",
-            status="warning",
+            severity="info",
+            status="pass",
             title="Empty PDF metadata",
             description=(
                 "Core PDF metadata fields are empty or absent. "
-                "This can indicate metadata stripping or generation by atypical tooling."
+                "This can indicate metadata stripping or atypical tooling, "
+                "but empty metadata alone is not a fraud verdict."
             ),
             evidence={
                 "page_count": context.metadata.page_count,
                 "pdf_version": context.metadata.pdf_version,
                 "document_properties": context.metadata.document_properties,
             },
-            recommendation="Treat empty metadata as a supportive warning, not a fraud verdict.",
+            recommendation=(
+                "Treat empty metadata as an informational note. Elevate risk only when "
+                "independent forensic indicators corroborate suspicion."
+            ),
             confidence=0.8,
         )
 
@@ -139,6 +158,7 @@ class MetadataInconsistencyRule:
         if not issues:
             return None
 
+        # Parse / property mismatches are supportive forensic signals, not auto-fraud.
         return finding(
             rule_id=self.rule_id,
             severity="warning",

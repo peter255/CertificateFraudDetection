@@ -43,7 +43,6 @@ class OcrMissingImportantFieldsRule:
                 missing = [item for item in missing if item not in {"Award Date", "Issue Date"}]
                 missing.append("Award/Issue Date")
 
-        # If OCR produced no text at all, elevate severity.
         has_any_text = bool(
             (context.ocr.detected_text and context.ocr.detected_text.strip())
             or present
@@ -53,28 +52,34 @@ class OcrMissingImportantFieldsRule:
         if not missing:
             return None
 
-        # Only flag when OCR ran with some content, or when completely empty.
-        severity = "critical" if not has_any_text else "warning"
-        status = "fail" if not has_any_text else "warning"
+        # OCR gaps / extraction failures are informational only — never fraud by themselves.
+        if not has_any_text:
+            description = (
+                "Azure Document Intelligence did not extract readable certificate text. "
+                "OCR extraction failure alone is not a fraud indicator."
+            )
+        else:
+            description = (
+                "Azure Document Intelligence did not extract one or more certificate fields "
+                f"({', '.join(missing)}). Missing OCR fields alone are not fraud indicators."
+            )
 
         return finding(
             rule_id=self.rule_id,
-            severity=severity,
-            status=status,
+            severity="info",
+            status="pass",
             title="OCR missing important certificate fields",
-            description=(
-                "Azure Document Intelligence did not extract one or more important certificate fields: "
-                + ", ".join(missing)
-                + "."
-            ),
+            description=description,
             evidence={
                 "missing_fields": missing,
                 "present_fields": present,
                 "has_detected_text": bool(context.ocr.detected_text),
+                "ocr_extraction_failed": not has_any_text,
             },
             recommendation=(
-                "Manually verify whether the fields are present on the document and "
-                "whether OCR quality or layout prevented extraction."
+                "Manually verify whether the fields are present on the document. "
+                "Treat OCR gaps as extraction limitations unless corroborated by "
+                "independent forensic indicators."
             ),
-            confidence=0.8 if has_any_text else 0.9,
+            confidence=0.75 if has_any_text else 0.7,
         )

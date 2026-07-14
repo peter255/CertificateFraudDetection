@@ -23,6 +23,7 @@ import {
   computeAnalysisDisplayScores,
   confOf,
   overallRiskLabel,
+  pdfStructureRiskLabel,
   signalDescription,
   signalTitle,
   verdictFallback,
@@ -349,7 +350,11 @@ export async function downloadVerificationReport(
   );
   const textRisk = categoryRiskLabel(scores.buckets.text);
   const imageRisk = categoryRiskLabel(scores.buckets.image);
-  const pdfRisk = categoryRiskLabel(scores.buckets.pdf);
+  const pdfRisk = pdfStructureRiskLabel(scores.buckets.pdf, {
+    verdict: result.verdict,
+    riskScore: scores.riskScore,
+    fraudScore: scores.fraudProbability,
+  });
 
   const consolidated =
     clampSummary((result.aiSummary || "").trim()) ||
