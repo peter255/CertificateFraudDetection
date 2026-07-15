@@ -16,7 +16,7 @@ interface UploadZoneProps {
 }
 
 function CloudUploadIcon({ active }: { active: boolean }) {
-  const stroke = active ? VS.accent : "#C5CCD3";
+  const stroke = active ? VS.accent : VS.textMuted;
   return (
     <svg width="40" height="40" viewBox="0 0 48 48" fill="none">
       <path
@@ -102,10 +102,10 @@ export default function UploadZone({ onFileSelected }: UploadZoneProps) {
           cursor: "pointer",
           borderRadius: "12px",
           border: "1.5px dashed",
-          borderColor: isDragging ? VS.accent : "rgba(255,255,255,0.18)",
+          borderColor: isDragging ? VS.accent : VS.borderStrong,
           backgroundColor: isDragging
             ? VS.accentDim
-            : "rgba(255,255,255,0.02)",
+            : VS.bgCard,
           px: { xs: 3, sm: 5 },
           py: { xs: 5, sm: 6 },
           display: "flex",
@@ -138,15 +138,12 @@ export default function UploadZone({ onFileSelected }: UploadZoneProps) {
           </Typography>
           <Typography
             sx={{
-              fontSize: "0.6875rem",
+              fontSize: "0.75rem",
               fontWeight: 500,
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
               color: VS.textMuted,
-              fontFamily: VS.mono,
             }}
           >
-            MAX 50MB · ENCRYPTED IN TRANSIT
+            Max 50MB · Encrypted in transit
           </Typography>
         </Box>
       </Box>

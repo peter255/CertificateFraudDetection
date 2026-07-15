@@ -33,16 +33,16 @@ interface BatchVerificationPageProps {
   onBack: () => void;
 }
 
-const STATUS_META: Record<
-  BatchJob["status"],
-  { color: string; label: string }
-> = {
-  pending: { color: VS.textMuted, label: "PENDING" },
-  running: { color: VS.accent, label: "PROCESSING" },
-  done: { color: VS.success, label: "COMPLETE" },
-  error: { color: VS.danger, label: "ERROR" },
-  cancelled: { color: VS.textMuted, label: "CANCELLED" },
-};
+function getStatusMeta(status: BatchJob["status"]): { color: string; label: string } {
+  const map: Record<BatchJob["status"], { color: string; label: string }> = {
+    pending: { color: VS.textMuted, label: "PENDING" },
+    running: { color: VS.accent, label: "PROCESSING" },
+    done: { color: VS.success, label: "COMPLETE" },
+    error: { color: VS.danger, label: "ERROR" },
+    cancelled: { color: VS.textMuted, label: "CANCELLED" },
+  };
+  return map[status];
+}
 
 function formatEta(ms: number | null): string {
   if (ms == null || !Number.isFinite(ms) || ms <= 0) return "—";
@@ -66,7 +66,7 @@ function formatBytes(bytes: number): string {
 }
 
 function StatusIcon({ status }: { status: BatchJob["status"] }) {
-  const color = STATUS_META[status].color;
+  const color = getStatusMeta(status).color;
   if (status === "done") {
     return (
       <Box
@@ -81,7 +81,7 @@ function StatusIcon({ status }: { status: BatchJob["status"] }) {
           flexShrink: 0,
         }}
       >
-        <CheckRoundedIcon sx={{ fontSize: 14, color: VS.bg }} />
+        <CheckRoundedIcon sx={{ fontSize: 14, color: VS.onAccent }} />
       </Box>
     );
   }
@@ -317,8 +317,8 @@ export default function BatchVerificationPage({
           p: { xs: 3, sm: 4 },
           borderRadius: "12px",
           border: "1.5px dashed",
-          borderColor: dragging ? VS.accent : "rgba(255,255,255,0.16)",
-          backgroundColor: dragging ? VS.accentDim : "rgba(255,255,255,0.02)",
+          borderColor: dragging ? VS.accent : "rgba(35,37,40,0.16)",
+          backgroundColor: dragging ? VS.accentDim : "rgba(35,37,40,0.03)",
           mb: 2.5,
           textAlign: "center",
           cursor:
@@ -394,7 +394,7 @@ export default function BatchVerificationPage({
             height: 40,
             borderRadius: "8px",
             fontWeight: 700,
-            boxShadow: `0 0 16px ${VS.accentGlow}`,
+            
           }}
         >
           Start batch
@@ -508,11 +508,11 @@ export default function BatchVerificationPage({
             sx={{
               height: 4,
               borderRadius: 2,
-              backgroundColor: "rgba(255,255,255,0.08)",
+              backgroundColor: "rgba(35,37,40,0.08)",
               "& .MuiLinearProgress-bar": {
                 borderRadius: 2,
                 backgroundColor: VS.accent,
-                boxShadow: `0 0 10px ${VS.accentGlow}`,
+                
               },
             }}
           />
@@ -538,7 +538,7 @@ export default function BatchVerificationPage({
             px: 2.25,
             py: 1.35,
             borderBottom: `1px solid ${VS.border}`,
-            backgroundColor: "rgba(255,255,255,0.02)",
+            backgroundColor: "rgba(35,37,40,0.03)",
           }}
         >
           {["FILE", "STATUS", "VERDICT", "CONF.", "AI PROB.", "DURATION", "ERROR"].map(
@@ -573,7 +573,7 @@ export default function BatchVerificationPage({
           </Box>
         ) : (
           jobs.map((job) => {
-            const meta = STATUS_META[job.status];
+            const meta = getStatusMeta(job.status);
             const clickable = job.status === "done" && Boolean(job.result);
             const active = selectedId === job.id;
 
@@ -598,14 +598,14 @@ export default function BatchVerificationPage({
                   backgroundColor: active
                     ? VS.accentDim
                     : job.status === "running"
-                      ? "rgba(0,255,163,0.04)"
+                      ? "rgba(146,114,42,0.06)"
                       : "transparent",
                   borderLeft: active
                     ? `3px solid ${VS.accent}`
                     : "3px solid transparent",
                   transition: "background-color 150ms ease",
                   "&:hover": clickable
-                    ? { backgroundColor: "rgba(0,255,163,0.08)" }
+                    ? { backgroundColor: "rgba(146,114,42,0.1)" }
                     : undefined,
                 }}
               >

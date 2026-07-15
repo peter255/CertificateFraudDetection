@@ -1,5 +1,5 @@
 /**
- * Shared visual shell for VERISCAN investigation dashboard sections.
+ * Shared visual shell for UAE Design System–aligned dashboard sections.
  */
 
 import Box from "@mui/material/Box";
@@ -13,27 +13,67 @@ import {
 } from "../../../branding/constants";
 
 export const DASHBOARD = {
-  accent: VS.accent,
-  accentGlow: VS.accentDim,
-  navy: VS.bgElevated,
-  navyMid: VS.bgCard,
-  slate: VS.textSecondary,
-  cardBg: VS.bgCard,
-  panelBg: VS.bgPanel,
-  border: VS.border,
-  borderLight: VS.border,
-  textPrimary: VS.text,
-  textSecondary: VS.textSecondary,
-  textMuted: VS.textMuted,
-  success: VS.success,
-  warning: VS.warning,
-  danger: VS.danger,
-  cardShadow: "none",
-  cardShadowHover: `0 0 24px ${VS.accentGlow}`,
-  headerGradient: `linear-gradient(180deg, ${VS.bgElevated} 0%, ${VS.bgCard} 100%)`,
-  accentStripe: VS.accent,
-  mono: VS.mono,
-} as const;
+  get accent() {
+    return VS.accent;
+  },
+  get accentGlow() {
+    return VS.accentDim;
+  },
+  get navy() {
+    return VS.bgElevated;
+  },
+  get navyMid() {
+    return VS.bgCard;
+  },
+  get slate() {
+    return VS.textSecondary;
+  },
+  get cardBg() {
+    return VS.bgCard;
+  },
+  get panelBg() {
+    return VS.bgPanel;
+  },
+  get border() {
+    return VS.border;
+  },
+  get borderLight() {
+    return VS.border;
+  },
+  get textPrimary() {
+    return VS.text;
+  },
+  get textSecondary() {
+    return VS.textSecondary;
+  },
+  get textMuted() {
+    return VS.textMuted;
+  },
+  get success() {
+    return VS.success;
+  },
+  get warning() {
+    return VS.warning;
+  },
+  get danger() {
+    return VS.danger;
+  },
+  get cardShadow() {
+    return "none";
+  },
+  get cardShadowHover() {
+    return `0 2px 12px ${VS.accentGlow}`;
+  },
+  get headerGradient() {
+    return `linear-gradient(180deg, ${VS.bgElevated} 0%, ${VS.bgCard} 100%)`;
+  },
+  get accentStripe() {
+    return VS.accent;
+  },
+  get mono() {
+    return VS.mono;
+  },
+};
 
 interface SectionShellProps {
   title: string;
@@ -61,7 +101,7 @@ export function SectionShell({
       sx={{
         backgroundColor: DASHBOARD.cardBg,
         border: `1px solid ${DASHBOARD.border}`,
-        borderRadius: "12px",
+        borderRadius: "8px",
         overflow: "hidden",
         boxShadow: "none",
         position: "relative",
@@ -83,7 +123,7 @@ export function SectionShell({
 
       <Box
         sx={{
-          backgroundColor: isPrimary ? "rgba(255,255,255,0.02)" : DASHBOARD.cardBg,
+          backgroundColor: isPrimary ? VS.accentDim : VS.bgPanel,
           borderBottom: `1px solid ${DASHBOARD.border}`,
           display: "flex",
           alignItems: "center",
@@ -98,7 +138,7 @@ export function SectionShell({
             width: 28,
             height: 28,
             borderRadius: "7px",
-            backgroundColor: isPrimary ? `${accentColor}22` : "rgba(255,255,255,0.04)",
+            backgroundColor: isPrimary ? `${accentColor}22` : "rgba(35,37,40,0.04)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -110,10 +150,10 @@ export function SectionShell({
         </Box>
         <Typography
           sx={{
-            fontSize: "0.6875rem",
+            fontFamily: VS.heading,
+            fontSize: "0.8125rem",
             fontWeight: 600,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
+            letterSpacing: "0.01em",
             color: DASHBOARD.textPrimary,
             flex: 1,
             lineHeight: 1.3,
@@ -138,7 +178,7 @@ export function SectionShell({
 
 export function SectionBadge({
   children,
-  color = "rgba(255,255,255,0.06)",
+  color = "rgba(35,37,40,0.06)",
   textColor,
 }: {
   children: ReactNode;
@@ -158,10 +198,8 @@ export function SectionBadge({
     >
       <Typography
         sx={{
-          fontSize: "0.625rem",
+          fontSize: "0.75rem",
           fontWeight: 600,
-          letterSpacing: "0.05em",
-          textTransform: "uppercase",
           color: textColor ?? DASHBOARD.textSecondary,
           lineHeight: 1.2,
         }}
@@ -209,7 +247,7 @@ export function InvestigationBanner({
     <Box
       sx={{
         backgroundColor: DASHBOARD.navy,
-        borderRadius: "12px",
+        borderRadius: "8px",
         border: `1px solid ${DASHBOARD.border}`,
         overflow: "hidden",
         position: "relative",
@@ -218,7 +256,7 @@ export function InvestigationBanner({
       <Box
         sx={{
           height: 3,
-          background: `linear-gradient(90deg, ${VS.accent} 0%, rgba(255,255,255,0.2) 100%)`,
+          background: `linear-gradient(90deg, ${VS.accent} 0%, ${VS.brandGold} 100%)`,
         }}
       />
 
@@ -236,12 +274,9 @@ export function InvestigationBanner({
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography
             sx={{
-              fontSize: "0.625rem",
+              fontSize: "0.75rem",
               fontWeight: 600,
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
               color: VS.accent,
-              fontFamily: VS.mono,
               mb: 0.75,
             }}
           >
@@ -249,10 +284,11 @@ export function InvestigationBanner({
           </Typography>
           <Typography
             sx={{
+              fontFamily: VS.heading,
               fontSize: { xs: "1.25rem", sm: "1.5rem" },
               fontWeight: 700,
-              letterSpacing: "-0.02em",
-              color: "#FFFFFF",
+              letterSpacing: "-0.01em",
+              color: VS.text,
               lineHeight: 1.25,
               mb: 0.5,
             }}
@@ -262,13 +298,12 @@ export function InvestigationBanner({
           <Typography
             sx={{
               fontSize: "0.8125rem",
-              color: "rgba(255,255,255,0.55)",
+              color: VS.textSecondary,
               lineHeight: 1.45,
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
               maxWidth: { xs: "100%", sm: 560 },
-              fontFamily: VS.mono,
             }}
           >
             {fileName}
@@ -300,11 +335,9 @@ export function InvestigationBanner({
           <Box key={row.label} sx={{ minWidth: 0 }}>
             <Typography
               sx={{
-                fontSize: "0.5625rem",
+                fontSize: "0.6875rem",
                 fontWeight: 600,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "rgba(255,255,255,0.42)",
+                color: VS.textMuted,
                 mb: 0.4,
               }}
             >
@@ -314,13 +347,11 @@ export function InvestigationBanner({
               sx={{
                 fontSize: "0.8125rem",
                 fontWeight: 600,
-                color: "rgba(255,255,255,0.88)",
+                color: VS.text,
                 lineHeight: 1.35,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
-                fontFamily:
-                  row.label === "Verification ID" ? VS.mono : "inherit",
               }}
               title={row.value}
             >

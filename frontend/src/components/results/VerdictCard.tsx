@@ -12,6 +12,7 @@ import CancelIcon from "@mui/icons-material/Cancel";
 import type { VerdictType, RiskLevel } from "../../types/verification";
 import { CircularGauge } from "./shared/dashboardCharts";
 import { DASHBOARD, SectionBadge, SectionShell } from "./shared/dashboardShell";
+import { VS } from "../../theme";
 
 interface VerdictConfig {
   label: string;
@@ -21,36 +22,40 @@ interface VerdictConfig {
   Icon: typeof CheckCircleIcon;
 }
 
-const VERDICT_CONFIG: Record<VerdictType, VerdictConfig> = {
-  authentic: {
-    label: "Trusted",
-    description: "Analysis supports authenticity.",
-    color: "#00E676",
-    bgGradient: "linear-gradient(180deg, rgba(0,230,118,0.08) 0%, #14181b 100%)",
-    Icon: CheckCircleIcon,
-  },
-  suspicious: {
-    label: "Suspicious",
-    description: "Result is uncertain — manual review recommended.",
-    color: "#F5A524",
-    bgGradient: "linear-gradient(180deg, rgba(245,165,36,0.08) 0%, #14181b 100%)",
-    Icon: WarningAmberIcon,
-  },
-  fraudulent: {
-    label: "Potentially Fraudulent",
-    description: "Strong indicators of tampering or forgery.",
-    color: "#FF4B6B",
-    bgGradient: "linear-gradient(180deg, rgba(255,75,107,0.08) 0%, #14181b 100%)",
-    Icon: CancelIcon,
-  },
-};
+function getVerdictConfig(verdict: VerdictType): VerdictConfig {
+  const map: Record<VerdictType, VerdictConfig> = {
+    authentic: {
+      label: "Trusted",
+      description: "Analysis supports authenticity.",
+      color: VS.success,
+      bgGradient: `linear-gradient(180deg, ${VS.successDim} 0%, ${VS.bgCard} 100%)`,
+      Icon: CheckCircleIcon,
+    },
+    suspicious: {
+      label: "Suspicious",
+      description: "Result is uncertain — manual review recommended.",
+      color: VS.warning,
+      bgGradient: `linear-gradient(180deg, ${VS.warningDim} 0%, ${VS.bgCard} 100%)`,
+      Icon: WarningAmberIcon,
+    },
+    fraudulent: {
+      label: "Potentially Fraudulent",
+      description: "Strong indicators of tampering or forgery.",
+      color: VS.danger,
+      bgGradient: `linear-gradient(180deg, ${VS.dangerDim} 0%, ${VS.bgCard} 100%)`,
+      Icon: CancelIcon,
+    },
+  };
+  return map[verdict];
+}
 
 const RISK_LABEL: Record<RiskLevel, string> = { low: "Low", medium: "Medium", high: "High" };
-const RISK_COLOR: Record<RiskLevel, string> = {
-  low: "#00E676",
-  medium: "#F5A524",
-  high: "#FF4B6B",
-};
+
+function riskColor(level: RiskLevel): string {
+  if (level === "low") return VS.success;
+  if (level === "medium") return VS.warning;
+  return VS.danger;
+}
 
 const SCORE_COPY = {
   modelConfidence: "The confidence level of the AI model in its final assessment.",
@@ -77,10 +82,10 @@ export default function VerdictCard({
   riskLevel,
   riskScore = null,
 }: VerdictCardProps) {
-  const cfg = VERDICT_CONFIG[verdict];
+  const cfg = getVerdictConfig(verdict);
   const { Icon } = cfg;
-  const riskColor = RISK_COLOR[riskLevel];
-  const trustColor = verdict === "authentic" ? cfg.color : riskColor;
+  const riskColorValue = riskColor(riskLevel);
+  const trustColor = verdict === "authentic" ? cfg.color : riskColorValue;
 
   const showConfidence = confidence != null && Number.isFinite(confidence);
   const showTrustScore = trustScore != null && Number.isFinite(trustScore);
@@ -96,8 +101,8 @@ export default function VerdictCard({
       accentColor={cfg.color}
       emphasis="primary"
       badge={
-        <SectionBadge color={`${riskColor}18`}>
-          <Box component="span" sx={{ color: riskColor }}>
+        <SectionBadge color={`${riskColorValue}18`}>
+          <Box component="span" sx={{ color: riskColorValue }}>
             {RISK_LABEL[riskLevel]} Risk
           </Box>
         </SectionBadge>
@@ -163,7 +168,7 @@ export default function VerdictCard({
             justifyContent: "center",
             gap: { xs: 2.5, sm: 4 },
             flexWrap: "wrap",
-            backgroundColor: "#FAFBFD",
+            backgroundColor: VS.bgPanel,
           }}
         >
           {showConfidence && (
@@ -194,7 +199,7 @@ export default function VerdictCard({
               label="Risk Score"
               sublabel=" / 100"
               description={SCORE_COPY.riskScore}
-              color={riskColor}
+              color={riskColorValue}
               size={gaugeSize}
             />
           )}

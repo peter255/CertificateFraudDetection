@@ -110,7 +110,7 @@ export default function GovernmentBrand({
                 fontWeight: 700,
                 letterSpacing: "0.06em",
                 textTransform: "uppercase",
-                color: isDark ? "rgba(255,255,255,0.85)" : "#0F2942",
+                color: isDark ? "rgba(255,255,255,0.85)" : "#232528",
                 lineHeight: 1.15,
                 textAlign: "center",
                 px: 0.5,
@@ -129,7 +129,7 @@ export default function GovernmentBrand({
             fontWeight: 600,
             letterSpacing: "0.08em",
             textTransform: "uppercase",
-            color: isDark ? "rgba(255,255,255,0.55)" : "#64748B",
+            color: isDark ? "rgba(255,255,255,0.55)" : "#5A5E63",
             lineHeight: 1.2,
             display: { xs: "none", sm: "block" },
           }}

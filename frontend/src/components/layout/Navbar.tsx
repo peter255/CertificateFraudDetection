@@ -1,12 +1,16 @@
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
+import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import GovernmentBrand from "../branding/GovernmentBrand";
 import {
   PRODUCT_NAME,
   PRODUCT_TAGLINE,
 } from "../../branding/constants";
-import { VS } from "../../theme";
+import { useThemeMode } from "../../providers/ThemeModeProvider";
 
 interface NavbarProps {
   activeView?: "single" | "batch";
@@ -23,6 +27,8 @@ export default function Navbar({
   scanId,
   pathLabel = "/",
 }: NavbarProps) {
+  const { vs, isDark, toggleMode } = useThemeMode();
+
   return (
     <Box
       component="header"
@@ -30,9 +36,11 @@ export default function Navbar({
         position: "sticky",
         top: 0,
         zIndex: 100,
-        backgroundColor: "rgba(10,12,13,0.92)",
+        backgroundColor: isDark
+          ? "rgba(10,12,13,0.92)"
+          : "rgba(255,255,255,0.92)",
         backdropFilter: "blur(12px)",
-        borderBottom: `1px solid ${VS.border}`,
+        borderBottom: `1px solid ${vs.border}`,
       }}
     >
       <Box
@@ -54,13 +62,13 @@ export default function Navbar({
             minWidth: 0,
           }}
         >
-          <GovernmentBrand size="md" variant="dark" />
+          <GovernmentBrand size="md" variant={isDark ? "dark" : "light"} />
 
           <Box
             sx={{
               width: "1px",
               alignSelf: "stretch",
-              backgroundColor: VS.border,
+              backgroundColor: vs.border,
               display: { xs: "none", sm: "block" },
               my: 0.5,
             }}
@@ -69,10 +77,11 @@ export default function Navbar({
           <Box sx={{ minWidth: 0, display: { xs: "none", sm: "block" } }}>
             <Typography
               sx={{
+                fontFamily: vs.heading,
                 fontSize: "0.9375rem",
                 fontWeight: 700,
-                color: VS.text,
-                letterSpacing: "-0.02em",
+                color: vs.text,
+                letterSpacing: "-0.01em",
                 lineHeight: 1.2,
               }}
             >
@@ -82,7 +91,7 @@ export default function Navbar({
               sx={{
                 fontSize: "0.6875rem",
                 fontWeight: 500,
-                color: VS.textMuted,
+                color: vs.textMuted,
                 lineHeight: 1.35,
                 mt: 0.25,
               }}
@@ -105,7 +114,6 @@ export default function Navbar({
               display: { xs: "none", md: "flex" },
               alignItems: "center",
               gap: 2.5,
-              fontFamily: VS.mono,
             }}
           >
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
@@ -114,30 +122,25 @@ export default function Navbar({
                   width: 7,
                   height: 7,
                   borderRadius: "50%",
-                  backgroundColor: VS.accent,
-                  boxShadow: `0 0 8px ${VS.accentGlow}`,
+                  backgroundColor: vs.success,
                 }}
               />
               <Typography
                 sx={{
-                  fontSize: "0.6875rem",
+                  fontSize: "0.75rem",
                   fontWeight: 500,
-                  letterSpacing: "0.06em",
-                  color: VS.accent,
-                  fontFamily: VS.mono,
+                  color: vs.success,
                 }}
               >
-                SYSTEM ONLINE
+                System online
               </Typography>
             </Box>
 
             {scanId && (
               <Typography
                 sx={{
-                  fontSize: "0.6875rem",
-                  color: VS.textMuted,
-                  fontFamily: VS.mono,
-                  letterSpacing: "0.02em",
+                  fontSize: "0.75rem",
+                  color: vs.textMuted,
                 }}
               >
                 ID: {scanId}
@@ -146,13 +149,11 @@ export default function Navbar({
 
             <Typography
               sx={{
-                fontSize: "0.6875rem",
-                color: VS.textMuted,
-                fontFamily: VS.mono,
-                letterSpacing: "0.02em",
+                fontSize: "0.75rem",
+                color: vs.textMuted,
               }}
             >
-              PATH: {pathLabel}
+              Path: {pathLabel}
             </Typography>
           </Box>
 
@@ -166,9 +167,9 @@ export default function Navbar({
                   px: 1.25,
                   fontSize: "0.75rem",
                   fontWeight: 600,
-                  color: activeView === "single" ? VS.accent : VS.textMuted,
+                  color: activeView === "single" ? vs.accent : vs.textMuted,
                   backgroundColor:
-                    activeView === "single" ? VS.accentDim : "transparent",
+                    activeView === "single" ? vs.accentDim : "transparent",
                 }}
               >
                 Single
@@ -181,15 +182,40 @@ export default function Navbar({
                   px: 1.25,
                   fontSize: "0.75rem",
                   fontWeight: 600,
-                  color: activeView === "batch" ? VS.accent : VS.textMuted,
+                  color: activeView === "batch" ? vs.accent : vs.textMuted,
                   backgroundColor:
-                    activeView === "batch" ? VS.accentDim : "transparent",
+                    activeView === "batch" ? vs.accentDim : "transparent",
                 }}
               >
                 Batch
               </Button>
             </Box>
           )}
+
+          <Tooltip title={isDark ? "Switch to UAE light theme" : "Switch to dark theme"}>
+            <IconButton
+              size="small"
+              onClick={toggleMode}
+              aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+              sx={{
+                color: vs.textSecondary,
+                border: `1px solid ${vs.border}`,
+                borderRadius: "8px",
+                width: 36,
+                height: 36,
+                "&:hover": {
+                  backgroundColor: vs.accentDim,
+                  color: vs.accent,
+                },
+              }}
+            >
+              {isDark ? (
+                <LightModeOutlinedIcon sx={{ fontSize: 18 }} />
+              ) : (
+                <DarkModeOutlinedIcon sx={{ fontSize: 18 }} />
+              )}
+            </IconButton>
+          </Tooltip>
 
           <Button
             variant="contained"
@@ -199,9 +225,8 @@ export default function Navbar({
               height: 36,
               px: 2,
               borderRadius: "8px",
-              fontWeight: 700,
+              fontWeight: 600,
               fontSize: "0.8125rem",
-              boxShadow: `0 0 16px ${VS.accentGlow}`,
             }}
           >
             New Analysis

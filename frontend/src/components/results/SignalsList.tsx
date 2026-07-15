@@ -12,6 +12,7 @@ import CancelIcon from "@mui/icons-material/Cancel";
 import type { Signal, SignalStatus } from "../../types/verification";
 import { BarChartRow } from "./shared/dashboardCharts";
 import { DASHBOARD, SectionBadge, SectionShell } from "./shared/dashboardShell";
+import { VS } from "../../theme";
 
 interface StatusStyle {
   label: string;
@@ -21,29 +22,32 @@ interface StatusStyle {
   sortOrder: number;
 }
 
-const STATUS_STYLE: Record<SignalStatus, StatusStyle> = {
-  fail: {
-    label: "Failed",
-    color: "#FF4B6B",
-    bgColor: "rgba(255,75,107,0.12)",
-    Icon: CancelIcon,
-    sortOrder: 0,
-  },
-  warning: {
-    label: "Warning",
-    color: "#F5A524",
-    bgColor: "rgba(245,165,36,0.12)",
-    Icon: WarningAmberIcon,
-    sortOrder: 1,
-  },
-  pass: {
-    label: "Passed",
-    color: "#00E676",
-    bgColor: "rgba(0,230,118,0.12)",
-    Icon: CheckCircleIcon,
-    sortOrder: 2,
-  },
-};
+function getStatusStyle(status: SignalStatus): StatusStyle {
+  const map: Record<SignalStatus, StatusStyle> = {
+    fail: {
+      label: "Failed",
+      color: VS.danger,
+      bgColor: VS.dangerDim,
+      Icon: CancelIcon,
+      sortOrder: 0,
+    },
+    warning: {
+      label: "Warning",
+      color: VS.warning,
+      bgColor: VS.warningDim,
+      Icon: WarningAmberIcon,
+      sortOrder: 1,
+    },
+    pass: {
+      label: "Passed",
+      color: VS.success,
+      bgColor: VS.successDim,
+      Icon: CheckCircleIcon,
+      sortOrder: 2,
+    },
+  };
+  return map[status];
+}
 
 const PLACEHOLDER_TEXT = new Set([
   "",
@@ -111,7 +115,7 @@ function groupSignals(signals: Signal[]): SignalGroup[] {
     groups.set(category, list);
   }
 
-  const ranked = (status: SignalStatus) => STATUS_STYLE[status].sortOrder;
+  const ranked = (status: SignalStatus) => getStatusStyle(status).sortOrder;
 
   return [...groups.entries()]
     .map(([category, items]) => {
@@ -145,7 +149,7 @@ function DistributionPanel({ signals }: { signals: Signal[] }) {
         px: { xs: 2, sm: 2.75 },
         py: { xs: 2, sm: 2.5 },
         borderBottom: `1px solid ${DASHBOARD.borderLight}`,
-        backgroundColor: "#F8FAFC",
+        backgroundColor: DASHBOARD.panelBg,
       }}
     >
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
@@ -154,10 +158,10 @@ function DistributionPanel({ signals }: { signals: Signal[] }) {
           .map((status) => (
             <BarChartRow
               key={status}
-              label={STATUS_STYLE[status].label}
+              label={getStatusStyle(status).label}
               value={counts[status]}
               max={total}
-              color={STATUS_STYLE[status].color}
+              color={getStatusStyle(status).color}
               count={counts[status]}
             />
           ))}
@@ -167,7 +171,7 @@ function DistributionPanel({ signals }: { signals: Signal[] }) {
 }
 
 function SignalRow({ signal, index }: { signal: Signal; index: number }) {
-  const s = STATUS_STYLE[signal.status];
+  const s = getStatusStyle(signal.status);
   const { Icon } = s;
 
   return (
@@ -260,7 +264,7 @@ function SignalRow({ signal, index }: { signal: Signal; index: number }) {
 }
 
 function CategoryGroup({ group, startIndex }: { group: SignalGroup; startIndex: number }) {
-  const style = STATUS_STYLE[group.worstStatus];
+  const style = getStatusStyle(group.worstStatus);
 
   return (
     <Box sx={{ px: { xs: 2, sm: 2.75 }, mb: 2 }}>
@@ -297,7 +301,7 @@ function CategoryGroup({ group, startIndex }: { group: SignalGroup; startIndex: 
             textTransform: "uppercase",
           }}
         >
-          {STATUS_STYLE[group.worstStatus].label}
+          {getStatusStyle(group.worstStatus).label}
         </Box>
       </Box>
       {group.signals.map((signal, i) => (

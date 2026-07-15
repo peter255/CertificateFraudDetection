@@ -5,11 +5,12 @@ import Footer from "./components/layout/Footer";
 import ForensicBackdrop from "./components/branding/ForensicBackdrop";
 import VerificationPage from "./pages/VerificationPage";
 import BatchVerificationPage from "./pages/BatchVerificationPage";
-import { VS } from "./theme";
+import { useThemeMode } from "./providers/ThemeModeProvider";
 
 type AppView = "single" | "batch";
 
 export default function App() {
+  const { vs } = useThemeMode();
   const [view, setView] = useState<AppView>("single");
   const [resetKey, setResetKey] = useState(0);
   const [scanMeta, setScanMeta] = useState<{
@@ -28,7 +29,7 @@ export default function App() {
     <Box
       sx={{
         minHeight: "100vh",
-        backgroundColor: VS.bg,
+        backgroundColor: vs.bg,
         display: "flex",
         flexDirection: "column",
         position: "relative",

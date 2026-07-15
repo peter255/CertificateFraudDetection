@@ -54,12 +54,11 @@ interface ResultsDashboardProps {
   onPageCountChange?: (n: number) => void;
 }
 
-const SEVERITY_COLOR: Record<TamperRegion["severity"], string> = {
-  critical: VS.danger,
-  high: VS.danger,
-  medium: VS.warning,
-  low: VS.accent,
-};
+function severityColor(severity: TamperRegion["severity"]): string {
+  if (severity === "critical" || severity === "high") return VS.danger;
+  if (severity === "medium") return VS.warning;
+  return VS.accent;
+}
 
 const SEVERITY_LABEL: Record<TamperRegion["severity"], string> = {
   critical: "CRITICAL",
@@ -179,11 +178,11 @@ function ScoreBar({
       sx={{
         height: 4,
         borderRadius: 2,
-        backgroundColor: "rgba(255,255,255,0.08)",
+        backgroundColor: "rgba(35,37,40,0.08)",
         "& .MuiLinearProgress-bar": {
           borderRadius: 2,
           backgroundColor: color,
-          boxShadow: `0 0 10px ${color}88`,
+          boxShadow: "none",
         },
       }}
     />
@@ -211,7 +210,7 @@ function FindingCard({
         py: 1.5,
         borderRadius: "8px",
         border: `1px solid ${VS.border}`,
-        backgroundColor: "rgba(255,255,255,0.02)",
+        backgroundColor: "rgba(35,37,40,0.03)",
       }}
     >
       <Box
@@ -417,7 +416,7 @@ function VisualFindingCard({
   active: boolean;
   onSelect: () => void;
 }) {
-  const color = SEVERITY_COLOR[region.severity];
+  const color = severityColor(region.severity);
   const scope = region.scope ?? classifyFindingScope(region);
   const isDocumentLevel = scope === "document";
   const canHighlight = findingCanHighlight(region);
@@ -447,7 +446,7 @@ function VisualFindingCard({
         py: 1.5,
         borderRadius: "8px",
         border: `1px solid ${active ? color : VS.border}`,
-        backgroundColor: active ? `${color}14` : "rgba(255,255,255,0.02)",
+        backgroundColor: active ? `${color}14` : "rgba(35,37,40,0.03)",
         boxShadow: active ? `0 0 0 1px ${color}55` : "none",
         transition: "border-color 120ms ease, background-color 120ms ease",
         "&:hover": {
@@ -476,7 +475,7 @@ function VisualFindingCard({
               height: 22,
               borderRadius: "5px",
               backgroundColor: color,
-              color: VS.bg,
+              color: VS.onAccent,
               fontSize: "0.625rem",
               fontWeight: 800,
               fontFamily: VS.mono,
@@ -510,7 +509,7 @@ function VisualFindingCard({
                   py: 0.25,
                   borderRadius: "4px",
                   border: `1px solid ${VS.borderStrong}`,
-                  backgroundColor: "rgba(255,255,255,0.04)",
+                  backgroundColor: "rgba(35,37,40,0.04)",
                 }}
               >
                 <Typography
@@ -1233,15 +1232,13 @@ export default function ResultsDashboard({
             fontWeight: 700,
             letterSpacing: "0.04em",
             backgroundColor: VS.danger,
-            color: "#fff",
-            boxShadow: `0 0 20px ${VS.danger}55`,
+            color: VS.onAccent,
             "&:hover": {
-              backgroundColor: "#E03555",
-              boxShadow: `0 0 28px ${VS.danger}77`,
+              backgroundColor: "#9A0C22",
             },
           }}
         >
-          {downloading ? "PREPARING…" : "EXPORT FULL REPORT"}
+          {downloading ? "Preparing…" : "Export full report"}
         </Button>
         <Button
           variant="outlined"

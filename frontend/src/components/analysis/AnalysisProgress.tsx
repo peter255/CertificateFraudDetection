@@ -88,18 +88,17 @@ export default function AnalysisProgress({
                 status === "active"
                   ? VS.accent
                   : status === "complete"
-                    ? "rgba(255,255,255,0.08)"
-                    : "rgba(255,255,255,0.05)",
+                    ? VS.border
+                    : VS.border,
               backgroundColor:
                 status === "active"
                   ? VS.accentDim
                   : status === "complete"
-                    ? "rgba(255,255,255,0.03)"
-                    : "rgba(255,255,255,0.015)",
-              opacity: status === "pending" ? 0.45 : 1,
+                    ? VS.bgPanel
+                    : VS.bgCard,
+              opacity: status === "pending" ? 0.55 : 1,
               transition: "border-color 0.3s ease, opacity 0.3s ease, background-color 0.3s ease",
-              boxShadow:
-                status === "active" ? `0 0 20px ${VS.accentGlow}` : "none",
+              boxShadow: "none",
             }}
           >
             <Box
@@ -117,12 +116,12 @@ export default function AnalysisProgress({
                   status === "active"
                     ? `2px solid ${VS.accent}`
                     : status === "pending"
-                      ? "1.5px solid rgba(255,255,255,0.2)"
+                      ? `1.5px solid ${VS.borderStrong}`
                       : "none",
               }}
             >
               {status === "complete" && (
-                <CheckRoundedIcon sx={{ fontSize: 16, color: VS.bg }} />
+                <CheckRoundedIcon sx={{ fontSize: 16, color: VS.onAccent }} />
               )}
               {status === "active" && (
                 <CircularProgress

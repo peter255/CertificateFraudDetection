@@ -16,18 +16,16 @@ export default function Footer() {
         zIndex: 1,
         py: 2.5,
         borderTop: `1px solid ${VS.border}`,
-        backgroundColor: "transparent",
+        backgroundColor: VS.bgElevated,
         textAlign: "center",
       }}
     >
       <Typography
         sx={{
-          fontSize: "0.6875rem",
+          fontFamily: VS.heading,
+          fontSize: "0.8125rem",
           fontWeight: 600,
-          letterSpacing: "0.14em",
-          textTransform: "uppercase",
-          color: VS.textMuted,
-          fontFamily: VS.mono,
+          color: VS.textSecondary,
           mb: 0.5,
         }}
       >
@@ -35,9 +33,8 @@ export default function Footer() {
       </Typography>
       <Typography
         sx={{
-          fontSize: "0.6875rem",
+          fontSize: "0.75rem",
           color: VS.textMuted,
-          letterSpacing: "0.04em",
         }}
       >
         {ORGANIZATION_NAME} · {PRODUCT_PILLARS}

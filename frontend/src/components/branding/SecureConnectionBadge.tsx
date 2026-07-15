@@ -12,18 +12,17 @@ export default function SecureConnectionBadge() {
         px: 1.5,
         py: 0.625,
         borderRadius: "6px",
-        border: "1px solid #DCFCE7",
-        backgroundColor: "#F0FDF4",
+        border: "1px solid rgba(0,107,72,0.25)",
+        backgroundColor: "rgba(0,107,72,0.08)",
       }}
       aria-label="Secure connection"
     >
-      <LockOutlinedIcon sx={{ fontSize: 13, color: "#166534" }} />
+      <LockOutlinedIcon sx={{ fontSize: 13, color: "#006B48" }} />
       <Typography
         sx={{
-          fontSize: "0.6875rem",
+          fontSize: "0.75rem",
           fontWeight: 600,
-          letterSpacing: "0.04em",
-          color: "#166534",
+          color: "#006B48",
         }}
       >
         Secure Connection

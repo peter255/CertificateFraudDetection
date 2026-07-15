@@ -287,7 +287,6 @@ export default function VerificationPage({
         }}
       >
         <Box sx={{ maxWidth: 720, width: "100%", textAlign: "center" }}>
-          {/* Glow ring */}
           <Box
             sx={{
               width: 56,
@@ -296,23 +295,15 @@ export default function VerificationPage({
               mb: 3,
               borderRadius: "50%",
               border: `2px solid ${VS.accent}`,
-              boxShadow: `0 0 32px ${VS.accentGlow}, inset 0 0 16px ${VS.accentDim}`,
-              "@keyframes ringPulse": {
-                "0%, 100%": { boxShadow: `0 0 24px ${VS.accentGlow}` },
-                "50%": { boxShadow: `0 0 40px ${VS.accentGlow}` },
-              },
-              animation: "ringPulse 3s ease-in-out infinite",
+              backgroundColor: VS.accentDim,
             }}
           />
 
           <Typography
             sx={{
-              fontSize: "0.6875rem",
+              fontSize: "0.875rem",
               fontWeight: 600,
-              letterSpacing: "0.16em",
-              textTransform: "uppercase",
               color: VS.accent,
-              fontFamily: VS.mono,
               mb: 1.75,
             }}
           >
@@ -321,12 +312,13 @@ export default function VerificationPage({
 
           <Typography
             sx={{
+              fontFamily: VS.heading,
               fontSize: { xs: "2rem", sm: "2.75rem" },
               fontWeight: 700,
-              letterSpacing: "-0.035em",
+              letterSpacing: "-0.02em",
               color: VS.text,
               mb: 1,
-              lineHeight: 1.1,
+              lineHeight: 1.15,
             }}
           >
             {PRODUCT_NAME}
@@ -334,10 +326,8 @@ export default function VerificationPage({
 
           <Typography
             sx={{
-              fontSize: "0.6875rem",
-              fontWeight: 600,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
+              fontSize: "0.8125rem",
+              fontWeight: 500,
               color: VS.textMuted,
               mb: 1.75,
             }}
@@ -372,10 +362,9 @@ export default function VerificationPage({
                 fontWeight: 700,
                 fontSize: "0.9375rem",
                 opacity: 0.45,
-                boxShadow: `0 0 20px ${VS.accentGlow}`,
                 "&.Mui-disabled": {
                   backgroundColor: VS.accent,
-                  color: VS.bg,
+                  color: VS.onAccent,
                 },
               }}
             >
@@ -452,15 +441,13 @@ export default function VerificationPage({
       >
         <Typography
           sx={{
-            fontSize: "0.6875rem",
+            fontSize: "0.8125rem",
             fontWeight: 600,
-            letterSpacing: "0.12em",
             color: VS.accent,
-            fontFamily: VS.mono,
             mb: 1,
           }}
         >
-          {PRODUCT_NAME} · READY
+          {PRODUCT_NAME} · Ready
         </Typography>
         <Typography
           sx={{
@@ -486,7 +473,7 @@ export default function VerificationPage({
             gap: 1.5,
             px: 2,
             py: 1.25,
-            backgroundColor: "rgba(255,255,255,0.03)",
+            backgroundColor: VS.bgPanel,
             border: `1px solid ${VS.border}`,
             borderRadius: "8px",
             mb: 3,
@@ -502,7 +489,6 @@ export default function VerificationPage({
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
                 maxWidth: 280,
-                fontFamily: VS.mono,
               }}
             >
               {file.name}
@@ -523,7 +509,6 @@ export default function VerificationPage({
               height: 52,
               borderRadius: "8px",
               fontWeight: 700,
-              boxShadow: `0 0 20px ${VS.accentGlow}`,
             }}
           >
             Analyze Certificate
