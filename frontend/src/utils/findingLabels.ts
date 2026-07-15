@@ -142,3 +142,80 @@ export function spatialFindingKey(
   const rounded = bbox.slice(0, 4).map((n) => Math.round(Number(n)));
   return `${page}:${rounded.join(",")}`;
 }
+
+/** Intersection-over-union for two xywh boxes. */
+export function bboxIoU(
+  a: [number, number, number, number] | number[],
+  b: [number, number, number, number] | number[]
+): number {
+  const ax2 = a[0] + a[2];
+  const ay2 = a[1] + a[3];
+  const bx2 = b[0] + b[2];
+  const by2 = b[1] + b[3];
+  const ix1 = Math.max(a[0], b[0]);
+  const iy1 = Math.max(a[1], b[1]);
+  const ix2 = Math.min(ax2, bx2);
+  const iy2 = Math.min(ay2, by2);
+  const iw = Math.max(0, ix2 - ix1);
+  const ih = Math.max(0, iy2 - iy1);
+  const inter = iw * ih;
+  if (inter <= 0) return 0;
+  const areaA = Math.max(0, a[2]) * Math.max(0, a[3]);
+  const areaB = Math.max(0, b[2]) * Math.max(0, b[3]);
+  const union = areaA + areaB - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+/** True when a is mostly inside b (or vice versa). */
+export function bboxMostlyContained(
+  a: [number, number, number, number] | number[],
+  b: [number, number, number, number] | number[],
+  ratio = 0.7
+): boolean {
+  const ax2 = a[0] + a[2];
+  const ay2 = a[1] + a[3];
+  const bx2 = b[0] + b[2];
+  const by2 = b[1] + b[3];
+  const ix1 = Math.max(a[0], b[0]);
+  const iy1 = Math.max(a[1], b[1]);
+  const ix2 = Math.min(ax2, bx2);
+  const iy2 = Math.min(ay2, by2);
+  const iw = Math.max(0, ix2 - ix1);
+  const ih = Math.max(0, iy2 - iy1);
+  const inter = iw * ih;
+  const areaA = Math.max(0, a[2]) * Math.max(0, a[3]);
+  const areaB = Math.max(0, b[2]) * Math.max(0, b[3]);
+  if (areaA <= 0 || areaB <= 0) return false;
+  return inter / Math.min(areaA, areaB) >= ratio;
+}
+
+/**
+ * Drop boxes that are noise (tiny) or cover almost the whole page (useless highlight).
+ */
+export function isUsefulHighlightBox(
+  bbox: [number, number, number, number] | number[],
+  imageWidth: number,
+  imageHeight: number
+): boolean {
+  const w = Number(bbox[2]);
+  const h = Number(bbox[3]);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return false;
+  if (!Number.isFinite(imageWidth) || !Number.isFinite(imageHeight)) return false;
+  if (imageWidth <= 0 || imageHeight <= 0) return false;
+  const area = w * h;
+  const pageArea = imageWidth * imageHeight;
+  if (pageArea <= 0) return false;
+  const ratio = area / pageArea;
+  // Tiny speck or near-full-page box — both confuse the user.
+  if (ratio < 0.0008) return false;
+  if (ratio > 0.85) return false;
+  return true;
+}
+
+/** Build a stable unique finding id from page + bbox (never reuse engine type/ids). */
+export function uniqueFindingId(
+  page: number,
+  bbox: [number, number, number, number] | number[]
+): string {
+  return `vf-${spatialFindingKey(page, bbox)}`;
+}

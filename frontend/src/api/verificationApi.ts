@@ -32,9 +32,13 @@ import {
 } from "../utils/localization";
 import {
   humanizeLabel,
+  isUsefulHighlightBox,
   normalizeFindingSeverity,
   sanitizeFindingText,
   spatialFindingKey,
+  uniqueFindingId,
+  bboxIoU,
+  bboxMostlyContained,
 } from "../utils/findingLabels";
 
 // ── Engine V1 response DTO ───────────────────────────────────────────────────
@@ -722,76 +726,6 @@ type TamperRegionInput = {
   extras?: Record<string, unknown> | null;
 };
 
-function relatedBBoxCandidate(
-  related: Record<string, unknown>,
-  parent: {
-    id?: string | null;
-    label: string;
-    description: string;
-    severity?: string | null;
-    status?: string | null;
-    page?: number | null;
-    imageWidth?: number | null;
-    imageHeight?: number | null;
-    location?: string | null;
-    layer?: string | null;
-    confidence?: number | null;
-    bboxSource?: string | null;
-  },
-  index: number
-): TamperRegionInput | null {
-  const bboxRaw = related.bbox ?? related.bounding_box ?? related.box;
-  if (!asBBox(bboxRaw)) return null;
-
-  const page =
-    typeof related.page === "number" && related.page > 0
-      ? related.page
-      : parent.page;
-  const imageWidth =
-    typeof related.image_width === "number"
-      ? related.image_width
-      : typeof related.imageWidth === "number"
-        ? related.imageWidth
-        : parent.imageWidth;
-  const imageHeight =
-    typeof related.image_height === "number"
-      ? related.image_height
-      : typeof related.imageHeight === "number"
-        ? related.imageHeight
-        : parent.imageHeight;
-
-  return {
-    id: `${parent.id || parent.label}-related-${index}`,
-    label: parent.label,
-    description: parent.description,
-    severity:
-      (typeof related.severity === "string" ? related.severity : null) || parent.severity,
-    status: parent.status ?? null,
-    bbox: Array.isArray(bboxRaw) ? (bboxRaw as number[]) : null,
-    page,
-    imageWidth,
-    imageHeight,
-    location:
-      (typeof related.location === "string" ? related.location : null) || parent.location,
-    layer: (typeof related.layer === "string" ? related.layer : null) || parent.layer,
-    confidence:
-      typeof related.confidence === "number" ? related.confidence : parent.confidence,
-    bboxSource:
-      (typeof related.bbox_source === "string" ? related.bbox_source : null) ||
-      (typeof related.bboxSource === "string" ? related.bboxSource : null) ||
-      parent.bboxSource,
-    bboxAreaRatio:
-      typeof related.bbox_area_ratio === "number"
-        ? related.bbox_area_ratio
-        : typeof related.bboxAreaRatio === "number"
-          ? related.bboxAreaRatio
-          : null,
-    hasImage: null,
-    hasCropImage: null,
-    extras: related,
-  };
-}
-
 /**
  * Pull spatial candidates from nested engine sections that are allowed to
  * create visual findings. Items without a real bbox are skipped — never invented.
@@ -950,12 +884,8 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       extras: signal.extras ?? null,
     });
 
-    // Secondary localization returned by the engine — draw exact boxes only.
-    (signal.related_bboxes || []).forEach((related, index) => {
-      if (!related || typeof related !== "object") return;
-      const candidate = relatedBBoxCandidate(related, parent, index);
-      if (candidate) candidates.push(candidate);
-    });
+    // Do not expand related_bboxes into separate findings — they overlap the
+    // parent region and make the list / highlight selection confusing.
   }
 
   for (const item of data.visual_evidence || []) {
@@ -1058,10 +988,47 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       }
       continue;
     }
+
+    if (!isUsefulHighlightBox(bbox, imageWidth, imageHeight)) continue;
+
+    // Merge into a nearby / overlapping finding instead of listing both.
+    let merged = false;
+    for (let i = 0; i < out.length; i++) {
+      const other = out[i];
+      if (other.page !== page) continue;
+      const iou = bboxIoU(bbox, other.bbox);
+      const contained = bboxMostlyContained(bbox, other.bbox);
+      if (iou < 0.4 && !contained) continue;
+
+      if (severityRank[severity] < severityRank[other.severity]) {
+        other.severity = severity;
+      }
+      if (description.length > other.description.length && description !== label) {
+        other.description = description;
+      }
+      // Prefer the tighter (smaller) box when one mostly contains the other.
+      const areaNew = bbox[2] * bbox[3];
+      const areaOld = other.bbox[2] * other.bbox[3];
+      if (contained && areaNew < areaOld) {
+        other.bbox = bbox;
+        other.rawBBox = raw;
+        other.bboxFormat = format;
+        other.bboxAmbiguous = ambiguous;
+        other.id = uniqueFindingId(page, bbox);
+      }
+      if (label.length > other.label.length) {
+        other.label = label;
+      }
+      merged = true;
+      break;
+    }
+    if (merged) continue;
+
     seen.set(key, out.length);
 
     out.push({
-      id: String(input.id || key),
+      // Always unique — never reuse engine type / signal ids (they collide).
+      id: uniqueFindingId(page, bbox),
       label,
       description,
       severity,
@@ -1078,7 +1045,6 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       bboxSource: optionalString(input.bboxSource),
       hasImage: typeof input.hasImage === "boolean" ? input.hasImage : null,
       hasCropImage: typeof input.hasCropImage === "boolean" ? input.hasCropImage : null,
-      // Never surface raw extras JSON in the customer UI.
       extras: null,
     });
   }

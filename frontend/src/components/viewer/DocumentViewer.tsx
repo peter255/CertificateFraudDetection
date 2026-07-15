@@ -220,7 +220,7 @@ function OverlayLayer({
           }}
         />
       )}
-      {regions.map((region) => {
+      {regions.map((region, index) => {
         const color = SEVERITY_COLOR[region.severity] ?? SEVERITY_COLOR.medium;
         const selected = region.id === selectedId;
         const [x, y, w, h] = region.bbox;
@@ -250,7 +250,7 @@ function OverlayLayer({
             : null;
 
         return (
-          <Box key={region.id} component="span" sx={{ display: "contents" }}>
+          <Box key={`${region.id}-${index}`} component="span" sx={{ display: "contents" }}>
             <Box
               onClick={(event) => {
                 event.stopPropagation();

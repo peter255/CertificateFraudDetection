@@ -27,7 +27,12 @@ import {
   signalTitle,
   verdictFallback,
 } from "./findingsDisplay";
-import { humanizeLabel, sanitizeFindingText } from "./findingLabels";
+import {
+  humanizeLabel,
+  sanitizeFindingText,
+  shortenFindingDescription,
+  spatialFindingKey,
+} from "./findingLabels";
 
 const COLORS = {
   navy: [15, 41, 66] as [number, number, number],
@@ -83,6 +88,48 @@ function safeFileStem(name: string): string {
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   return `${text.slice(0, Math.max(0, max - 1))}…`;
+}
+
+/** Collapse duplicate signals by title + sanitized description. */
+function dedupeSignals(
+  signals: VerificationResult["signals"]
+): VerificationResult["signals"] {
+  const seen = new Set<string>();
+  const out: VerificationResult["signals"] = [];
+  for (const signal of signals) {
+    const title = signalTitle(signal).toLowerCase();
+    const detail = (signalDescription(signal) || "").toLowerCase();
+    const key = `${title}|${detail}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(signal);
+  }
+  return out;
+}
+
+/** Same spatial dedupe as the on-screen Detailed Findings list. */
+function uniqueVisualFindings(
+  regions: TamperRegion[]
+): TamperRegion[] {
+  const seen = new Set<string>();
+  const out: TamperRegion[] = [];
+  for (const region of regions) {
+    if (
+      !Array.isArray(region.bbox) ||
+      region.bbox.length !== 4 ||
+      !Number.isFinite(region.page) ||
+      region.page < 1 ||
+      region.imageWidth <= 0 ||
+      region.imageHeight <= 0
+    ) {
+      continue;
+    }
+    const key = spatialFindingKey(region.page, region.bbox);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(region);
+  }
+  return out;
 }
 
 function wrapText(doc: jsPDF, text: string, maxWidth: number): string[] {
@@ -258,11 +305,13 @@ function drawCategoryBlock(
 
   const hasSummary = Boolean(summary.trim());
   if (hasSummary) {
-    y = drawParagraphBox(doc, summary.trim(), y, contentWidth);
+    const cleanSummary =
+      sanitizeFindingText(summary.trim()) || summary.trim();
+    y = drawParagraphBox(doc, cleanSummary, y, contentWidth);
     return y;
   }
 
-  const items =
+  const items = dedupeSignals(
     signals.length > 0
       ? signals
       : [
@@ -272,13 +321,20 @@ function drawCategoryBlock(
             description: "No anomalies detected in this layer.",
             status: "pass" as const,
           },
-        ];
+        ]
+  );
 
   const body = items.slice(0, 16).map((signal, index) => {
-    const status = SIGNAL_STATUS_LABEL[signal.status] || signal.status;
+    const status = SIGNAL_STATUS_LABEL[signal.status] || humanizeLabel(signal.status);
     const code = `${prefix}-${String(index + 1).padStart(2, "0")}`;
-    const titleText = truncate(signalTitle(signal), 40);
-    const detail = truncate(signalDescription(signal) || titleText, 160);
+    const titleText = truncate(
+      humanizeLabel(signalTitle(signal)) || signalTitle(signal),
+      40
+    );
+    const detail = shortenFindingDescription(
+      signalDescription(signal) || titleText,
+      110
+    );
     return [status, code, titleText, detail];
   });
 
@@ -355,8 +411,9 @@ export async function downloadVerificationReport(
   });
 
   const consolidated =
-    clampSummary((result.aiSummary || "").trim()) ||
-    verdictFallback(result.verdict);
+    sanitizeFindingText(
+      clampSummary((result.aiSummary || "").trim()) || verdictFallback(result.verdict)
+    ) || verdictFallback(result.verdict);
 
   // ── Header ────────────────────────────────────────────────────────────────
   doc.setFillColor(...COLORS.navy);
@@ -454,32 +511,24 @@ export async function downloadVerificationReport(
   y = drawSectionTitle(doc, "Consolidated Verdict", y);
   y = drawParagraphBox(doc, consolidated, y, contentWidth);
 
-  // Detailed Findings — navigable visual evidence only (same list as the UI panel)
+  // Detailed Findings — same polished list as the on-screen panel
   y = drawSectionTitle(doc, "Detailed Findings", y);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(...COLORS.muted);
   doc.text(
-    "Select a finding to highlight its location in the document. Localized visual evidence only.",
+    "Localized visual evidence only. Descriptions are summarized; page numbers match the document.",
     16,
     y
   );
   y += 6;
 
-  const regions = (result.tamperRegions || []).filter(
-    (r) =>
-      Array.isArray(r.bbox) &&
-      r.bbox.length === 4 &&
-      Number.isFinite(r.page) &&
-      r.page >= 1 &&
-      r.imageWidth > 0 &&
-      r.imageHeight > 0
-  );
+  const regions = uniqueVisualFindings(result.tamperRegions || []);
 
   if (regions.length === 0) {
     y = drawParagraphBox(
       doc,
-      "No localized visual evidence was returned for this document.",
+      "No localized visual evidence of document manipulation was identified.",
       y,
       contentWidth
     );
@@ -506,19 +555,29 @@ export async function downloadVerificationReport(
       alternateRowStyles: { fillColor: COLORS.soft },
       columnStyles: {
         0: { cellWidth: 10 },
-        1: { cellWidth: 42 },
+        1: { cellWidth: 46 },
         2: { cellWidth: 24 },
         3: { cellWidth: 14 },
         4: { cellWidth: "auto" },
       },
       head: [["#", "Finding", "Severity", "Page", "Description"]],
-      body: regions.slice(0, 24).map((region, i) => [
-        String(i + 1),
-        truncate(humanizeLabel(region.label) || region.label, 42),
-        SEVERITY_LABEL[region.severity],
-        String(region.page),
-        truncate(sanitizeFindingText(region.description) || region.description, 140),
-      ]),
+      body: regions.slice(0, 24).map((region, i) => {
+        const label =
+          humanizeLabel(region.label) ||
+          (region.description?.trim() ? "Suspicious region" : "Marked region");
+        const description =
+          shortenFindingDescription(
+            sanitizeFindingText(region.description) || label,
+            110
+          ) || label;
+        return [
+          String(i + 1),
+          truncate(label, 42),
+          SEVERITY_LABEL[region.severity],
+          String(region.page),
+          description,
+        ];
+      }),
       didParseCell: (data) => {
         if (data.section !== "body" || data.column.index !== 2) return;
         const raw = String(data.cell.raw || "").toUpperCase();

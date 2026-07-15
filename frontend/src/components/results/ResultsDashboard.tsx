@@ -557,17 +557,7 @@ export default function ResultsDashboard({
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
   const [activePage, setActivePage] = useState(1);
 
-  /** Overlay draw list — spatial regions only (never synthetic). */
-  const validRegions = useMemo(
-    () => result.tamperRegions.filter(isValidOverlayRegion),
-    [result.tamperRegions]
-  );
-
-  /**
-   * Detailed Findings list — only navigable visual evidence.
-   * Analytical / metadata / summary items are never included.
-   * Spatial duplicates (same page + bbox) are collapsed.
-   */
+  /** Overlay draw list — same polished set as Detailed Findings. */
   const visualFindings = useMemo(() => {
     const list = result.tamperRegions.filter(isNavigableVisualFinding);
     const seen = new Set<string>();
@@ -608,14 +598,16 @@ export default function ResultsDashboard({
   const criticalLabel = riskLabel(result.report.riskLevel, riskScore);
   const criticalColor = scoreColor(riskScore);
 
-  // Draw only the selected finding — never every region at once.
-  // Nothing is drawn until the user picks a finding.
-  const showRegions = selectedRegionId
-    ? validRegions.filter((r) => r.id === selectedRegionId)
-    : [];
+  // Exactly one highlight — never draw siblings that shared a colliding engine id.
+  const showRegions = useMemo(() => {
+    if (!selectedRegionId) return [];
+    const selected = visualFindings.find((r) => r.id === selectedRegionId);
+    return selected ? [selected] : [];
+  }, [selectedRegionId, visualFindings]);
 
   const selectFinding = (region: TamperRegion) => {
-    setSelectedRegionId(region.id);
+    // Toggle off when clicking the same finding again.
+    setSelectedRegionId((current) => (current === region.id ? null : region.id));
     setActivePage(region.page);
   };
 
