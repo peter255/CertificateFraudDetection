@@ -37,7 +37,14 @@ class OcrExtractedFields(BaseModel):
     qr_code: str | None = None
     detected_text: str | None = None
     key_value_pairs: dict[str, str] = Field(default_factory=dict)
-    raw: dict[str, Any] = Field(default_factory=dict)
+    raw: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Full Azure Document Intelligence analyzeResult payload when available "
+            "(pages, lines, words, polygons, boundingRegions, spans, etc.) — "
+            "preserved for UI highlighting; not flattened away."
+        ),
+    )
 
 
 class PdfMetadata(BaseModel):

@@ -36,6 +36,8 @@ class PdfStructureEnrichmentService:
                 content,
                 filename=filename,
                 content_type=content_type,
+                # Verify path: keep DI layout + metadata/rules; skip slow LLM consistency.
+                include_llm=False,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("PDF structure enrichment failed: %s", exc)

@@ -16,6 +16,7 @@ import TextFieldsIcon from "@mui/icons-material/TextFields";
 import ImageIcon from "@mui/icons-material/Image";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
+import FlagOutlinedIcon from "@mui/icons-material/FlagOutlined";
 import type {
   RiskLevel,
   Signal,
@@ -40,12 +41,15 @@ import {
   sanitizeFindingText,
   shortenFindingDescription,
 } from "../../utils/findingLabels";
+import {
+  DOCUMENT_LEVEL_NOTE,
+  classifyFindingScope,
+} from "../../utils/findingScope";
 import { VS } from "../../theme";
 
 interface ResultsDashboardProps {
   result: VerificationResult;
   file: File | null;
-  onVerifyAnother: () => void;
   onPageCountChange?: (n: number) => void;
 }
 
@@ -64,10 +68,22 @@ const SEVERITY_LABEL: Record<TamperRegion["severity"], string> = {
 };
 
 /**
- * A finding may appear in Detailed Findings only when it can navigate
- * the viewer to a precise document location. Never invent coordinates.
+ * Element findings with Azure highlights, plus document-level findings (no box).
  */
-function isNavigableVisualFinding(region: TamperRegion): boolean {
+function isDetailedFinding(region: TamperRegion): boolean {
+  const scope = region.scope ?? classifyFindingScope(region);
+  if (scope === "document") {
+    return Boolean(region.label?.trim() || region.description?.trim());
+  }
+  // Element: list even without highlight; only require identity text.
+  return Boolean(region.label?.trim() || region.description?.trim());
+}
+
+function findingCanHighlight(region: TamperRegion): boolean {
+  const scope = region.scope ?? classifyFindingScope(region);
+  if (scope !== "element") return false;
+  if (region.canHighlight === false) return false;
+  if (region.bboxSource !== "azure_document_intelligence") return false;
   if (!isValidOverlayRegion(region)) return false;
   if (!Number.isFinite(region.page) || region.page < 1) return false;
   return true;
@@ -401,6 +417,9 @@ function VisualFindingCard({
   onSelect: () => void;
 }) {
   const color = SEVERITY_COLOR[region.severity];
+  const scope = region.scope ?? classifyFindingScope(region);
+  const isDocumentLevel = scope === "document";
+  const canHighlight = findingCanHighlight(region);
   const confidencePct =
     region.confidence != null && Number.isFinite(region.confidence)
       ? Math.round(region.confidence * 1000) / 10
@@ -469,16 +488,45 @@ function VisualFindingCard({
           >
             {index + 1}
           </Box>
-          <Typography
-            sx={{
-              fontSize: "0.875rem",
-              fontWeight: 600,
-              color: VS.text,
-              lineHeight: 1.35,
-            }}
-          >
-            {title}
-          </Typography>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              sx={{
+                fontSize: "0.875rem",
+                fontWeight: 600,
+                color: VS.text,
+                lineHeight: 1.35,
+              }}
+            >
+              {title}
+            </Typography>
+            {isDocumentLevel && (
+              <Box
+                sx={{
+                  mt: 0.75,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  px: 0.85,
+                  py: 0.25,
+                  borderRadius: "4px",
+                  border: `1px solid ${VS.borderStrong}`,
+                  backgroundColor: "rgba(255,255,255,0.04)",
+                }}
+              >
+                <Typography
+                  sx={{
+                    fontSize: "0.625rem",
+                    fontWeight: 700,
+                    letterSpacing: "0.06em",
+                    color: VS.textSecondary,
+                    fontFamily: VS.mono,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Document-Level Finding
+                </Typography>
+              </Box>
+            )}
+          </Box>
         </Box>
         <Typography
           sx={{
@@ -512,6 +560,21 @@ function VisualFindingCard({
         </Typography>
       ) : null}
 
+      {isDocumentLevel && active ? (
+        <Typography
+          sx={{
+            fontSize: "0.75rem",
+            color: VS.textMuted,
+            lineHeight: 1.5,
+            mb: 1,
+            pl: 4.25,
+            fontStyle: "italic",
+          }}
+        >
+          {DOCUMENT_LEVEL_NOTE}
+        </Typography>
+      ) : null}
+
       <Box
         sx={{
           display: "flex",
@@ -528,7 +591,11 @@ function VisualFindingCard({
             fontFamily: VS.mono,
           }}
         >
-          PAGE {region.page}
+          {isDocumentLevel
+            ? "NO LOCATION HIGHLIGHT"
+            : canHighlight
+              ? `PAGE ${region.page}`
+              : "LOCATION UNAVAILABLE"}
         </Typography>
         {active && confidencePct != null && (
           <Typography
@@ -550,20 +617,23 @@ function VisualFindingCard({
 export default function ResultsDashboard({
   result,
   file,
-  onVerifyAnother,
   onPageCountChange,
 }: ResultsDashboardProps) {
   const [downloading, setDownloading] = useState(false);
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
   const [activePage, setActivePage] = useState(1);
 
-  /** Overlay draw list — same polished set as Detailed Findings. */
+  /** Overlay draw list — Detailed Findings (element + document-level cards). */
   const visualFindings = useMemo(() => {
-    const list = result.tamperRegions.filter(isNavigableVisualFinding);
+    const list = result.tamperRegions.filter(isDetailedFinding);
     const seen = new Set<string>();
     const unique: TamperRegion[] = [];
     for (const region of list) {
-      const key = `${region.page}:${region.bbox.map((n) => Math.round(n)).join(",")}`;
+      const scope = region.scope ?? classifyFindingScope(region);
+      const key =
+        scope === "document"
+          ? `doc:${region.id}:${region.label}`
+          : `${region.page}:${region.bbox.map((n) => Math.round(n)).join(",")}`;
       if (seen.has(key)) continue;
       seen.add(key);
       unique.push(region);
@@ -581,7 +651,7 @@ export default function ResultsDashboard({
 
   useEffect(() => {
     const region = visualFindings.find((r) => r.id === selectedRegionId);
-    if (region) setActivePage(region.page);
+    if (region && findingCanHighlight(region)) setActivePage(region.page);
   }, [selectedRegionId, visualFindings]);
 
   const {
@@ -598,17 +668,17 @@ export default function ResultsDashboard({
   const criticalLabel = riskLabel(result.report.riskLevel, riskScore);
   const criticalColor = scoreColor(riskScore);
 
-  // Exactly one highlight — never draw siblings that shared a colliding engine id.
+  // Draw Azure highlights only for element-level findings.
   const showRegions = useMemo(() => {
     if (!selectedRegionId) return [];
     const selected = visualFindings.find((r) => r.id === selectedRegionId);
-    return selected ? [selected] : [];
+    if (!selected || !findingCanHighlight(selected)) return [];
+    return [selected];
   }, [selectedRegionId, visualFindings]);
 
   const selectFinding = (region: TamperRegion) => {
-    // Toggle off when clicking the same finding again.
     setSelectedRegionId((current) => (current === region.id ? null : region.id));
-    setActivePage(region.page);
+    if (findingCanHighlight(region)) setActivePage(region.page);
   };
 
   const handleExport = async () => {
@@ -1036,7 +1106,7 @@ export default function ResultsDashboard({
                 }}
               >
                 {visualFindings.length > 0
-                  ? "Select a finding to highlight its location in the document."
+                  ? "Select a finding. Element-level items highlight Azure layout regions; document-level items explain overall forensic signals without a box."
                   : "No localized visual evidence was returned for this document."}
               </Typography>
             </Box>
@@ -1159,7 +1229,7 @@ export default function ResultsDashboard({
         </Button>
         <Button
           variant="outlined"
-          onClick={onVerifyAnother}
+          startIcon={<FlagOutlinedIcon />}
           sx={{
             flex: 1,
             height: 48,
@@ -1175,7 +1245,7 @@ export default function ResultsDashboard({
             },
           }}
         >
-          Start New Analysis
+          Flag for Review
         </Button>
       </Box>
     </Box>

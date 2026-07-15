@@ -74,13 +74,14 @@ export interface TamperRegion {
   description: string;
   severity: "critical" | "high" | "medium" | "low";
   /**
-   * Canonical render form: [x, y, width, height] in source image pixels.
-   * Origin: top-left. Produced by interpretBBox() from the vendor raw tuple.
+   * Canonical render form: [x, y, width, height] in the page coordinate space
+   * of `imageWidth` × `imageHeight` (Azure layout units when remapped from DI,
+   * otherwise vendor source pixels). Origin: top-left.
    */
   bbox: [number, number, number, number];
-  /** Original vendor 4-tuple before format conversion (for debug overlays). */
+  /** Original 4-tuple before format conversion (vendor or Azure). */
   rawBBox?: [number, number, number, number] | null;
-  /** Detected vendor format used to produce `bbox`. */
+  /** Detected vendor format used to produce `bbox` (xywh when Azure remapped). */
   bboxFormat?:
     | "xywh"
     | "xyxy"
@@ -96,10 +97,18 @@ export interface TamperRegion {
   location?: string | null;
   layer?: string | null;
   confidence?: number | null;
+  /** Prefer `azure_document_intelligence` when layout remapping succeeds. */
   bboxSource?: string | null;
   hasImage?: boolean | null;
   hasCropImage?: boolean | null;
   extras?: Record<string, unknown> | null;
+  /**
+   * `element` — specific field/region that can be highlighted via Azure DI.
+   * `document` — overall forensic/structure finding; no bounding box.
+   */
+  scope?: "element" | "document";
+  /** True only when an Azure-mapped element highlight should be drawn. */
+  canHighlight?: boolean;
 }
 
 /** Engine-native technical payloads not folded into signals/findings. */

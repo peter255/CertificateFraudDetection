@@ -266,13 +266,6 @@ async function fetchImageAsDataUrl(url: string): Promise<string | null> {
   }
 }
 
-function imageFormatFromDataUrl(dataUrl: string): "PNG" | "JPEG" | "WEBP" {
-  if (dataUrl.startsWith("data:image/jpeg") || dataUrl.startsWith("data:image/jpg"))
-    return "JPEG";
-  if (dataUrl.startsWith("data:image/webp")) return "WEBP";
-  return "PNG";
-}
-
 function drawCategoryBlock(
   doc: jsPDF,
   y: number,

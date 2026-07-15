@@ -31,7 +31,12 @@ import {
   type InterpretedBBox,
 } from "../utils/localization";
 import {
+  extractAzureAnalyzeResult,
+  remapTamperRegionsToAzureLayout,
+} from "../utils/azureLayout";
+import {
   humanizeLabel,
+  isPlausibleHighlightBox,
   isUsefulHighlightBox,
   normalizeFindingSeverity,
   sanitizeFindingText,
@@ -122,6 +127,7 @@ interface EngineV2Signal {
   engine?: string | null;
   detector?: string | null;
   severity?: string | null;
+  status?: string | null;
   confidence?: number | null;
   description?: string | null;
   engine_label?: string | null;
@@ -989,7 +995,7 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       continue;
     }
 
-    if (!isUsefulHighlightBox(bbox, imageWidth, imageHeight)) continue;
+    if (!isPlausibleHighlightBox(bbox, imageWidth, imageHeight)) continue;
 
     // Merge into a nearby / overlapping finding instead of listing both.
     let merged = false;
@@ -1837,7 +1843,23 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
         additionalFindings: null,
       },
     ],
-    tamperRegions: mapTamperRegions(data),
+    tamperRegions: remapTamperRegionsToAzureLayout(
+      mapTamperRegions(data),
+      extractAzureAnalyzeResult(
+        data.structural_profile,
+        technical.structuralProfile,
+        data.raw_result,
+        data.engine_results,
+        data.layer_details
+      )
+    ).filter((region) => {
+      if (region.scope === "document") return true;
+      if (region.canHighlight) {
+        return isUsefulHighlightBox(region.bbox, region.imageWidth, region.imageHeight);
+      }
+      // Element without a confident Azure polygon — keep the card, draw nothing.
+      return Boolean(region.label?.trim() || region.description?.trim());
+    }),
     heatmapUrl: null,
     engineDurationMs: resolvedDurationMs,
     engineVerdictLabel:

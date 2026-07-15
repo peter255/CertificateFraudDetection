@@ -20,4 +20,5 @@ class IPdfStructureAnalysisPort(Protocol):
         *,
         filename: str,
         content_type: str | None = None,
+        include_llm: bool = True,
     ) -> PdfStructureAnalyzeResponse: ...

@@ -737,7 +737,6 @@ export default function BatchVerificationPage({
           <ResultsDashboard
             result={selected.result}
             file={selected.file}
-            onVerifyAnother={() => setSelectedId(null)}
           />
         </Box>
       )}

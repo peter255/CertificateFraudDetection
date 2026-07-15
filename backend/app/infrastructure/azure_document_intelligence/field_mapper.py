@@ -110,12 +110,30 @@ def map_document_intelligence_result(analyze_result: dict[str, Any]) -> OcrExtra
         qr_code=mapped["qr_code"],
         detected_text=detected_text or None,
         key_value_pairs=key_value_pairs,
-        raw={
-            "api": "azure_document_intelligence",
-            "page_count": len(analyze_result.get("pages") or []),
-            "has_key_value_pairs": bool(key_value_pairs),
-        },
+        raw=_preserve_analyze_result(analyze_result, key_value_pairs=key_value_pairs),
     )
+
+
+def _preserve_analyze_result(
+    analyze_result: dict[str, Any],
+    *,
+    key_value_pairs: dict[str, str],
+) -> dict[str, Any]:
+    """
+    Keep the complete Azure analyzeResult (pages/lines/words/polygons/regions/spans).
+
+    Normalized fields above are for forensics; ``raw.analyzeResult`` is the
+    source of truth for UI coordinate highlighting.
+    """
+    # Shallow-copy the top-level dict so callers cannot mutate the source; nested
+    # geometry lists remain as returned by Azure (not flattened or dropped).
+    layout = dict(analyze_result)
+    return {
+        "api": "azure_document_intelligence",
+        "page_count": len(layout.get("pages") or []),
+        "has_key_value_pairs": bool(key_value_pairs),
+        "analyzeResult": layout,
+    }
 
 
 def _extract_key_value_pairs(analyze_result: dict[str, Any]) -> dict[str, str]:

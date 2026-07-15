@@ -421,7 +421,6 @@ export default function VerificationPage({
         <ResultsDashboard
           result={verificationResult}
           file={file}
-          onVerifyAnother={reset}
           onPageCountChange={setPageCount}
         />
       </Box>

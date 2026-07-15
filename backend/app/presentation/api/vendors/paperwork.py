@@ -8,6 +8,10 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from app.application.dto.pdf_structure import PdfStructureAnalyzeResponse
 from app.application.services.ai_probability_enrichment import AiProbabilityEnrichmentService
 from app.application.services.ai_summary_enrichment import AiSummaryEnrichmentService
+from app.application.services.pdf_structure.metadata_compare import (
+    build_metadata_compare_summary,
+    find_vendor_pdf_metadata,
+)
 from app.application.services.pdf_structure_enrichment import PdfStructureEnrichmentService
 from app.infrastructure.vendors.paperwork.client import PaperworkClient
 from app.infrastructure.vendors.paperwork.dependencies import provide_paperwork_client
@@ -45,7 +49,7 @@ def _attach_pdf_structure_to_context(
     *,
     cross_check_summary: str | None,
 ) -> None:
-    """Augment executive-summary context with PDF Structure / DI evidence."""
+    """Augment executive-summary context with PDF Structure metadata + findings."""
     ocr = analysis.ocr_fields
     if ocr is not None:
         enrichment_context["ocr_fields"] = ocr.model_dump(exclude={"raw", "detected_text"})
@@ -94,12 +98,26 @@ async def verify_with_engine_v2(
 ) -> PaperworkVerifyResponse:
     raw_content = await file.read()
     filename = file.filename or "certificate.bin"
-    response = await client.verify(
-        raw_content,
-        filename=filename,
-        document_type=document_type or "auto",
-        ocr_mode=ocr_mode or "auto",
+
+    # Overlap Azure DI / PDF structure with the vendor call (largest latency win).
+    pdf_structure_task = asyncio.create_task(
+        pdf_structure_service.enrich(
+            content=raw_content,
+            filename=filename,
+            content_type=file.content_type,
+        )
     )
+
+    try:
+        response = await client.verify(
+            raw_content,
+            filename=filename,
+            document_type=document_type or "auto",
+            ocr_mode=ocr_mode or "auto",
+        )
+    except Exception:
+        pdf_structure_task.cancel()
+        raise
 
     signal_payloads = [signal.model_dump(exclude_none=True) for signal in response.signals]
     visual_payloads = [
@@ -141,8 +159,7 @@ async def verify_with_engine_v2(
         "issue_date": response.issue_date,
     }
 
-    # PDF Structure + independent enrichments first; executive summary waits for
-    # Document Intelligence so it can cross-check vendor vs OCR/structure.
+    # Vendor is done; finish AI enrichments while PDF structure may still be running.
     (
         (ai_probability, ai_probability_source),
         text_manipulation_summary,
@@ -177,23 +194,26 @@ async def verify_with_engine_v2(
             visual_evidence=visual_payloads,
             context=enrichment_context,
         ),
-        pdf_structure_service.enrich(
-            content=raw_content,
-            filename=filename,
-            content_type=file.content_type,
-        ),
+        pdf_structure_task,
     )
 
-    cross_check_summary: str | None = None
+    metadata_summary: str | None = None
     if pdf_structure_analysis is not None:
-        cross_check_summary = await ai_summary_service.cross_check_summary(
-            vendor_context=enrichment_context,
-            pdf_analysis=pdf_structure_analysis,
+        vendor_pdf_metadata = find_vendor_pdf_metadata(
+            response.raw_result,
+            response.engine_results,
+            response.layer_details,
+            response.structural_profile,
+            response.pdf_fraud_subscores,
+        )
+        metadata_summary = build_metadata_compare_summary(
+            vendor_pdf_metadata,
+            pdf_structure_analysis.pdf_metadata,
         )
         _attach_pdf_structure_to_context(
             enrichment_context,
             pdf_structure_analysis,
-            cross_check_summary=cross_check_summary,
+            cross_check_summary=metadata_summary,
         )
 
     ai_summary = await ai_summary_service.enrich(context=enrichment_context)
@@ -209,7 +229,7 @@ async def verify_with_engine_v2(
 
     if pdf_structure_analysis is not None:
         pdf_updates = PdfStructureEnrichmentService.as_v2_updates(pdf_structure_analysis)
-        updates["pdf_structure_summary"] = cross_check_summary or pdf_updates["pdf_structure_summary"]
+        updates["pdf_structure_summary"] = metadata_summary or pdf_updates["pdf_structure_summary"]
         updates["pdf_structure_findings"] = pdf_updates["pdf_structure_findings"]
 
         pdf_signals = [

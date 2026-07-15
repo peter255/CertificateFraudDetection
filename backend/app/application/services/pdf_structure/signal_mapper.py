@@ -94,7 +94,8 @@ def build_structural_profile_update(
 def _ocr_public(ocr: OcrExtractedFields | None) -> dict[str, Any]:
     if ocr is None:
         return {}
-    data = ocr.model_dump(exclude={"raw"})
+    # Include full raw analyzeResult (pages/lines/words/polygons) for UI highlights.
+    data = ocr.model_dump()
     text = data.get("detected_text")
     if isinstance(text, str):
         data["detected_text"] = excerpt(text, _OCR_TEXT_PROFILE_LIMIT)

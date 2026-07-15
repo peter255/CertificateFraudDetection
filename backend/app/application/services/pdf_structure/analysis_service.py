@@ -62,6 +62,7 @@ class PdfStructureAnalysisService:
         *,
         filename: str,
         content_type: str | None = None,
+        include_llm: bool = True,
     ) -> PdfStructureAnalyzeResponse:
         started = time.perf_counter()
         sources = {
@@ -108,13 +109,18 @@ class PdfStructureAnalysisService:
         # Feed both atomic and contextual indicators to the LLM stage.
         deterministic_findings = [*contextual_findings, *atomic_findings]
 
-        llm_findings, llm_summary = await self._run_llm_stage(
-            ocr=ocr_fields,
-            metadata=metadata,
-            rule_findings=deterministic_findings,
-        )
-        if llm_findings or llm_summary:
-            sources["llm"] = True
+        llm_findings: list[PdfStructureFinding] = []
+        llm_summary: str | None = None
+        if include_llm:
+            llm_findings, llm_summary = await self._run_llm_stage(
+                ocr=ocr_fields,
+                metadata=metadata,
+                rule_findings=deterministic_findings,
+            )
+            if llm_findings or llm_summary:
+                sources["llm"] = True
+        else:
+            logger.info("PDF structure LLM stage skipped (verify fast-path).")
 
         # Contextual composites first — they are the stronger, explainable combinations.
         findings = _dedupe_findings([*contextual_findings, *atomic_findings, *llm_findings])

@@ -8,6 +8,10 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from app.application.dto.pdf_structure import PdfStructureAnalyzeResponse
 from app.application.services.ai_probability_enrichment import AiProbabilityEnrichmentService
 from app.application.services.ai_summary_enrichment import AiSummaryEnrichmentService
+from app.application.services.pdf_structure.metadata_compare import (
+    build_metadata_compare_summary,
+    find_vendor_pdf_metadata,
+)
 from app.application.services.pdf_structure_enrichment import PdfStructureEnrichmentService
 from app.infrastructure.vendors.truthscan.client import TruthScanClient
 from app.infrastructure.vendors.truthscan.dependencies import provide_truthscan_client
@@ -27,7 +31,7 @@ def _attach_pdf_structure_to_context(
     *,
     cross_check_summary: str | None,
 ) -> None:
-    """Augment executive-summary context with PDF Structure / DI evidence."""
+    """Augment executive-summary context with PDF Structure metadata + findings."""
     ocr = analysis.ocr_fields
     if ocr is not None:
         enrichment_context["ocr_fields"] = ocr.model_dump(exclude={"raw", "detected_text"})
@@ -76,13 +80,26 @@ async def verify_with_engine_v1(
     filename = file.filename or "certificate.bin"
     resolved_holder = holder_name or file.filename or "Unknown"
     resolved_issuer = issuer_name or "Unknown"
-    response = await client.verify(
-        raw_content,
-        filename=filename,
-        document_type=document_type,
-        holder_name=resolved_holder,
-        issuer_name=resolved_issuer,
+
+    pdf_structure_task = asyncio.create_task(
+        pdf_structure_service.enrich(
+            content=raw_content,
+            filename=filename,
+            content_type=file.content_type,
+        )
     )
+
+    try:
+        response = await client.verify(
+            raw_content,
+            filename=filename,
+            document_type=document_type,
+            holder_name=resolved_holder,
+            issuer_name=resolved_issuer,
+        )
+    except Exception:
+        pdf_structure_task.cancel()
+        raise
 
     analysis = response.analysis
     enrichment_context: dict[str, Any] = {
@@ -152,23 +169,23 @@ async def verify_with_engine_v1(
             ],
             context=v1_context,
         ),
-        pdf_structure_service.enrich(
-            content=raw_content,
-            filename=filename,
-            content_type=file.content_type,
-        ),
+        pdf_structure_task,
     )
 
-    cross_check_summary: str | None = None
+    metadata_summary: str | None = None
     if pdf_structure_analysis is not None:
-        cross_check_summary = await ai_summary_service.cross_check_summary(
-            vendor_context=enrichment_context,
-            pdf_analysis=pdf_structure_analysis,
+        vendor_pdf_metadata = find_vendor_pdf_metadata(
+            analysis.raw_query_response,
+            analysis.model_dump(),
+        )
+        metadata_summary = build_metadata_compare_summary(
+            vendor_pdf_metadata,
+            pdf_structure_analysis.pdf_metadata,
         )
         _attach_pdf_structure_to_context(
             enrichment_context,
             pdf_structure_analysis,
-            cross_check_summary=cross_check_summary,
+            cross_check_summary=metadata_summary,
         )
 
     ai_summary = await ai_summary_service.enrich(context=enrichment_context)
@@ -184,7 +201,7 @@ async def verify_with_engine_v1(
 
     if pdf_structure_analysis is not None:
         pdf_updates = PdfStructureEnrichmentService.as_v1_updates(pdf_structure_analysis)
-        updates["pdf_structure_summary"] = cross_check_summary or pdf_updates["pdf_structure_summary"]
+        updates["pdf_structure_summary"] = metadata_summary or pdf_updates["pdf_structure_summary"]
         updates["pdf_structure_findings"] = pdf_updates["pdf_structure_findings"]
         pdf_signals = [
             TruthScanSignal.model_validate(item)

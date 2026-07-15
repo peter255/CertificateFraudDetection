@@ -145,7 +145,40 @@ When Azure Document Intelligence is configured correctly, look for `"ocr": true`
       "Certificate ID": "CERT-12345"
     },
     "raw": {
-      "api": "azure_document_intelligence"
+      "api": "azure_document_intelligence",
+      "page_count": 1,
+      "has_key_value_pairs": true,
+      "analyzeResult": {
+        "apiVersion": "2024-11-30",
+        "modelId": "prebuilt-layout",
+        "content": "Certificate of Completion ...",
+        "pages": [
+          {
+            "pageNumber": 1,
+            "width": 8.5,
+            "height": 11,
+            "unit": "inch",
+            "words": [
+              {
+                "content": "Jane",
+                "polygon": [1.0, 2.0, 1.5, 2.0, 1.5, 2.3, 1.0, 2.3],
+                "confidence": 0.99,
+                "span": { "offset": 0, "length": 4 }
+              }
+            ],
+            "lines": [
+              {
+                "content": "Jane Doe",
+                "polygon": [1.0, 2.0, 2.2, 2.0, 2.2, 2.3, 1.0, 2.3],
+                "spans": [{ "offset": 0, "length": 8 }]
+              }
+            ]
+          }
+        ],
+        "keyValuePairs": [],
+        "styles": [],
+        "languages": []
+      }
     }
   },
   "pdf_metadata": {

@@ -190,9 +190,9 @@ export function bboxMostlyContained(
 }
 
 /**
- * Drop boxes that are noise (tiny) or cover almost the whole page (useless highlight).
+ * Area sanity only — allows sliver boxes through so Azure remapping can repair them.
  */
-export function isUsefulHighlightBox(
+export function isPlausibleHighlightBox(
   bbox: [number, number, number, number] | number[],
   imageWidth: number,
   imageHeight: number
@@ -206,10 +206,51 @@ export function isUsefulHighlightBox(
   const pageArea = imageWidth * imageHeight;
   if (pageArea <= 0) return false;
   const ratio = area / pageArea;
-  // Tiny speck or near-full-page box — both confuse the user.
+  if (ratio < 0.00005) return false;
+  if (ratio > 0.92) return false;
+  return true;
+}
+
+/**
+ * Drop boxes that are noise (tiny) or cover almost the whole page (useless highlight).
+ * Also reject needle-thin strips (common vendor/OCR mistakes).
+ */
+export function isUsefulHighlightBox(
+  bbox: [number, number, number, number] | number[],
+  imageWidth: number,
+  imageHeight: number
+): boolean {
+  if (!isPlausibleHighlightBox(bbox, imageWidth, imageHeight)) return false;
+  const area = Number(bbox[2]) * Number(bbox[3]);
+  const pageArea = imageWidth * imageHeight;
+  const ratio = area / pageArea;
+  // Stricter than plausible — tiny speck after remap is still useless.
   if (ratio < 0.0008) return false;
   if (ratio > 0.85) return false;
+  if (isDegenerateHighlightBox(bbox, imageWidth, imageHeight)) return false;
   return true;
+}
+
+/**
+ * True for sliver-like boxes (e.g. a 2px-wide vertical line through a logo)
+ * that cannot reasonably represent a seal / word / field highlight.
+ */
+export function isDegenerateHighlightBox(
+  bbox: [number, number, number, number] | number[],
+  imageWidth: number,
+  imageHeight: number
+): boolean {
+  const w = Number(bbox[2]);
+  const h = Number(bbox[3]);
+  if (!(w > 0) || !(h > 0) || !(imageWidth > 0) || !(imageHeight > 0)) return true;
+  const wPct = w / imageWidth;
+  const hPct = h / imageHeight;
+  // Needle-thin vertical or horizontal strip.
+  if (wPct < 0.015 && hPct > 0.06) return true;
+  if (hPct < 0.015 && wPct > 0.06) return true;
+  // Extreme aspect ratio (line, not a region).
+  if (h / w > 10 || w / h > 10) return true;
+  return false;
 }
 
 /** Build a stable unique finding id from page + bbox (never reuse engine type/ids). */
