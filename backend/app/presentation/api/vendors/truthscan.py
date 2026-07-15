@@ -155,10 +155,12 @@ async def verify_with_engine_v1(
             ],
             raw_score=response.raw_score,
             context=enrichment_context,
+            allow_azure_estimate=False,
         ),
         ai_summary_service.enrich_text_manipulation(
             signals=signal_payloads,
             context=v1_context,
+            use_llm=False,
         ),
         ai_summary_service.enrich_image_manipulation(
             signals=signal_payloads,
@@ -168,6 +170,7 @@ async def verify_with_engine_v1(
                 if isinstance(pattern, str) and pattern.strip()
             ],
             context=v1_context,
+            use_llm=False,
         ),
         pdf_structure_task,
     )
@@ -188,7 +191,7 @@ async def verify_with_engine_v1(
             cross_check_summary=metadata_summary,
         )
 
-    ai_summary = await ai_summary_service.enrich(context=enrichment_context)
+    ai_summary = await ai_summary_service.enrich(context=enrichment_context, use_llm=False)
 
     updates: dict = {
         "ai_summary": ai_summary,

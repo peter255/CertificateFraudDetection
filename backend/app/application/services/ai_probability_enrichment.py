@@ -30,6 +30,7 @@ class AiProbabilityEnrichmentService:
         vendor_payloads: list[dict[str, Any] | None],
         raw_score: float | None = None,
         context: dict[str, Any] | None = None,
+        allow_azure_estimate: bool = True,
     ) -> tuple[float | None, str | None]:
         vendor_probability = extract_vendor_ai_probability(*vendor_payloads)
         if vendor_probability is not None:
@@ -39,6 +40,10 @@ class AiProbabilityEnrichmentService:
             score = _to_score_100(raw_score)
             if score is not None:
                 return score, "vendor"
+
+        # Verify fast-path: skip multimodal Azure estimate (often 10–20s).
+        if not allow_azure_estimate:
+            return None, None
 
         if not self._ai_client.is_configured():
             return None, None

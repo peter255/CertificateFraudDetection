@@ -13,8 +13,8 @@ from app.infrastructure.vendors.paperwork.models import PaperworkVerifyResponse
 from app.shared.exceptions.base import VendorError
 from app.shared.logging.logger import get_logger
 
-_POLL_INTERVAL = 5
-_MAX_POLL_ATTEMPTS = 60  # 5 minutes
+_POLL_INTERVAL = 1.0  # Prefer snappy completion detection over sparse polling.
+_MAX_POLL_ATTEMPTS = 300  # ~5 minutes at 1s interval
 
 logger = get_logger(__name__)
 

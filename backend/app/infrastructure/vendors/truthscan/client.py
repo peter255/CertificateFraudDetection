@@ -13,8 +13,8 @@ from app.shared.exceptions.base import VendorError
 from app.shared.logging.logger import get_logger
 
 _S3_BASE = "https://ai-image-detector-prod.nyc3.digitaloceanspaces.com/"
-_POLL_INTERVAL = 3          # seconds between /query requests
-_MAX_POLL_ATTEMPTS = 30     # 90 seconds maximum wait
+_POLL_INTERVAL = 1.0        # Prefer snappy completion detection over sparse polling.
+_MAX_POLL_ATTEMPTS = 90     # ~90 seconds maximum wait
 
 logger = get_logger(__name__)
 

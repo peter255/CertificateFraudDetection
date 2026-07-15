@@ -159,43 +159,8 @@ async def verify_with_engine_v2(
         "issue_date": response.issue_date,
     }
 
-    # Vendor is done; finish AI enrichments while PDF structure may still be running.
-    (
-        (ai_probability, ai_probability_source),
-        text_manipulation_summary,
-        image_manipulation_summary,
-        pdf_structure_analysis,
-    ) = await asyncio.gather(
-        ai_probability_service.enrich(
-            document_content=raw_content,
-            filename=filename,
-            vendor_payloads=[
-                response.layer_details,
-                response.engine_results,
-                response.classification,
-                response.pdf_fraud_subscores,
-                response.engine_scores,
-                response.raw_result,
-            ],
-            context={
-                **enrichment_context,
-                "executive_summary": response.executive_summary,
-            },
-        ),
-        ai_summary_service.enrich_text_manipulation(
-            signals=signal_payloads,
-            field_evidence=[
-                item.model_dump(exclude_none=True) for item in response.field_evidence
-            ],
-            context=enrichment_context,
-        ),
-        ai_summary_service.enrich_image_manipulation(
-            signals=signal_payloads,
-            visual_evidence=visual_payloads,
-            context=enrichment_context,
-        ),
-        pdf_structure_task,
-    )
+    # Vendor is done; PDF structure usually finished during the vendor wait.
+    pdf_structure_analysis = await pdf_structure_task
 
     metadata_summary: str | None = None
     if pdf_structure_analysis is not None:
@@ -216,7 +181,50 @@ async def verify_with_engine_v2(
             cross_check_summary=metadata_summary,
         )
 
-    ai_summary = await ai_summary_service.enrich(context=enrichment_context)
+    # Keep vendor executive narrative for the local summary path.
+    if response.executive_summary:
+        enrichment_context["executive_summary"] = response.executive_summary
+
+    # Fast path: no Azure OpenAI round-trips after the vendor (was +15–25s).
+    (
+        (ai_probability, ai_probability_source),
+        text_manipulation_summary,
+        image_manipulation_summary,
+        ai_summary,
+    ) = await asyncio.gather(
+        ai_probability_service.enrich(
+            document_content=raw_content,
+            filename=filename,
+            vendor_payloads=[
+                response.layer_details,
+                response.engine_results,
+                response.classification,
+                response.pdf_fraud_subscores,
+                response.engine_scores,
+                response.raw_result,
+            ],
+            context={
+                **enrichment_context,
+                "executive_summary": response.executive_summary,
+            },
+            allow_azure_estimate=False,
+        ),
+        ai_summary_service.enrich_text_manipulation(
+            signals=signal_payloads,
+            field_evidence=[
+                item.model_dump(exclude_none=True) for item in response.field_evidence
+            ],
+            context=enrichment_context,
+            use_llm=False,
+        ),
+        ai_summary_service.enrich_image_manipulation(
+            signals=signal_payloads,
+            visual_evidence=visual_payloads,
+            context=enrichment_context,
+            use_llm=False,
+        ),
+        ai_summary_service.enrich(context=enrichment_context, use_llm=False),
+    )
 
     updates: dict = {
         "executive_summary": ai_summary,

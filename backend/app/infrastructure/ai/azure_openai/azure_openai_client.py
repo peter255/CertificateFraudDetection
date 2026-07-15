@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import json
 import re
 from typing import Any
@@ -255,20 +254,17 @@ class AzureOpenAIClient:
         )
 
         user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
-        # Prefer text-context estimation. Large images often fail or blow the token budget
-        # on gpt-5-mini; context from vendors is enough for a numeric estimate.
+        # Text-context only — attaching certificate images made estimates 10–20s+ and
+        # often hit token/vision limits. Vendor signals are sufficient for a numeric estimate.
         if content_type == "application/pdf":
             user_content[0]["text"] += (
                 "\n\nNote: the uploaded file is a PDF. You cannot see the pixels directly; "
                 "rely on the verification context and typical PDF AI-generation indicators."
             )
-        elif content_type in {"image/png", "image/jpeg"} and len(document_content) <= 1_500_000:
-            encoded = base64.b64encode(document_content).decode("ascii")
-            user_content.append(
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:{content_type};base64,{encoded}"},
-                }
+        elif content_type in {"image/png", "image/jpeg"}:
+            user_content[0]["text"] += (
+                "\n\nNote: the uploaded file is an image. Estimate from verification "
+                "signals/context only; do not assume you can inspect the pixels."
             )
 
         message_content = await self._chat_completion_multimodal(user_content)

@@ -42,10 +42,17 @@ class AiSummaryEnrichmentService:
     def __init__(self, ai_client: IAiAnalysisPort) -> None:
         self._ai_client = ai_client
 
-    async def enrich(self, *, context: dict[str, Any]) -> str:
+    async def enrich(self, *, context: dict[str, Any], use_llm: bool = True) -> str:
         summary_context = _summary_context(context)
 
-        if self._ai_client.is_configured():
+        # Prefer a clean vendor narrative when present (instant — no Azure round-trip).
+        vendor_summary = context.get("executive_summary") or context.get("vendor_executive_summary")
+        if isinstance(vendor_summary, str) and vendor_summary.strip():
+            cleaned = vendor_summary.strip()
+            if not looks_like_recommendation(cleaned):
+                return cleaned
+
+        if use_llm and self._ai_client.is_configured():
             try:
                 generated = await self._ai_client.generate_summary(context=summary_context)
                 if generated and not looks_like_recommendation(generated):
@@ -89,6 +96,7 @@ class AiSummaryEnrichmentService:
         signals: list[dict[str, Any]],
         field_evidence: list[dict[str, Any]] | None = None,
         context: dict[str, Any] | None = None,
+        use_llm: bool = True,
     ) -> str | None:
         """Summarize Text Manipulation signals for a non-technical user via Azure OpenAI."""
         combined = [*(signals or []), *(field_evidence or [])]
@@ -108,7 +116,7 @@ class AiSummaryEnrichmentService:
 
         logger.info("Text manipulation summary: %s finding(s)", len(text_findings))
 
-        if self._ai_client.is_configured():
+        if use_llm and self._ai_client.is_configured():
             try:
                 generated = await self._ai_client.generate_category_summary(
                     category="Text Manipulation",
@@ -129,6 +137,7 @@ class AiSummaryEnrichmentService:
         signals: list[dict[str, Any]],
         visual_evidence: list[dict[str, Any]] | None = None,
         context: dict[str, Any] | None = None,
+        use_llm: bool = True,
     ) -> str | None:
         """Summarize Image Manipulation using localized visual evidence only."""
         localized = [
@@ -146,7 +155,7 @@ class AiSummaryEnrichmentService:
         ctx["has_localized_visual_evidence"] = True
         ctx["localized_visual_count"] = len(localized)
 
-        if self._ai_client.is_configured():
+        if use_llm and self._ai_client.is_configured():
             try:
                 generated = await self._ai_client.generate_category_summary(
                     category="Image Manipulation",
