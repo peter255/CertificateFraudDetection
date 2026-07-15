@@ -8,7 +8,10 @@ from typing import Any
 import httpx
 
 from app.application.PromptTemplates.loader import PromptTemplateLoader
-from app.application.PromptTemplates.names import ReportNarrativeTemplateNames
+from app.application.PromptTemplates.names import (
+    PdfForensicTemplateNames,
+    ReportNarrativeTemplateNames,
+)
 from app.domain.entities.certificate import Certificate
 from app.domain.entities.verification_report import VendorFinding
 from app.infrastructure.configuration.settings import Settings
@@ -168,6 +171,57 @@ class AzureOpenAIClient:
             return None
         if _looks_like_recommendation(summary):
             logger.warning("Azure %s summary looked like a recommendation; discarding.", category)
+            return None
+        return _clamp_summary_length(summary)
+
+    async def generate_cross_check_summary(
+        self,
+        *,
+        vendor_context: dict[str, Any],
+        pdf_structure_context: dict[str, Any],
+    ) -> str | None:
+        """Compare vendor identity/signals with PDF Structure / DI OCR analysis."""
+        if not self.is_configured():
+            return None
+
+        vendor_json = json.dumps(
+            _slim_cross_check_vendor(vendor_context),
+            ensure_ascii=False,
+            default=str,
+        )
+        pdf_json = json.dumps(
+            _slim_cross_check_pdf(pdf_structure_context),
+            ensure_ascii=False,
+            default=str,
+        )
+        if len(vendor_json) > _MAX_CONTEXT_CHARS:
+            vendor_json = vendor_json[:_MAX_CONTEXT_CHARS] + "…"
+        if len(pdf_json) > _MAX_CONTEXT_CHARS:
+            pdf_json = pdf_json[:_MAX_CONTEXT_CHARS] + "…"
+
+        prompt = _prompt_loader.render(
+            PdfForensicTemplateNames.VENDOR_STRUCTURE_CROSSCHECK,
+            vendor_context=vendor_json,
+            pdf_structure_context=pdf_json,
+        )
+
+        message_content = await self._chat_completion(
+            prompt,
+            max_completion_tokens=_MAX_SUMMARY_COMPLETION_TOKENS,
+            reasoning_effort="low",
+        )
+        if not message_content:
+            return None
+
+        summary = _parse_summary(message_content)
+        if summary is None:
+            logger.warning(
+                "Could not parse vendor/structure cross-check summary from: %s",
+                message_content[:300],
+            )
+            return None
+        if _looks_like_recommendation(summary):
+            logger.warning("Azure cross-check summary looked like a recommendation; discarding.")
             return None
         return _clamp_summary_length(summary)
 
@@ -366,8 +420,52 @@ def _slim_summary_context(context: dict[str, Any]) -> dict[str, Any]:
         "text_score",
         "image_score",
         "pdf_score",
+        "vendor_identity",
+        "ocr_fields",
+        "pdf_metadata",
+        "pdf_structure_findings",
+        "pdf_structure_summary",
+        "pdf_structure_sources",
     ):
         if key in context and context[key] not in (None, "", [], {}):
+            slim[key] = context[key]
+    return slim
+
+
+def _slim_cross_check_vendor(context: dict[str, Any]) -> dict[str, Any]:
+    slim: dict[str, Any] = {}
+    for key in (
+        "engine",
+        "verdict",
+        "overall_status",
+        "final_result",
+        "fraud_score",
+        "risk_level",
+        "risk_score",
+        "document_type",
+        "holder_name",
+        "issuer_name",
+        "issue_date",
+        "fraud_types",
+        "signals",
+        "key_indicators",
+        "metadata_notes",
+    ):
+        if context.get(key) not in (None, "", [], {}):
+            slim[key] = context[key]
+    return slim
+
+
+def _slim_cross_check_pdf(context: dict[str, Any]) -> dict[str, Any]:
+    slim: dict[str, Any] = {}
+    for key in (
+        "ocr_fields",
+        "pdf_metadata",
+        "findings",
+        "internal_summary",
+        "sources",
+    ):
+        if context.get(key) not in (None, "", [], {}):
             slim[key] = context[key]
     return slim
 

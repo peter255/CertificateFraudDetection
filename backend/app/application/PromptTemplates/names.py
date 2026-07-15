@@ -6,6 +6,7 @@ class PdfForensicTemplateNames:
 
     LOGICAL_CONSISTENCY = "pdf_forensic/logical_consistency.txt"
     FINDINGS_SUMMARY = "pdf_forensic/findings_summary.txt"
+    VENDOR_STRUCTURE_CROSSCHECK = "pdf_forensic/vendor_structure_crosscheck.txt"
 
 
 class ReportNarrativeTemplateNames:

@@ -59,7 +59,7 @@ cp frontend/.env.example frontend/.env
 |----------|---------|---------|----------|
 | `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` | Document Intelligence endpoint | `https://your-resource.cognitiveservices.azure.com/` | Optional |
 | `AZURE_DOCUMENT_INTELLIGENCE_KEY` | Document Intelligence API key | `…` | Optional |
-| `AZURE_DOCUMENT_INTELLIGENCE_MODEL` | Model id | `prebuilt-document` | Optional (default `prebuilt-document`) |
+| `AZURE_DOCUMENT_INTELLIGENCE_MODEL` | Model id | `prebuilt-layout` | Optional (default `prebuilt-layout`; `prebuilt-document` is retired in API 2024-11-30) |
 | `AZURE_DOCUMENT_INTELLIGENCE_TIMEOUT` | HTTP timeout (seconds) | `120` | Optional (default `120`) |
 
 > Naming note: `TRUTHSCAN_*` and `PAPERWORK_*` are internal settings keys for Engine V1 / V2 adapters. Product docs and the UI refer only to **Verification Engine V1** and **Verification Engine V2**.

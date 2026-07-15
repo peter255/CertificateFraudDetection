@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
+from app.application.dto.pdf_structure import PdfStructureAnalyzeResponse
 from app.application.services.ai_probability_enrichment import AiProbabilityEnrichmentService
 from app.application.services.ai_summary_enrichment import AiSummaryEnrichmentService
 from app.application.services.pdf_structure_enrichment import PdfStructureEnrichmentService
@@ -17,6 +19,35 @@ from app.presentation.dependencies.ai_probability import (
 from app.presentation.dependencies.pdf_structure import provide_pdf_structure_enrichment
 
 router = APIRouter(prefix="/vendors/v1", tags=["vendors:v1"])
+
+
+def _attach_pdf_structure_to_context(
+    enrichment_context: dict[str, Any],
+    analysis: PdfStructureAnalyzeResponse,
+    *,
+    cross_check_summary: str | None,
+) -> None:
+    """Augment executive-summary context with PDF Structure / DI evidence."""
+    ocr = analysis.ocr_fields
+    if ocr is not None:
+        enrichment_context["ocr_fields"] = ocr.model_dump(exclude={"raw", "detected_text"})
+    if analysis.pdf_metadata is not None:
+        enrichment_context["pdf_metadata"] = analysis.pdf_metadata.model_dump()
+    enrichment_context["pdf_structure_findings"] = [
+        {
+            "rule_id": item.rule_id,
+            "severity": item.severity,
+            "status": item.status,
+            "title": item.title,
+            "description": item.description,
+        }
+        for item in analysis.findings[:16]
+    ]
+    enrichment_context["pdf_structure_sources"] = analysis.sources
+    if cross_check_summary:
+        enrichment_context["pdf_structure_summary"] = cross_check_summary
+    elif analysis.summary:
+        enrichment_context["pdf_structure_summary"] = analysis.summary
 
 
 @router.post(
@@ -43,16 +74,18 @@ async def verify_with_engine_v1(
 ) -> TruthScanVerifyResponse:
     raw_content = await file.read()
     filename = file.filename or "certificate.bin"
+    resolved_holder = holder_name or file.filename or "Unknown"
+    resolved_issuer = issuer_name or "Unknown"
     response = await client.verify(
         raw_content,
         filename=filename,
         document_type=document_type,
-        holder_name=holder_name or file.filename or "Unknown",
-        issuer_name=issuer_name or "Unknown",
+        holder_name=resolved_holder,
+        issuer_name=resolved_issuer,
     )
 
     analysis = response.analysis
-    enrichment_context = {
+    enrichment_context: dict[str, Any] = {
         "engine": "v1",
         "verdict": response.overall_status or response.final_result,
         "final_result": response.final_result,
@@ -72,6 +105,12 @@ async def verify_with_engine_v1(
         "signals": [signal.model_dump(exclude_none=True) for signal in response.signals[:16]],
         "has_localized_visual_evidence": False,
         "localized_visual_count": 0,
+        "vendor_identity": {
+            "holder_name": resolved_holder,
+            "issuer_name": resolved_issuer,
+        },
+        "holder_name": resolved_holder,
+        "issuer_name": resolved_issuer,
     }
 
     signal_payloads = [signal.model_dump(exclude_none=True) for signal in response.signals]
@@ -86,7 +125,6 @@ async def verify_with_engine_v1(
 
     (
         (ai_probability, ai_probability_source),
-        ai_summary,
         text_manipulation_summary,
         image_manipulation_summary,
         pdf_structure_analysis,
@@ -101,7 +139,6 @@ async def verify_with_engine_v1(
             raw_score=response.raw_score,
             context=enrichment_context,
         ),
-        ai_summary_service.enrich(context=enrichment_context),
         ai_summary_service.enrich_text_manipulation(
             signals=signal_payloads,
             context=v1_context,
@@ -122,6 +159,20 @@ async def verify_with_engine_v1(
         ),
     )
 
+    cross_check_summary: str | None = None
+    if pdf_structure_analysis is not None:
+        cross_check_summary = await ai_summary_service.cross_check_summary(
+            vendor_context=enrichment_context,
+            pdf_analysis=pdf_structure_analysis,
+        )
+        _attach_pdf_structure_to_context(
+            enrichment_context,
+            pdf_structure_analysis,
+            cross_check_summary=cross_check_summary,
+        )
+
+    ai_summary = await ai_summary_service.enrich(context=enrichment_context)
+
     updates: dict = {
         "ai_summary": ai_summary,
         "text_manipulation_summary": text_manipulation_summary,
@@ -133,7 +184,7 @@ async def verify_with_engine_v1(
 
     if pdf_structure_analysis is not None:
         pdf_updates = PdfStructureEnrichmentService.as_v1_updates(pdf_structure_analysis)
-        updates["pdf_structure_summary"] = pdf_updates["pdf_structure_summary"]
+        updates["pdf_structure_summary"] = cross_check_summary or pdf_updates["pdf_structure_summary"]
         updates["pdf_structure_findings"] = pdf_updates["pdf_structure_findings"]
         pdf_signals = [
             TruthScanSignal.model_validate(item)

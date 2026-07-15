@@ -48,12 +48,25 @@ class AzureDocumentIntelligenceClient:
             return OcrExtractedFields()
 
         endpoint = self._settings.azure_document_intelligence_endpoint.rstrip("/")
+        # v4 (2024-11-30) retired prebuilt-document; layout + keyValuePairs replaces it.
         model_id = (
-            self._settings.azure_document_intelligence_model.strip() or "prebuilt-document"
+            self._settings.azure_document_intelligence_model.strip() or "prebuilt-layout"
         )
+        if model_id == "prebuilt-document":
+            logger.warning(
+                "Model 'prebuilt-document' is retired in API %s; using prebuilt-layout "
+                "with features=keyValuePairs instead.",
+                _API_VERSION,
+            )
+            model_id = "prebuilt-layout"
+
+        query = f"api-version={_API_VERSION}"
+        if model_id == "prebuilt-layout":
+            query += "&features=keyValuePairs"
+
         url = (
             f"{endpoint}/documentintelligence/documentModels/{model_id}:analyze"
-            f"?api-version={_API_VERSION}"
+            f"?{query}"
         )
 
         headers = {

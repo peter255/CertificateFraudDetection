@@ -95,7 +95,10 @@ class TruthScanVerifyResponse(BaseModel):
     )
     pdf_structure_summary: str | None = Field(
         default=None,
-        description="Forensic PDF Structure Analysis summary (OCR + metadata + rules + LLM).",
+        description=(
+            "Azure OpenAI cross-check of vendor identity vs Document Intelligence "
+            "OCR / PDF structure (falls back to local PDF Structure summary)."
+        ),
     )
     pdf_structure_findings: list[dict[str, Any]] = Field(
         default_factory=list,

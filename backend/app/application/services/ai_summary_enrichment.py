@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.application.dto.pdf_structure import PdfStructureAnalyzeResponse
 from app.application.interfaces.ai_analysis_port import IAiAnalysisPort
 from app.shared.logging.logger import get_logger
 
@@ -53,6 +54,34 @@ class AiSummaryEnrichmentService:
                 logger.warning("Azure OpenAI summary generation failed: %s", exc)
 
         return build_flags_summary(summary_context)
+
+    async def cross_check_summary(
+        self,
+        *,
+        vendor_context: dict[str, Any],
+        pdf_analysis: PdfStructureAnalyzeResponse,
+    ) -> str | None:
+        """
+        Compare vendor identity/signals with PDF Structure / DI OCR and return
+        a short narrative. Falls back to the pipeline's own summary when Azure
+        is unavailable or fails.
+        """
+        pdf_structure_context = _pdf_structure_prompt_context(pdf_analysis)
+        fallback = pdf_analysis.summary
+
+        if self._ai_client.is_configured():
+            try:
+                generated = await self._ai_client.generate_cross_check_summary(
+                    vendor_context=vendor_context,
+                    pdf_structure_context=pdf_structure_context,
+                )
+                if generated and not looks_like_recommendation(generated):
+                    return generated
+                logger.warning("Azure cross-check summary missing/invalid; using PDF Structure fallback.")
+            except Exception as exc:  # noqa: BLE001 — optional enrichment must not fail verify
+                logger.warning("Azure OpenAI vendor/structure cross-check failed: %s", exc)
+
+        return fallback
 
     async def enrich_text_manipulation(
         self,
@@ -352,6 +381,12 @@ def _summary_context(context: dict[str, Any]) -> dict[str, Any]:
         "image_score",
         "pdf_score",
         "document_type",
+        "vendor_identity",
+        "ocr_fields",
+        "pdf_metadata",
+        "pdf_structure_findings",
+        "pdf_structure_summary",
+        "pdf_structure_sources",
     ):
         value = context.get(key)
         if value not in (None, "", [], {}):
@@ -410,6 +445,37 @@ def _summary_context(context: dict[str, Any]) -> dict[str, Any]:
                     slim["provenance"] = provenance
 
     return slim
+
+
+def _pdf_structure_prompt_context(analysis: PdfStructureAnalyzeResponse) -> dict[str, Any]:
+    ocr = analysis.ocr_fields
+    metadata = analysis.pdf_metadata
+    findings_payload: list[dict[str, Any]] = []
+    for item in analysis.findings[:20]:
+        findings_payload.append(
+            {
+                "rule_id": item.rule_id,
+                "severity": item.severity,
+                "status": item.status,
+                "title": item.title,
+                "description": item.description,
+            }
+        )
+
+    ocr_payload: dict[str, Any] | None = None
+    if ocr is not None:
+        ocr_payload = ocr.model_dump(exclude={"raw", "detected_text"})
+        text = ocr.detected_text
+        if isinstance(text, str) and text.strip():
+            ocr_payload["detected_text_excerpt"] = text.strip()[:1_500]
+
+    return {
+        "ocr_fields": ocr_payload,
+        "pdf_metadata": metadata.model_dump() if metadata is not None else None,
+        "findings": findings_payload,
+        "internal_summary": analysis.summary,
+        "sources": analysis.sources,
+    }
 
 
 def _collect_flags(context: dict[str, Any]) -> list[str]:

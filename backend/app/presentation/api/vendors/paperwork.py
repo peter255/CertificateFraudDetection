@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
+from app.application.dto.pdf_structure import PdfStructureAnalyzeResponse
 from app.application.services.ai_probability_enrichment import AiProbabilityEnrichmentService
 from app.application.services.ai_summary_enrichment import AiSummaryEnrichmentService
 from app.application.services.pdf_structure_enrichment import PdfStructureEnrichmentService
@@ -35,6 +37,35 @@ def _is_localized_visual_payload(item: dict) -> bool:
     except (TypeError, ValueError):
         return False
     return any(abs(v) > 0 for v in coords)
+
+
+def _attach_pdf_structure_to_context(
+    enrichment_context: dict[str, Any],
+    analysis: PdfStructureAnalyzeResponse,
+    *,
+    cross_check_summary: str | None,
+) -> None:
+    """Augment executive-summary context with PDF Structure / DI evidence."""
+    ocr = analysis.ocr_fields
+    if ocr is not None:
+        enrichment_context["ocr_fields"] = ocr.model_dump(exclude={"raw", "detected_text"})
+    if analysis.pdf_metadata is not None:
+        enrichment_context["pdf_metadata"] = analysis.pdf_metadata.model_dump()
+    enrichment_context["pdf_structure_findings"] = [
+        {
+            "rule_id": item.rule_id,
+            "severity": item.severity,
+            "status": item.status,
+            "title": item.title,
+            "description": item.description,
+        }
+        for item in analysis.findings[:16]
+    ]
+    enrichment_context["pdf_structure_sources"] = analysis.sources
+    if cross_check_summary:
+        enrichment_context["pdf_structure_summary"] = cross_check_summary
+    elif analysis.summary:
+        enrichment_context["pdf_structure_summary"] = analysis.summary
 
 
 @router.post(
@@ -80,7 +111,7 @@ async def verify_with_engine_v2(
         if _is_localized_visual_payload(item)
     ]
 
-    enrichment_context = {
+    enrichment_context: dict[str, Any] = {
         "engine": "v2",
         "verdict": response.verdict,
         "fraud_types": response.fraud_types,
@@ -100,11 +131,20 @@ async def verify_with_engine_v2(
             }
             for item in localized_visual[:12]
         ],
+        "vendor_identity": {
+            "holder_name": response.holder_name,
+            "issuer_name": response.issuer_name,
+            "issue_date": response.issue_date,
+        },
+        "holder_name": response.holder_name,
+        "issuer_name": response.issuer_name,
+        "issue_date": response.issue_date,
     }
 
+    # PDF Structure + independent enrichments first; executive summary waits for
+    # Document Intelligence so it can cross-check vendor vs OCR/structure.
     (
         (ai_probability, ai_probability_source),
-        ai_summary,
         text_manipulation_summary,
         image_manipulation_summary,
         pdf_structure_analysis,
@@ -125,7 +165,6 @@ async def verify_with_engine_v2(
                 "executive_summary": response.executive_summary,
             },
         ),
-        ai_summary_service.enrich(context=enrichment_context),
         ai_summary_service.enrich_text_manipulation(
             signals=signal_payloads,
             field_evidence=[
@@ -145,6 +184,20 @@ async def verify_with_engine_v2(
         ),
     )
 
+    cross_check_summary: str | None = None
+    if pdf_structure_analysis is not None:
+        cross_check_summary = await ai_summary_service.cross_check_summary(
+            vendor_context=enrichment_context,
+            pdf_analysis=pdf_structure_analysis,
+        )
+        _attach_pdf_structure_to_context(
+            enrichment_context,
+            pdf_structure_analysis,
+            cross_check_summary=cross_check_summary,
+        )
+
+    ai_summary = await ai_summary_service.enrich(context=enrichment_context)
+
     updates: dict = {
         "executive_summary": ai_summary,
         "text_manipulation_summary": text_manipulation_summary,
@@ -156,7 +209,7 @@ async def verify_with_engine_v2(
 
     if pdf_structure_analysis is not None:
         pdf_updates = PdfStructureEnrichmentService.as_v2_updates(pdf_structure_analysis)
-        updates["pdf_structure_summary"] = pdf_updates["pdf_structure_summary"]
+        updates["pdf_structure_summary"] = cross_check_summary or pdf_updates["pdf_structure_summary"]
         updates["pdf_structure_findings"] = pdf_updates["pdf_structure_findings"]
 
         pdf_signals = [

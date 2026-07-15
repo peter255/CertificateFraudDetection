@@ -32,6 +32,13 @@ class IAiAnalysisPort(Protocol):
         context: dict[str, Any] | None = None,
     ) -> str | None: ...
 
+    async def generate_cross_check_summary(
+        self,
+        *,
+        vendor_context: dict[str, Any],
+        pdf_structure_context: dict[str, Any],
+    ) -> str | None: ...
+
     async def estimate_ai_probability(
         self,
         *,
