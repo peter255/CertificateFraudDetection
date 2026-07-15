@@ -442,17 +442,50 @@ export function verdictFallback(verdict: VerificationResult["verdict"]): string 
   );
 }
 
+/**
+ * Fraud Probability must stay coherent with the Decision Engine risk band.
+ *
+ * Risk Score is categorical (0 / 50 / 100). The vendor fraud_score is continuous
+ * and can be ~100 even when the user verdict is only Suspicious — which made the
+ * dashboard look contradictory (Risk 50 Elevated + Fraud 100%).
+ *
+ * Rules:
+ * - fraudulent: high band — never below risk; prefer vendor intensity
+ * - suspicious: elevated band — blend risk with vendor/confidence (caps 100% under mid risk)
+ * - authentic: low band — keep fraud low even if vendor over-scored
+ */
+function deriveFraudProbability(
+  result: VerificationResult,
+  riskScore: number
+): number {
+  const vendor =
+    result.fraudScore != null && Number.isFinite(result.fraudScore)
+      ? Math.min(100, Math.max(0, result.fraudScore))
+      : null;
+  const confidence =
+    result.confidence != null && Number.isFinite(result.confidence)
+      ? result.confidence
+      : 50;
+
+  if (result.verdict === "fraudulent") {
+    return Math.round(Math.max(riskScore, vendor ?? confidence));
+  }
+
+  if (result.verdict === "suspicious") {
+    const intensity = vendor ?? confidence;
+    return Math.round((riskScore + intensity) / 2);
+  }
+
+  if (vendor != null) {
+    return Math.round(Math.min(vendor, 18));
+  }
+  return Math.round(Math.min(riskScore, 18));
+}
+
 /** Scores as shown on the results dashboard after analysis. */
 export function computeAnalysisDisplayScores(result: VerificationResult) {
   const riskScore = result.report.riskScore ?? 0;
-  const fraudProbability =
-    result.fraudScore != null && Number.isFinite(result.fraudScore)
-      ? Math.round(result.fraudScore)
-      : result.verdict === "fraudulent"
-        ? Math.max(riskScore, result.confidence ?? 0)
-        : result.verdict === "suspicious"
-          ? Math.round((riskScore + (result.confidence ?? 50)) / 2)
-          : Math.min(riskScore, 18);
+  const fraudProbability = deriveFraudProbability(result, riskScore);
 
   const aiProbability =
     result.aiProbability != null && Number.isFinite(result.aiProbability)

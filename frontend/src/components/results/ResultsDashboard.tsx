@@ -942,6 +942,7 @@ export default function ResultsDashboard({
                         mb: 1,
                       }}
                     >
+                      ESTIMATED
                     </Typography>
                   )}
                   <ScoreBar
@@ -959,6 +960,7 @@ export default function ResultsDashboard({
                     lineHeight: 1,
                   }}
                 >
+                  —
                 </Typography>
               )}
             </Box>

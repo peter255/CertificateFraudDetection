@@ -185,7 +185,8 @@ async def verify_with_engine_v2(
     if response.executive_summary:
         enrichment_context["executive_summary"] = response.executive_summary
 
-    # Fast path: no Azure OpenAI round-trips after the vendor (was +15–25s).
+    # AI probability may call Azure when the vendor has no numeric score.
+    # Narrative summaries stay local (use_llm=False) to keep verify latency down.
     (
         (ai_probability, ai_probability_source),
         text_manipulation_summary,
@@ -207,7 +208,7 @@ async def verify_with_engine_v2(
                 **enrichment_context,
                 "executive_summary": response.executive_summary,
             },
-            allow_azure_estimate=False,
+            allow_azure_estimate=True,
         ),
         ai_summary_service.enrich_text_manipulation(
             signals=signal_payloads,

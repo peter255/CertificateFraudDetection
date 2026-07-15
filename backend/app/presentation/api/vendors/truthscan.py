@@ -155,7 +155,7 @@ async def verify_with_engine_v1(
             ],
             raw_score=response.raw_score,
             context=enrichment_context,
-            allow_azure_estimate=False,
+            allow_azure_estimate=True,
         ),
         ai_summary_service.enrich_text_manipulation(
             signals=signal_payloads,
