@@ -34,6 +34,7 @@ import {
   fileStructureDisplaySummary,
   overallRiskLabel,
   pdfStructureRiskLabel,
+  riskUiFromScore,
   verdictFallback,
 } from "../../utils/findingsDisplay";
 import {
@@ -1152,6 +1153,10 @@ export default function ResultsDashboard({
           icon={<TextFieldsIcon sx={{ fontSize: 18 }} />}
           signals={buckets.text}
           prefix="TXT"
+          riskOverride={(() => {
+            const scored = riskUiFromScore(textScore);
+            return riskUiFromLabel(scored.label, scored.score);
+          })()}
           summary={clampSummary(
             result.textManipulationSummary?.trim() ||
               buildLocalCategorySummary("Text manipulation", buckets.text) ||
@@ -1163,6 +1168,10 @@ export default function ResultsDashboard({
           icon={<ImageIcon sx={{ fontSize: 18 }} />}
           signals={buckets.image}
           prefix="IMG"
+          riskOverride={(() => {
+            const scored = riskUiFromScore(imageScore);
+            return riskUiFromLabel(scored.label, scored.score);
+          })()}
           summary={clampSummary(
             result.imageManipulationSummary?.trim() ||
               buildLocalCategorySummary("Image manipulation", buckets.image) ||
@@ -1175,6 +1184,10 @@ export default function ResultsDashboard({
           signals={buckets.pdf}
           prefix="FILE"
           riskOverride={(() => {
+            if (result.displayScores?.fileStructureScore != null) {
+              const scored = riskUiFromScore(pdfScore);
+              return riskUiFromLabel(scored.label, scored.score);
+            }
             const pdfRisk = pdfStructureRiskLabel(buckets.pdf, {
               verdict: result.verdict,
               riskScore,
@@ -1183,15 +1196,16 @@ export default function ResultsDashboard({
             return riskUiFromLabel(pdfRisk.label, pdfRisk.score);
           })()}
           summary={clampSummary(
-            fileStructureDisplaySummary(
-              buckets.pdf,
-              result.pdfStructureSummary,
-              {
-                verdict: result.verdict,
-                riskScore,
-                fraudScore: fraudProbability,
-              }
-            )
+            result.pdfStructureSummary?.trim() ||
+              fileStructureDisplaySummary(
+                buckets.pdf,
+                result.pdfStructureSummary,
+                {
+                  verdict: result.verdict,
+                  riskScore,
+                  fraudScore: fraudProbability,
+                }
+              )
           )}
         />
       </Box>

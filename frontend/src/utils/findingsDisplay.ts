@@ -84,7 +84,7 @@ export function bucketSignals(signals: Signal[]): {
   return { text, image, pdf };
 }
 
-export function clampSummary(text: string, maxSentences = 3, maxChars = 420): string {
+export function clampSummary(text: string, maxSentences = 2, maxChars = 280): string {
   let cleaned = text.replace(/\s+/g, " ").trim();
   if (!cleaned) return cleaned;
 
@@ -353,10 +353,22 @@ export function pdfStructureCategoryRisk(
 }
 
 /** Same overall risk chip as ResultsDashboard (CRITICAL / ELEVATED / LOW). */
-export function overallRiskLabel(level: RiskLevel, score: number): string {
-  if (score >= 75 || level === "high") return "CRITICAL";
-  if (score >= 40 || level === "medium") return "ELEVATED";
+export function overallRiskLabel(_level: RiskLevel, score: number): string {
+  // Follow the displayed numeric score — avoid CRITICAL with a mid score.
+  if (score >= 75) return "CRITICAL";
+  if (score >= 40) return "ELEVATED";
   return "LOW";
+}
+
+/** Risk chip from an Azure/local numeric category score. */
+export function riskUiFromScore(score: number): {
+  label: string;
+  score: number;
+} {
+  if (score <= 0) return { label: "LOW RISK", score: 0 };
+  if (score >= 55) return { label: "HIGH RISK", score };
+  if (score >= 25) return { label: "MEDIUM", score };
+  return { label: "LOW RISK", score };
 }
 
 /** Same category chip as ResultsDashboard (HIGH RISK / MEDIUM / LOW RISK). */
@@ -431,32 +443,21 @@ export function signalDescription(signal: Signal): string {
 
 export function verdictFallback(verdict: VerificationResult["verdict"]): string {
   if (verdict === "fraudulent") {
-    return "Strong manipulation signals appear across layers. The document looks altered.";
+    return "Strong manipulation signals appear across layers.";
   }
   if (verdict === "suspicious") {
-    return "Mixed forensic signals leave authenticity uncertain. Key flags need closer attention.";
+    return "Mixed forensic signals leave authenticity uncertain.";
   }
-  return (
-    "Cross-layer checks support authenticity. " +
-    "No suspicious forensic indicators of manipulation stood out."
-  );
+  return "Cross-layer checks support authenticity with no clear manipulation indicators.";
 }
 
 /**
- * Fraud Probability must stay coherent with the Decision Engine risk band.
- *
- * Risk Score is categorical (0 / 50 / 100). The vendor fraud_score is continuous
- * and can be ~100 even when the user verdict is only Suspicious — which made the
- * dashboard look contradictory (Risk 50 Elevated + Fraud 100%).
- *
- * Rules:
- * - fraudulent: high band — never below risk; prefer vendor intensity
- * - suspicious: elevated band — blend risk with vendor/confidence (caps 100% under mid risk)
- * - authentic: low band — keep fraud low even if vendor over-scored
+ * Fraud Probability fallback when Azure does not return display scores.
+ * Keeps coherence with the Decision Engine risk band.
  */
 function deriveFraudProbability(
   result: VerificationResult,
-  riskScore: number
+  bandRiskScore: number
 ): number {
   const vendor =
     result.fraudScore != null && Number.isFinite(result.fraudScore)
@@ -468,24 +469,33 @@ function deriveFraudProbability(
       : 50;
 
   if (result.verdict === "fraudulent") {
-    return Math.round(Math.max(riskScore, vendor ?? confidence));
+    return Math.round(Math.max(bandRiskScore, vendor ?? confidence));
   }
 
   if (result.verdict === "suspicious") {
     const intensity = vendor ?? confidence;
-    return Math.round((riskScore + intensity) / 2);
+    return Math.round((bandRiskScore + intensity) / 2);
   }
 
   if (vendor != null) {
     return Math.round(Math.min(vendor, 18));
   }
-  return Math.round(Math.min(riskScore, 18));
+  return Math.round(Math.min(bandRiskScore, 18));
 }
 
-/** Scores as shown on the results dashboard after analysis. */
+/**
+ * Scores as shown on the results dashboard.
+ * Prefer Azure OpenAI display scores when the backend provides them;
+ * otherwise fall back to local evidence formulas.
+ */
 export function computeAnalysisDisplayScores(result: VerificationResult) {
-  const riskScore = result.report.riskScore ?? 0;
-  const fraudProbability = deriveFraudProbability(result, riskScore);
+  const azure = result.displayScores ?? null;
+  const bandRiskScore = result.report.riskScore ?? 0;
+
+  const fraudProbability =
+    azure?.fraudProbability != null && Number.isFinite(azure.fraudProbability)
+      ? Math.round(azure.fraudProbability)
+      : deriveFraudProbability(result, bandRiskScore);
 
   const aiProbability =
     result.aiProbability != null && Number.isFinite(result.aiProbability)
@@ -496,26 +506,47 @@ export function computeAnalysisDisplayScores(result: VerificationResult) {
         : null;
 
   const regionSignals = signalsFromTamperRegions(result.tamperRegions);
-  // Merge engine signals with localized visual regions so Text/Image scores
-  // track the same evidence shown in Detailed Findings.
+  // Buckets still drive FindingCategory signal lists (manipulation UI).
   const buckets = bucketSignals([...result.signals, ...regionSignals]);
-  const pdfScore = pdfStructureCategoryRisk(buckets.pdf, {
+
+  const localText = categoryRisk(buckets.text).score;
+  const localImage = categoryRisk(buckets.image).score;
+  const localPdf = pdfStructureCategoryRisk(buckets.pdf, {
     verdict: result.verdict,
-    riskScore,
+    riskScore: bandRiskScore,
     fraudScore:
       result.fraudScore != null && Number.isFinite(result.fraudScore)
         ? result.fraudScore
         : fraudProbability,
   }).score;
 
+  const textScore =
+    azure?.textLogicScore != null && Number.isFinite(azure.textLogicScore)
+      ? Math.round(azure.textLogicScore)
+      : localText;
+  const imageScore =
+    azure?.imageForensicsScore != null && Number.isFinite(azure.imageForensicsScore)
+      ? Math.round(azure.imageForensicsScore)
+      : localImage;
+  const pdfScore =
+    azure?.fileStructureScore != null && Number.isFinite(azure.fileStructureScore)
+      ? Math.round(azure.fileStructureScore)
+      : localPdf;
+
+  const riskScore =
+    azure?.riskScore != null && Number.isFinite(azure.riskScore)
+      ? Math.round(azure.riskScore)
+      : bandRiskScore;
+
   return {
     riskScore,
     fraudProbability,
     aiProbability,
-    textScore: categoryRisk(buckets.text).score,
-    imageScore: categoryRisk(buckets.image).score,
+    textScore,
+    imageScore,
     pdfScore,
     buckets,
+    fromAzure: Boolean(azure),
   };
 }
 

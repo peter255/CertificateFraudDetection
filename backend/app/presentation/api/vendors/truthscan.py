@@ -131,19 +131,14 @@ async def verify_with_engine_v1(
     }
 
     signal_payloads = [signal.model_dump(exclude_none=True) for signal in response.signals]
-    v1_context = {
-        "verdict": response.overall_status,
-        "document_type": response.document_type if hasattr(response, "document_type") else document_type,
-        "has_localized_visual_evidence": False,
-        "localized_visual_count": 0,
-        "fraud_score": response.raw_score,
-        "risk_score": response.raw_score,
-    }
+    visual_payloads = [
+        {"description": pattern, "category": "Visual Pattern"}
+        for pattern in (analysis.visual_patterns or [])
+        if isinstance(pattern, str) and pattern.strip()
+    ]
 
     (
         (ai_probability, ai_probability_source),
-        text_manipulation_summary,
-        image_manipulation_summary,
         pdf_structure_analysis,
     ) = await asyncio.gather(
         ai_probability_service.enrich(
@@ -156,21 +151,6 @@ async def verify_with_engine_v1(
             raw_score=response.raw_score,
             context=enrichment_context,
             allow_azure_estimate=True,
-        ),
-        ai_summary_service.enrich_text_manipulation(
-            signals=signal_payloads,
-            context=v1_context,
-            use_llm=False,
-        ),
-        ai_summary_service.enrich_image_manipulation(
-            signals=signal_payloads,
-            visual_evidence=[
-                {"description": pattern, "category": "Visual Pattern"}
-                for pattern in (analysis.visual_patterns or [])
-                if isinstance(pattern, str) and pattern.strip()
-            ],
-            context=v1_context,
-            use_llm=False,
         ),
         pdf_structure_task,
     )
@@ -191,20 +171,31 @@ async def verify_with_engine_v1(
             cross_check_summary=metadata_summary,
         )
 
-    ai_summary = await ai_summary_service.enrich(context=enrichment_context, use_llm=False)
+    if ai_probability is not None:
+        enrichment_context["ai_probability"] = ai_probability
 
-    updates: dict = {
-        "ai_summary": ai_summary,
-        "text_manipulation_summary": text_manipulation_summary,
-        "image_manipulation_summary": image_manipulation_summary,
-    }
+    display = await ai_summary_service.enrich_display_analysis(
+        context=enrichment_context,
+        signals=signal_payloads,
+        visual_evidence=visual_payloads,
+        use_llm=True,
+    )
+
+    updates: dict = {}
+    updates.update(display.as_response_updates())
+    if display.executive_summary:
+        updates["ai_summary"] = display.executive_summary
+
     if ai_probability is not None:
         updates["ai_probability"] = ai_probability
         updates["ai_probability_source"] = ai_probability_source
 
     if pdf_structure_analysis is not None:
         pdf_updates = PdfStructureEnrichmentService.as_v1_updates(pdf_structure_analysis)
-        updates["pdf_structure_summary"] = metadata_summary or pdf_updates["pdf_structure_summary"]
+        if "pdf_structure_summary" not in updates:
+            updates["pdf_structure_summary"] = (
+                metadata_summary or pdf_updates["pdf_structure_summary"]
+            )
         updates["pdf_structure_findings"] = pdf_updates["pdf_structure_findings"]
         pdf_signals = [
             TruthScanSignal.model_validate(item)

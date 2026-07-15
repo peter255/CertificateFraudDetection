@@ -185,60 +185,53 @@ async def verify_with_engine_v2(
     if response.executive_summary:
         enrichment_context["executive_summary"] = response.executive_summary
 
-    # AI probability may call Azure when the vendor has no numeric score.
-    # Narrative summaries stay local (use_llm=False) to keep verify latency down.
-    (
-        (ai_probability, ai_probability_source),
-        text_manipulation_summary,
-        image_manipulation_summary,
-        ai_summary,
-    ) = await asyncio.gather(
-        ai_probability_service.enrich(
-            document_content=raw_content,
-            filename=filename,
-            vendor_payloads=[
-                response.layer_details,
-                response.engine_results,
-                response.classification,
-                response.pdf_fraud_subscores,
-                response.engine_scores,
-                response.raw_result,
-            ],
-            context={
-                **enrichment_context,
-                "executive_summary": response.executive_summary,
-            },
-            allow_azure_estimate=True,
-        ),
-        ai_summary_service.enrich_text_manipulation(
-            signals=signal_payloads,
-            field_evidence=[
-                item.model_dump(exclude_none=True) for item in response.field_evidence
-            ],
-            context=enrichment_context,
-            use_llm=False,
-        ),
-        ai_summary_service.enrich_image_manipulation(
-            signals=signal_payloads,
-            visual_evidence=visual_payloads,
-            context=enrichment_context,
-            use_llm=False,
-        ),
-        ai_summary_service.enrich(context=enrichment_context, use_llm=False),
+    # Resolve AI probability first (may call Azure), then one Azure call for scores + narratives.
+    (ai_probability, ai_probability_source) = await ai_probability_service.enrich(
+        document_content=raw_content,
+        filename=filename,
+        vendor_payloads=[
+            response.layer_details,
+            response.engine_results,
+            response.classification,
+            response.pdf_fraud_subscores,
+            response.engine_scores,
+            response.raw_result,
+        ],
+        context={
+            **enrichment_context,
+            "executive_summary": response.executive_summary,
+        },
+        allow_azure_estimate=True,
+    )
+    if ai_probability is not None:
+        enrichment_context["ai_probability"] = ai_probability
+
+    display = await ai_summary_service.enrich_display_analysis(
+        context=enrichment_context,
+        signals=signal_payloads,
+        field_evidence=[
+            item.model_dump(exclude_none=True) for item in response.field_evidence
+        ],
+        visual_evidence=visual_payloads,
+        use_llm=True,
     )
 
-    updates: dict = {
-        "executive_summary": ai_summary,
-        "text_manipulation_summary": text_manipulation_summary,
-        "image_manipulation_summary": image_manipulation_summary,
-    }
+    updates: dict = {}
+    updates.update(display.as_response_updates())
+    if display.executive_summary:
+        updates["executive_summary"] = display.executive_summary
+
     if ai_probability is not None:
         updates["ai_probability"] = ai_probability
         updates["ai_probability_source"] = ai_probability_source
 
     if pdf_structure_analysis is not None:
         pdf_updates = PdfStructureEnrichmentService.as_v2_updates(pdf_structure_analysis)
-        updates["pdf_structure_summary"] = metadata_summary or pdf_updates["pdf_structure_summary"]
+        # Prefer Azure File Structure narrative when present.
+        if "pdf_structure_summary" not in updates:
+            updates["pdf_structure_summary"] = (
+                metadata_summary or pdf_updates["pdf_structure_summary"]
+            )
         updates["pdf_structure_findings"] = pdf_updates["pdf_structure_findings"]
 
         pdf_signals = [

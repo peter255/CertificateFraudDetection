@@ -276,6 +276,44 @@ class AzureOpenAIClient:
             logger.warning("Could not parse AI probability from: %s", message_content[:300])
         return probability
 
+    async def generate_display_analysis(
+        self,
+        *,
+        context: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """
+        Ask Azure OpenAI for dashboard scores + short narratives in one JSON response.
+
+        Returns a normalized dict or None when unavailable / unparseable.
+        """
+        if not self.is_configured():
+            return None
+
+        context_json = json.dumps(_slim_summary_context(context), ensure_ascii=False, default=str)
+        if len(context_json) > _MAX_CONTEXT_CHARS:
+            context_json = context_json[:_MAX_CONTEXT_CHARS] + "…"
+
+        prompt = _prompt_loader.render(
+            ReportNarrativeTemplateNames.DISPLAY_ANALYSIS,
+            context=context_json,
+        )
+
+        message_content = await self._chat_completion(
+            prompt,
+            max_completion_tokens=_MAX_SUMMARY_COMPLETION_TOKENS,
+            reasoning_effort="low",
+        )
+        if not message_content:
+            return None
+
+        parsed = _parse_display_analysis(message_content)
+        if parsed is None:
+            logger.warning(
+                "Could not parse display analysis from: %s",
+                message_content[:300],
+            )
+        return parsed
+
     async def generate_json_completion(self, *, prompt: str) -> str | None:
         """
         Execute a caller-built prompt and return the raw completion text.
@@ -519,8 +557,8 @@ def _slim_probability_context(context: dict[str, Any]) -> dict[str, Any]:
     return slim
 
 
-def _clamp_summary_length(text: str, *, max_sentences: int = 3, max_chars: int = 420) -> str:
-    """Keep summaries short and readable: ~3–4 lines max."""
+def _clamp_summary_length(text: str, *, max_sentences: int = 2, max_chars: int = 280) -> str:
+    """Keep summaries short and readable: 1–2 clear sentences."""
     cleaned = re.sub(r"\s+", " ", text.strip())
     if not cleaned:
         return cleaned
@@ -545,6 +583,85 @@ def _clamp_summary_length(text: str, *, max_sentences: int = 3, max_chars: int =
             cleaned += "."
 
     return cleaned
+
+
+def _clamp_score_100(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not (value == value):  # NaN
+        return None
+    return int(round(min(100, max(0, float(value)))))
+
+
+def _parse_display_analysis(raw: str) -> dict[str, Any] | None:
+    """Parse Azure JSON for dashboard scores + short summaries."""
+    text = raw.strip()
+    payload: dict[str, Any] | None = None
+    try:
+        loaded = json.loads(text)
+        if isinstance(loaded, dict):
+            payload = loaded
+    except json.JSONDecodeError:
+        match = re.search(r"\{[\s\S]*\}", text)
+        if match:
+            try:
+                loaded = json.loads(match.group(0))
+                if isinstance(loaded, dict):
+                    payload = loaded
+            except json.JSONDecodeError:
+                payload = None
+
+    if not payload:
+        return None
+
+    score_keys = (
+        ("risk_score", "risk_score"),
+        ("fraud_probability", "fraud_probability"),
+        ("text_logic_score", "text_logic_score"),
+        ("image_forensics_score", "image_forensics_score"),
+        ("file_structure_score", "file_structure_score"),
+    )
+    # Accept camelCase aliases if the model drifts.
+    aliases = {
+        "risk_score": ("riskScore", "risk"),
+        "fraud_probability": ("fraudProbability", "fraud_score", "fraudScore"),
+        "text_logic_score": ("textLogicScore", "text_score", "textScore"),
+        "image_forensics_score": ("imageForensicsScore", "image_score", "imageScore"),
+        "file_structure_score": ("fileStructureScore", "pdf_score", "pdfScore"),
+    }
+
+    out: dict[str, Any] = {}
+    for canonical, _ in score_keys:
+        raw_val = payload.get(canonical)
+        if raw_val is None:
+            for alt in aliases.get(canonical, ()):
+                if payload.get(alt) is not None:
+                    raw_val = payload.get(alt)
+                    break
+        score = _clamp_score_100(raw_val)
+        if score is not None:
+            out[canonical] = score
+
+    summary_map = {
+        "executive_summary": ("executive_summary", "ai_summary", "summary"),
+        "text_manipulation_summary": ("text_manipulation_summary", "text_summary"),
+        "image_manipulation_summary": ("image_manipulation_summary", "image_summary"),
+        "pdf_structure_summary": ("pdf_structure_summary", "file_structure_summary", "pdf_summary"),
+    }
+    for canonical, keys in summary_map.items():
+        text_val = None
+        for key in keys:
+            candidate = payload.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                text_val = candidate.strip()
+                break
+        if text_val and not _looks_like_recommendation(text_val):
+            out[canonical] = _clamp_summary_length(text_val)
+
+    # Require at least one score or one summary to accept the payload.
+    if not out:
+        return None
+    return out
 
 
 def _slim_finding(item: dict[str, Any]) -> dict[str, Any]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from app.application.dto.pdf_structure import PdfStructureAnalyzeResponse
@@ -29,6 +30,35 @@ _RECOMMENDATION_MARKERS = (
 NO_LOCALIZED_VISUAL_EVIDENCE = (
     "No localized visual evidence of document manipulation was identified."
 )
+
+
+@dataclass(frozen=True)
+class DisplayAnalysisResult:
+    """Azure-authored dashboard scores + short narratives (optional fields)."""
+
+    risk_score: int | None = None
+    fraud_probability: int | None = None
+    text_logic_score: int | None = None
+    image_forensics_score: int | None = None
+    file_structure_score: int | None = None
+    executive_summary: str | None = None
+    text_manipulation_summary: str | None = None
+    image_manipulation_summary: str | None = None
+    pdf_structure_summary: str | None = None
+
+    def as_response_updates(self) -> dict[str, Any]:
+        """Map to API response field names (omit None). Narrative key is caller-specific."""
+        mapping = {
+            "display_risk_score": self.risk_score,
+            "fraud_probability": self.fraud_probability,
+            "text_logic_score": self.text_logic_score,
+            "image_forensics_score": self.image_forensics_score,
+            "file_structure_score": self.file_structure_score,
+            "text_manipulation_summary": self.text_manipulation_summary,
+            "image_manipulation_summary": self.image_manipulation_summary,
+            "pdf_structure_summary": self.pdf_structure_summary,
+        }
+        return {key: value for key, value in mapping.items() if value is not None}
 
 
 class AiSummaryEnrichmentService:
@@ -168,6 +198,130 @@ class AiSummaryEnrichmentService:
                 logger.warning("Azure OpenAI image-manipulation summary failed: %s", exc)
 
         return _build_category_fallback("Image manipulation", image_findings)
+
+    async def enrich_display_analysis(
+        self,
+        *,
+        context: dict[str, Any],
+        signals: list[dict[str, Any]] | None = None,
+        field_evidence: list[dict[str, Any]] | None = None,
+        visual_evidence: list[dict[str, Any]] | None = None,
+        use_llm: bool = True,
+    ) -> DisplayAnalysisResult:
+        """
+        Ask Azure OpenAI for dashboard scores + short summaries.
+
+        Falls back to local short narratives when Azure is unavailable. Scores are
+        left None on fallback so the frontend can use its deterministic formulas.
+        """
+        summary_context = _summary_context(context)
+        has_localized = bool(summary_context.get("has_localized_visual_evidence"))
+
+        azure: dict[str, Any] | None = None
+        if use_llm and self._ai_client.is_configured():
+            try:
+                azure = await self._ai_client.generate_display_analysis(context=summary_context)
+            except Exception as exc:  # noqa: BLE001 — optional enrichment must not fail verify
+                logger.warning("Azure OpenAI display analysis failed: %s", exc)
+                azure = None
+
+        if azure:
+            image_summary = azure.get("image_manipulation_summary")
+            image_score = azure.get("image_forensics_score")
+            if not has_localized:
+                image_summary = NO_LOCALIZED_VISUAL_EVIDENCE
+                image_score = 0
+
+            executive = azure.get("executive_summary")
+            if isinstance(executive, str) and looks_like_recommendation(executive):
+                executive = None
+
+            return DisplayAnalysisResult(
+                risk_score=azure.get("risk_score") if isinstance(azure.get("risk_score"), int) else None,
+                fraud_probability=(
+                    azure.get("fraud_probability")
+                    if isinstance(azure.get("fraud_probability"), int)
+                    else None
+                ),
+                text_logic_score=(
+                    azure.get("text_logic_score")
+                    if isinstance(azure.get("text_logic_score"), int)
+                    else None
+                ),
+                image_forensics_score=image_score if isinstance(image_score, int) else None,
+                file_structure_score=(
+                    azure.get("file_structure_score")
+                    if isinstance(azure.get("file_structure_score"), int)
+                    else None
+                ),
+                executive_summary=executive if isinstance(executive, str) else None,
+                text_manipulation_summary=_clean_optional_summary(
+                    azure.get("text_manipulation_summary")
+                ),
+                image_manipulation_summary=_clean_optional_summary(image_summary),
+                pdf_structure_summary=_clean_optional_summary(
+                    azure.get("pdf_structure_summary")
+                ),
+            )
+
+        # Local fallbacks — short summaries only; scores stay None (FE computes).
+        executive = None
+        vendor_summary = context.get("executive_summary") or context.get("vendor_executive_summary")
+        if isinstance(vendor_summary, str) and vendor_summary.strip():
+            cleaned = vendor_summary.strip()
+            if not looks_like_recommendation(cleaned):
+                executive = _shorten_local_summary(cleaned)
+        if not executive:
+            executive = _shorten_local_summary(build_flags_summary(summary_context))
+
+        text_summary = await self.enrich_text_manipulation(
+            signals=signals or [],
+            field_evidence=field_evidence,
+            context=summary_context,
+            use_llm=False,
+        )
+        image_summary = await self.enrich_image_manipulation(
+            signals=signals or [],
+            visual_evidence=visual_evidence,
+            context=summary_context,
+            use_llm=False,
+        )
+        pdf_summary = context.get("pdf_structure_summary")
+        if isinstance(pdf_summary, str) and pdf_summary.strip():
+            pdf_summary = _shorten_local_summary(pdf_summary.strip())
+        else:
+            pdf_summary = None
+
+        return DisplayAnalysisResult(
+            executive_summary=executive,
+            text_manipulation_summary=_shorten_local_summary(text_summary) if text_summary else None,
+            image_manipulation_summary=image_summary,
+            pdf_structure_summary=pdf_summary,
+        )
+
+
+def _clean_optional_summary(value: Any) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    if looks_like_recommendation(value):
+        return None
+    return _shorten_local_summary(value.strip())
+
+
+def _shorten_local_summary(text: str | None) -> str | None:
+    if not text or not text.strip():
+        return None
+    cleaned = re.sub(r"\s+", " ", text.strip())
+    parts = re.split(r"(?<=[.!?])\s+", cleaned)
+    sentences = [p.strip() for p in parts if p.strip()]
+    if len(sentences) > 2:
+        cleaned = " ".join(sentences[:2])
+        if cleaned[-1] not in ".!?":
+            cleaned += "."
+    if len(cleaned) > 280:
+        cut = cleaned[:279].rstrip(" ,;")
+        cleaned = cut + ("." if cut[-1:] not in ".!?" else "")
+    return cleaned
 
 
 def _signal_haystack(item: dict[str, Any]) -> str:

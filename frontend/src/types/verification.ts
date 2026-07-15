@@ -180,6 +180,17 @@ export interface VerificationResult {
   imageManipulationSummary?: string | null;
   /** Forensic PDF Structure Analysis summary (OCR + metadata + rules + LLM). */
   pdfStructureSummary?: string | null;
+  /**
+   * Azure OpenAI dashboard scores. When present the UI displays these as-is
+   * instead of recomputing Risk / Fraud / Text / Image / File Structure locally.
+   */
+  displayScores?: {
+    riskScore: number | null;
+    fraudProbability: number | null;
+    textLogicScore: number | null;
+    imageForensicsScore: number | null;
+    fileStructureScore: number | null;
+  } | null;
   signals: Signal[];
   report: ExecReport;
   vendorFindings: VendorFinding[];

@@ -156,3 +156,33 @@ class PaperworkVerifyResponse(BaseModel):
         default_factory=list,
         description="Structured PDF structure forensic findings.",
     )
+    display_risk_score: int | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+        description="Azure OpenAI overall Risk Score (0–100) for the results dashboard.",
+    )
+    fraud_probability: int | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+        description="Azure OpenAI Fraud Probability (0–100) for the results dashboard.",
+    )
+    text_logic_score: int | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+        description="Azure OpenAI Text Logic score (0–100).",
+    )
+    image_forensics_score: int | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+        description="Azure OpenAI Image Forensics score (0–100).",
+    )
+    file_structure_score: int | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+        description="Azure OpenAI File Structure score (0–100).",
+    )

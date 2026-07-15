@@ -14,3 +14,4 @@ class ReportNarrativeTemplateNames:
 
     EXECUTIVE_SUMMARY = "report_narrative/executive_summary.txt"
     CATEGORY_SUMMARY = "report_narrative/category_summary.txt"
+    DISPLAY_ANALYSIS = "report_narrative/display_analysis.txt"

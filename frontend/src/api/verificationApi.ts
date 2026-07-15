@@ -93,6 +93,12 @@ interface EngineV1ApiResponse {
   image_manipulation_summary?: string | null;
   pdf_structure_summary?: string | null;
   pdf_structure_findings?: Array<Record<string, unknown>>;
+  /** Azure OpenAI dashboard scores (preferred by the results UI). */
+  display_risk_score?: number | null;
+  fraud_probability?: number | null;
+  text_logic_score?: number | null;
+  image_forensics_score?: number | null;
+  file_structure_score?: number | null;
   analysis?: {
     heatmap_url?: string | null;
     reasoning?: string;
@@ -227,6 +233,48 @@ interface EngineV2ApiResponse {
   image_manipulation_summary?: string | null;
   pdf_structure_summary?: string | null;
   pdf_structure_findings?: Array<Record<string, unknown>>;
+  /** Azure OpenAI dashboard scores (preferred by the results UI). */
+  display_risk_score?: number | null;
+  fraud_probability?: number | null;
+  text_logic_score?: number | null;
+  image_forensics_score?: number | null;
+  file_structure_score?: number | null;
+}
+
+function optionalScore100(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return Math.round(Math.min(100, Math.max(0, value)));
+}
+
+/** Map Azure OpenAI dashboard scores from verify API responses. */
+function mapAzureDisplayScores(data: {
+  display_risk_score?: number | null;
+  fraud_probability?: number | null;
+  text_logic_score?: number | null;
+  image_forensics_score?: number | null;
+  file_structure_score?: number | null;
+}): VerificationResult["displayScores"] {
+  const riskScore = optionalScore100(data.display_risk_score);
+  const fraudProbability = optionalScore100(data.fraud_probability);
+  const textLogicScore = optionalScore100(data.text_logic_score);
+  const imageForensicsScore = optionalScore100(data.image_forensics_score);
+  const fileStructureScore = optionalScore100(data.file_structure_score);
+  if (
+    riskScore == null &&
+    fraudProbability == null &&
+    textLogicScore == null &&
+    imageForensicsScore == null &&
+    fileStructureScore == null
+  ) {
+    return null;
+  }
+  return {
+    riskScore,
+    fraudProbability,
+    textLogicScore,
+    imageForensicsScore,
+    fileStructureScore,
+  };
 }
 
 function mapPdfStructureFindingsToSignals(
@@ -607,6 +655,7 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
       typeof data.pdf_structure_summary === "string" && data.pdf_structure_summary.trim()
         ? scrubEngineName(data.pdf_structure_summary.trim())
         : null,
+    displayScores: mapAzureDisplayScores(data),
     signals: (() => {
       const mapped = data.signals
         .filter((s) => {
@@ -1821,6 +1870,7 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
       typeof data.pdf_structure_summary === "string" && data.pdf_structure_summary.trim()
         ? scrubEngineName(data.pdf_structure_summary.trim())
         : null,
+    displayScores: mapAzureDisplayScores(data),
     signals: [...signals, ...mapPdfStructureFindingsToSignals(data.pdf_structure_findings, signals)],
     report: {
       // Narrative lives only in aiSummary — Executive Summary card.

@@ -47,6 +47,12 @@ class IAiAnalysisPort(Protocol):
         context: dict[str, Any],
     ) -> float | None: ...
 
+    async def generate_display_analysis(
+        self,
+        *,
+        context: dict[str, Any],
+    ) -> dict[str, Any] | None: ...
+
     async def generate_json_completion(
         self,
         *,
