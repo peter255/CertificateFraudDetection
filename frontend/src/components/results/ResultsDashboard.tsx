@@ -85,8 +85,7 @@ function isDetailedFinding(region: TamperRegion): boolean {
 function findingCanHighlight(region: TamperRegion): boolean {
   const scope = region.scope ?? classifyFindingScope(region);
   if (scope !== "element") return false;
-  if (region.canHighlight === false) return false;
-  if (region.bboxSource !== "azure_document_intelligence") return false;
+  if (region.canHighlight !== true) return false;
   if (!isValidOverlayRegion(region)) return false;
   if (!Number.isFinite(region.page) || region.page < 1) return false;
   return true;
@@ -848,6 +847,61 @@ function FileInformationSection({ info }: { info: FileInformationData }) {
   );
 }
 
+function CertificateFlagsSection({
+  items,
+  emptyText,
+}: {
+  items: string[];
+  emptyText: string;
+}) {
+  return (
+    <Box
+      sx={{
+        p: 2.25,
+        borderRadius: "12px",
+        border: `1px solid ${VS.border}`,
+        backgroundColor: VS.bgCard,
+        flexShrink: 0,
+      }}
+    >
+      <Typography
+        sx={{
+          fontSize: "0.6875rem",
+          fontWeight: 600,
+          letterSpacing: "0.1em",
+          color: VS.textMuted,
+          fontFamily: VS.mono,
+          mb: 1.25,
+        }}
+      >
+        CERTIFICATE FLAGS
+      </Typography>
+      {items.length === 0 ? (
+        <Typography sx={{ fontSize: "0.875rem", color: VS.textMuted, lineHeight: 1.6 }}>
+          {emptyText}
+        </Typography>
+      ) : (
+        <Box component="ul" sx={{ m: 0, pl: 2.25 }}>
+          {items.map((item, index) => (
+            <Typography
+              key={`certificate-flag-${index}`}
+              component="li"
+              sx={{
+                fontSize: "0.875rem",
+                color: VS.textSecondary,
+                lineHeight: 1.65,
+                mb: 0.75,
+              }}
+            >
+              {item}
+            </Typography>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 export default function ResultsDashboard({
   result,
   file,
@@ -858,22 +912,10 @@ export default function ResultsDashboard({
   const [activePage, setActivePage] = useState(1);
 
   /** Overlay draw list — Detailed Findings (element + document-level cards). */
-  const visualFindings = useMemo(() => {
-    const list = result.tamperRegions.filter(isDetailedFinding);
-    const seen = new Set<string>();
-    const unique: TamperRegion[] = [];
-    for (const region of list) {
-      const scope = region.scope ?? classifyFindingScope(region);
-      const key =
-        scope === "document"
-          ? `doc:${region.id}:${region.label}`
-          : `${region.page}:${region.bbox.map((n) => Math.round(n)).join(",")}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push(region);
-    }
-    return unique;
-  }, [result.tamperRegions]);
+  const visualFindings = useMemo(
+    () => result.tamperRegions.filter(isDetailedFinding),
+    [result.tamperRegions]
+  );
 
   // Keep selection only if it still exists — never auto-pick on load.
   useEffect(() => {
@@ -970,16 +1012,21 @@ export default function ResultsDashboard({
 
   const recommendations = result.recommendations ?? [];
 
+  const certificateFlags = useMemo(() => {
+    if (result.certificateFlags?.length) return result.certificateFlags;
+    return [...(result.vendorFlags ?? []), ...(result.metadataFlags ?? [])];
+  }, [result.certificateFlags, result.vendorFlags, result.metadataFlags]);
+
   const criticalLabel = riskLabel(result.report.riskLevel, riskScore);
   const criticalColor = scoreColor(riskScore);
 
-  // Draw Azure highlights only for element-level findings.
+  // Draw all drawable element-level findings on the active page; selection styles the active box.
   const showRegions = useMemo(() => {
-    if (!selectedRegionId) return [];
-    const selected = visualFindings.find((r) => r.id === selectedRegionId);
-    if (!selected || !findingCanHighlight(selected)) return [];
-    return [selected];
-  }, [selectedRegionId, visualFindings]);
+    return visualFindings.filter(
+      (region) =>
+        findingCanHighlight(region) && (region.page || 1) === activePage
+    );
+  }, [visualFindings, activePage]);
 
   const selectFinding = (region: TamperRegion) => {
     setSelectedRegionId((current) => (current === region.id ? null : region.id));
@@ -1429,7 +1476,7 @@ export default function ResultsDashboard({
             >
               {visualFindings.map((region, index) => (
                 <VisualFindingCard
-                  key={region.id}
+                  key={`${region.id}-${index}`}
                   region={region}
                   index={index}
                   active={region.id === selectedRegionId}
@@ -1525,6 +1572,10 @@ export default function ResultsDashboard({
           emptyText="No recommendations were generated for this examination."
         />
         <FileInformationSection info={fileInformation} />
+        <CertificateFlagsSection
+          items={certificateFlags}
+          emptyText="No certificate flags were reported."
+        />
       </Box>
 
       {/* Actions — side by side at page bottom */}
