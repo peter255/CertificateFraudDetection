@@ -19,6 +19,7 @@ from app.application.services.vendor_flags import collect_vendor_flags_v2
 from app.infrastructure.vendors.paperwork.client import PaperworkClient
 from app.infrastructure.vendors.paperwork.dependencies import provide_paperwork_client
 from app.infrastructure.vendors.paperwork.models import PaperworkSignal, PaperworkVerifyResponse
+from app.shared.logging.logger import get_logger
 from app.presentation.dependencies.ai_probability import (
     provide_ai_probability_enrichment,
     provide_ai_summary_enrichment,
@@ -26,6 +27,8 @@ from app.presentation.dependencies.ai_probability import (
 from app.presentation.dependencies.pdf_structure import provide_pdf_structure_enrichment
 
 router = APIRouter(prefix="/vendors/v2", tags=["vendors:v2"])
+
+logger = get_logger(__name__)
 
 
 def _is_localized_visual_payload(item: dict) -> bool:
@@ -138,6 +141,36 @@ async def verify_with_engine_v2(
         for item in visual_payloads
         if _is_localized_visual_payload(item)
     ]
+
+    logger.info(
+        "[V2] vendor localized findings — visual_evidence=%d localized=%d field_evidence=%d",
+        len(visual_payloads),
+        len(localized_visual),
+        len(response.field_evidence or []),
+    )
+    for index, item in enumerate(localized_visual, start=1):
+        logger.info(
+            "[V2] vendor localized finding #%d description=%r title=%r type=%r page=%s severity=%s bbox=%s",
+            index,
+            item.get("description"),
+            item.get("title"),
+            item.get("type"),
+            item.get("page"),
+            item.get("severity"),
+            item.get("bbox"),
+        )
+    for index, item in enumerate(response.field_evidence or [], start=1):
+        if not item.bbox:
+            continue
+        logger.info(
+            "[V2] vendor field_evidence #%d description=%r field_label=%r page=%s severity=%s bbox=%s",
+            index,
+            item.description,
+            item.field_label,
+            item.page,
+            item.severity,
+            item.bbox,
+        )
 
     enrichment_context: dict[str, Any] = {
         "engine": "v2",

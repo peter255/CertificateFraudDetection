@@ -45,6 +45,7 @@ import {
   uniqueFindingId,
   bboxIoU,
   bboxMostlyContained,
+  vendorFindingDescription,
 } from "../utils/findingLabels";
 
 // ── Engine V1 response DTO ───────────────────────────────────────────────────
@@ -909,10 +910,11 @@ function harvestNestedSpatialCandidates(
           fallbackLabel
       ) || fallbackLabel;
     const description =
-      sanitizeFindingText(
+      vendorFindingDescription(
         (typeof raw.description === "string" && raw.description) ||
           (typeof raw.detail === "string" && raw.detail) ||
-          label
+          null,
+        label
       ) || label;
 
     out.push({
@@ -1003,6 +1005,12 @@ function harvestNestedSpatialCandidates(
 }
 
 function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
+  console.info("[vendor] localized findings response:", {
+    visual_evidence: data.visual_evidence,
+    field_evidence: data.field_evidence,
+    spatial_signals: (data.signals || []).filter((s) => Array.isArray(s.bbox) && s.bbox.length === 4),
+  });
+
   const candidates: TamperRegionInput[] = [];
 
   for (const signal of [...(data.signals || []), ...(data.field_evidence || [])]) {
@@ -1014,7 +1022,7 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
         "Anomaly"
     ) || "Anomaly";
     const description =
-      sanitizeFindingText(signal.description || signal.type || label) || label;
+      vendorFindingDescription(signal.description, signal.type || label) || label;
     const parent = {
       id: signal.id,
       label,
@@ -1053,7 +1061,7 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
       id: item.type,
       label,
       description:
-        sanitizeFindingText(item.description || item.title || label) || label,
+        vendorFindingDescription(item.description, item.title || label) || label,
       severity: item.severity,
       status: null,
       bbox: item.bbox,
@@ -1122,7 +1130,7 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
 
     const label = humanizeLabel(input.label) || "Marked region";
     const description =
-      sanitizeFindingText(input.description || label) || label;
+      vendorFindingDescription(input.description, label) || label;
     const severity = normalizeSeverity(input.severity, input.status);
 
     const key = spatialFindingKey(page, bbox);

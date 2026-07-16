@@ -43,7 +43,6 @@ import {
 } from "../../utils/findingsDisplay";
 import {
   humanizeLabel,
-  sanitizeFindingText,
   shortenFindingDescription,
 } from "../../utils/findingLabels";
 import {
@@ -431,9 +430,8 @@ function VisualFindingCard({
   const title =
     humanizeLabel(region.label) ||
     (region.description?.trim() ? "Suspicious region" : "Marked region");
-  const fullDescription =
-    sanitizeFindingText(region.description) || title;
-  const shortDescription = shortenFindingDescription(fullDescription);
+  const fullDescription = region.description?.trim() || "";
+  const shortDescription = fullDescription;
 
   return (
     <Box

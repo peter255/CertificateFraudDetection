@@ -79,6 +79,17 @@ export function sanitizeFindingText(raw: string | null | undefined): string {
   return text;
 }
 
+/** Vendor description verbatim — trim whitespace only, no rephrasing. */
+export function vendorFindingDescription(
+  raw: string | null | undefined,
+  fallback?: string | null
+): string {
+  const text = typeof raw === "string" ? raw.trim() : "";
+  if (text) return text;
+  const fb = typeof fallback === "string" ? fallback.trim() : "";
+  return fb;
+}
+
 /** Collapse to ~1–2 short lines for list rows. */
 export function shortenFindingDescription(
   raw: string | null | undefined,
