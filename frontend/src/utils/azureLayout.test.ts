@@ -215,6 +215,60 @@ describe("azureLayout", () => {
     assert.ok(hit!.xywh[1] > 5);
   });
 
+  it("prefers the student subject over an instructor comparison name", () => {
+    const analyze = {
+      pages: [
+        {
+          pageNumber: 1,
+          width: 8.5,
+          height: 11,
+          unit: "inch",
+          words: [
+            {
+              content: "John",
+              polygon: [3.0, 3.0, 3.4, 3.0, 3.4, 3.25, 3.0, 3.25],
+            },
+            {
+              content: "Honai",
+              polygon: [3.45, 3.0, 4.0, 3.0, 4.0, 3.25, 3.45, 3.25],
+            },
+            {
+              content: "Marina",
+              polygon: [2.5, 5.0, 3.1, 5.0, 3.1, 5.5, 2.5, 5.5],
+            },
+            {
+              content: "Azer",
+              polygon: [3.15, 5.0, 3.7, 5.0, 3.7, 5.5, 3.15, 5.5],
+            },
+          ],
+          lines: [
+            {
+              content: "John Honai",
+              polygon: [3.0, 3.0, 4.0, 3.0, 4.0, 3.25, 3.0, 3.25],
+            },
+            {
+              content: "Marina Azer",
+              polygon: [2.5, 5.0, 3.7, 5.0, 3.7, 5.5, 2.5, 5.5],
+            },
+          ],
+        },
+      ],
+      keyValuePairs: [],
+      paragraphs: [],
+    };
+
+    const hit = resolveAzureHighlight(analyze, {
+      label: "Student Name",
+      description:
+        "The name 'Marina Azer' uses a different font weight, typeface, and rendering sharpness compared to the instructor name 'John Honai', indicating a digital replacement.",
+    });
+
+    assert.ok(hit);
+    assert.match(hit!.content, /Marina/i);
+    assert.doesNotMatch(hit!.content, /Honai/i);
+    assert.ok(hit!.xywh[1] > 4.5);
+  });
+
   it("prefers keyValuePairs boundingRegions for structured fields", () => {
     const hit = resolveAzureHighlight(SAMPLE_ANALYZE, {
       label: "Certificate ID anomaly",

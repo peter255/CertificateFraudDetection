@@ -206,7 +206,8 @@ export function resolveAzureHighlight(
   const usable = candidates.filter(
     (hit) =>
       hit.score >= (graphic && hit.kind === "figure" ? 10 : 12) &&
-      !isDegenerateHighlightBox(hit.xywh, hit.imageWidth, hit.imageHeight)
+      !isDegenerateHighlightBox(hit.xywh, hit.imageWidth, hit.imageHeight) &&
+      !(isContrastContent(hit.content, needles) && !isPrimaryContent(hit.content, needles))
   );
   if (!usable.length) return null;
   usable.sort((a, b) => b.score - a.score || kindRank(a.kind) - kindRank(b.kind));
@@ -333,12 +334,84 @@ export function remapTamperRegionsToAzureLayout(
 // ── internals ───────────────────────────────────────────────────────────────
 
 interface Needles {
-  /** High-value multi-word / quoted targets, e.g. "marina azer", "reference number 0004". */
+  /** Subject of the finding — e.g. Marina Azer in a Student Name card. */
+  primaryEntities: string[];
+  /** Reference / comparison names — e.g. instructor name in the same sentence. */
+  contrastEntities: string[];
+  /** Alias of primaryEntities for matching (contrast names are excluded). */
   entities: string[];
   /** Distinctive single tokens (IDs, rare values) — not narrative stopwords. */
   strongTokens: string[];
   /** Field-key aliases activated by the finding (holder, issuer, …). */
   fieldKeys: string[];
+}
+
+const CONTRAST_BEFORE_QUOTE =
+  /\b(?:instructor|issuer|teacher|facilitator|signatory|compared|unlike|versus|vs\.|rather than|different from|in contrast|whereas)\b[^.]{0,50}$/i;
+
+const PRIMARY_BEFORE_QUOTE =
+  /\b(?:the name|name of|field value|value|text|reads|shows|displays|labeled|student name)\s*["']?\s*$/i;
+
+function classifyQuoteRole(beforeText: string): "primary" | "contrast" | "neutral" {
+  if (CONTRAST_BEFORE_QUOTE.test(beforeText)) return "contrast";
+  if (PRIMARY_BEFORE_QUOTE.test(beforeText)) return "primary";
+  return "neutral";
+}
+
+function addEntity(
+  raw: string,
+  role: "primary" | "contrast" | "neutral",
+  primary: Set<string>,
+  contrast: Set<string>,
+  strongTokens: Set<string>
+): void {
+  const ent = normalize(raw);
+  if (ent.length < 2 || STOPWORDS.has(ent)) return;
+  if (role === "contrast") {
+    contrast.add(ent);
+    return;
+  }
+  primary.add(ent);
+  for (const tok of tokenize(ent)) {
+    if (isStrongToken(tok)) strongTokens.add(tok);
+  }
+}
+
+function extractContrastCueEntities(text: string, contrast: Set<string>): void {
+  const patterns = [
+    /\b(?:instructor|issuer|teacher|facilitator|signatory)\s+name\s+["“']([^"”']{2,80})["”']/gi,
+    /\bcompared\s+(?:to|with)\s+(?:the\s+)?(?:instructor\s+)?name\s+["“']([^"”']{2,80})["”']/gi,
+  ];
+  for (const pattern of patterns) {
+    let m: RegExpExecArray | null;
+    pattern.lastIndex = 0;
+    while ((m = pattern.exec(text)) != null) {
+      const ent = normalize(m[1]);
+      if (ent.length >= 2) contrast.add(ent);
+    }
+  }
+}
+
+function isContrastContent(content: string, needles: Needles): boolean {
+  const n = normalize(content);
+  if (!n) return false;
+  return needles.contrastEntities.some((c) => {
+    const cn = normalize(c);
+    return n === cn || n.includes(cn) || cn.includes(n);
+  });
+}
+
+function isPrimaryContent(content: string, needles: Needles): boolean {
+  const n = normalize(content);
+  if (!n) return false;
+  return needles.primaryEntities.some((p) => {
+    const pn = normalize(p);
+    return n === pn || n.includes(pn) || pn.includes(n);
+  });
+}
+
+function holderFieldActive(needles: Needles): boolean {
+  return needles.fieldKeys.includes("holder");
 }
 
 function buildNeedles(query: AzureHighlightQuery): Needles {
@@ -348,25 +421,28 @@ function buildNeedles(query: AzureHighlightQuery): Needles {
     .map((v) => (typeof v === "string" ? v : ""))
     .filter(Boolean);
 
-  const entities = new Set<string>();
+  const primary = new Set<string>();
+  const contrast = new Set<string>();
   const strongTokens = new Set<string>();
   const fieldKeys = new Set<string>();
 
-  // 1) Quoted strings — strongest entities.
+  // 1) Quoted strings — classify subject vs comparison by preceding text.
   const quoteRe = /["“']([^"”']{2,80})["”']/g;
   for (const bit of [label, description, ...hints]) {
     let m: RegExpExecArray | null;
     quoteRe.lastIndex = 0;
     while ((m = quoteRe.exec(bit)) != null) {
-      const q = normalize(m[1]);
-      if (q.length >= 2 && !STOPWORDS.has(q)) {
-        entities.add(q);
-        for (const tok of tokenize(q)) {
-          if (isStrongToken(tok)) strongTokens.add(tok);
-        }
+      const before = bit.slice(Math.max(0, m.index - 90), m.index);
+      let role = classifyQuoteRole(before);
+      // First quoted name in a long description is usually the subject.
+      if (role === "neutral" && primary.size === 0 && contrast.size === 0) {
+        role = "primary";
       }
+      addEntity(m[1], role, primary, contrast, strongTokens);
     }
   }
+
+  extractContrastCueEntities([label, description, ...hints].join(" "), contrast);
 
   // 2) Cue patterns: student name X, Reference Number: 0004, Certificate no. …
   const cuePatterns: RegExp[] = [
@@ -381,21 +457,23 @@ function buildNeedles(query: AzureHighlightQuery): Needles {
     for (const pattern of cuePatterns) {
       const m = bit.match(pattern);
       if (!m?.[1]) continue;
-      const ent = normalize(m[1]);
-      if (ent.length >= 2) {
-        entities.add(ent);
-        for (const tok of tokenize(ent)) {
-          if (isStrongToken(tok)) strongTokens.add(tok);
-        }
-      }
+      addEntity(m[1], "primary", primary, contrast, strongTokens);
     }
   }
+
+  // Drop contrast names that were also marked primary (subject wins).
+  for (const ent of primary) {
+    contrast.delete(ent);
+  }
+
+  const primaryEntities = [...primary];
+  const contrastEntities = [...contrast];
+  const entities = [...primaryEntities];
 
   // 3) Compact labels that look like field names (not long sentences).
   for (const bit of [label, ...hints]) {
     const n = normalize(bit);
     if (n.length >= 3 && n.length <= 40 && n.split(" ").length <= 5) {
-      // Don't treat entire noisy labels as entities unless distinctive.
       for (const [canonical, aliases] of Object.entries(FIELD_KEY_ALIASES)) {
         if (aliases.some((a) => n.includes(a)) || n.includes(canonical.replace("_", " "))) {
           fieldKeys.add(canonical);
@@ -421,8 +499,17 @@ function buildNeedles(query: AzureHighlightQuery): Needles {
     }
   }
 
+  // Never use contrast-name tokens as standalone word anchors.
+  for (const ent of contrastEntities) {
+    for (const tok of tokenize(ent)) {
+      strongTokens.delete(tok);
+    }
+  }
+
   return {
-    entities: [...entities],
+    primaryEntities,
+    contrastEntities,
+    entities,
     strongTokens: [...strongTokens],
     fieldKeys: [...fieldKeys],
   };
@@ -442,6 +529,9 @@ function matchKeyValuePairs(
     const valueContent = contentOf(pair.value);
     const keyNorm = normalize(keyContent || "");
     const valueNorm = normalize(valueContent || "");
+
+    if (holderFieldActive(needles) && /\binstructor\b/.test(keyNorm)) continue;
+    if (valueNorm && isContrastContent(valueContent || "", needles)) continue;
 
     let score = 0;
 
@@ -500,6 +590,8 @@ function matchEntityOnLines(
       const content = typeof l.content === "string" ? l.content : "";
       const n = normalize(content);
       if (n.length < 2) continue;
+      if (isContrastContent(content, needles)) continue;
+      if (holderFieldActive(needles) && /\binstructor\b/.test(n)) continue;
 
       let score = 0;
       let matched = "";
@@ -569,7 +661,8 @@ function matchEntityAsWordSpan(
           .slice(i, i + parts.length)
           .map((w) => w.content)
           .join(" ");
-        const score = 24 + parts.length * 2;
+        if (isContrastContent(content, needles)) continue;
+        const score = 24 + parts.length * 2 + 8;
         const hit: AzureLayoutHit = {
           kind: parts.length > 1 ? "line" : "word",
           page: pageNumber,
@@ -630,6 +723,7 @@ function matchParagraphs(
     const content = typeof p.content === "string" ? p.content : "";
     const n = normalize(content);
     if (n.length < 3) continue;
+    if (isContrastContent(content, needles)) continue;
 
     let score = 0;
     for (const ent of needles.entities) {
