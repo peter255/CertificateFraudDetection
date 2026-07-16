@@ -35,7 +35,7 @@ def test_resolve_producer_from_fuzzy_document_property_key() -> None:
     assert info.producer == "Adobe Photoshop 26.0"
 
 
-def test_build_file_information_uses_file_modified_for_dates_and_producer_fallback() -> None:
+def test_build_file_information_keeps_upload_date_separate_from_embedded_dates() -> None:
     info = build_file_information(
         content=_png_bytes(100, 80),
         filename="cert.png",
@@ -49,8 +49,9 @@ def test_build_file_information_uses_file_modified_for_dates_and_producer_fallba
             document_properties={"image_width": 100, "image_height": 80},
         ),
     )
-    assert info.creation_date == "2026-07-09T11:11:12.000Z"
-    assert info.modification_date == "2026-07-09T11:11:12.000Z"
+    assert info.creation_date is None
+    assert info.modification_date is None
+    assert info.file_modified == "2026-07-09T11:11:12.000Z"
     assert info.producer == "Adobe Photoshop"
 
 

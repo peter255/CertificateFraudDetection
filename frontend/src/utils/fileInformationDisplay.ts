@@ -2,7 +2,7 @@ import type { FileInformationSection, VerificationResult } from "../types/verifi
 
 type DisplayRow = { label: string; value: string };
 
-const ALWAYS_SHOW_LABELS = new Set(["Producer", "Creation Date"]);
+const ALWAYS_SHOW_LABELS = new Set(["Producer", "Original Creation Date"]);
 
 const CORE_FIELD_ORDER: Array<{ key: keyof FileInformationSection; label: string }> = [
   { key: "fileName", label: "File Name" },
@@ -11,7 +11,7 @@ const CORE_FIELD_ORDER: Array<{ key: keyof FileInformationSection; label: string
   { key: "fileSize", label: "File Size" },
   { key: "fileSizeBytes", label: "File Size (Bytes)" },
   { key: "numPages", label: "Number of Pages" },
-  { key: "creationDate", label: "Creation Date" },
+  { key: "creationDate", label: "Original Creation Date" },
   { key: "modificationDate", label: "Modification Date" },
   { key: "fileModified", label: "File Modified" },
   { key: "producer", label: "Producer" },
@@ -223,8 +223,7 @@ export function normalizeFileInformation(
       "creation_time",
       "png_date",
       "date",
-    ]) ??
-    formatDisplayValue(info.fileModified);
+    ]);
 
   const modificationDate =
     formatDisplayValue(info.modificationDate) ??
@@ -236,8 +235,7 @@ export function normalizeFileInformation(
       "xmp_modify_date",
       "exif_datetime_digitized",
       "modification_time",
-    ]) ??
-    formatDisplayValue(info.fileModified);
+    ]);
 
   const producer =
     formatDisplayValue(info.producer) ??

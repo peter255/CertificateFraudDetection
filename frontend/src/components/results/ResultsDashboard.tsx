@@ -20,6 +20,7 @@ import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import FlagOutlinedIcon from "@mui/icons-material/FlagOutlined";
 import PlaylistAddCheckOutlinedIcon from "@mui/icons-material/PlaylistAddCheckOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
+import InsertDriveFileOutlinedIcon from "@mui/icons-material/InsertDriveFileOutlined";
 import type {
   ReportRecommendationItem,
   RiskLevel,
@@ -50,6 +51,10 @@ import {
   classifyFindingScope,
 } from "../../utils/findingScope";
 import { VS } from "../../theme";
+import {
+  buildFileInformationRows,
+  enrichFileInformationFromResult,
+} from "../../utils/fileInformationDisplay";
 
 interface ResultsDashboardProps {
   result: VerificationResult;
@@ -881,6 +886,156 @@ function RecommendationCard({
   );
 }
 
+function FileInfoTile({ label, value }: { label: string; value: string }) {
+  return (
+    <Box
+      sx={{
+        p: 1.25,
+        borderRadius: "8px",
+        border: `1px solid ${VS.border}`,
+        backgroundColor: "rgba(35,37,40,0.03)",
+        minHeight: 72,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        gap: 0.75,
+      }}
+    >
+      <Typography
+        sx={{
+          fontSize: "0.5625rem",
+          fontWeight: 700,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: VS.textMuted,
+          fontFamily: VS.mono,
+          lineHeight: 1.3,
+        }}
+      >
+        {label}
+      </Typography>
+      <Typography
+        sx={{
+          fontSize: "0.8125rem",
+          fontWeight: 600,
+          color: VS.text,
+          lineHeight: 1.35,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+        }}
+        title={value}
+      >
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+
+function FileInformationSection({
+  rows,
+  emptyText,
+}: {
+  rows: Array<{ label: string; value: string }>;
+  emptyText: string;
+}) {
+  return (
+    <Box
+      sx={{
+        borderRadius: "10px",
+        border: `1px solid ${VS.border}`,
+        backgroundColor: VS.bgCard,
+        overflow: "hidden",
+        flexShrink: 0,
+      }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 1.25,
+          px: 2,
+          py: 1.5,
+          borderBottom: `1px solid ${VS.border}`,
+        }}
+      >
+        <Box sx={{ color: VS.accent, display: "flex" }}>
+          <InsertDriveFileOutlinedIcon sx={{ fontSize: 18 }} />
+        </Box>
+        <Typography
+          sx={{
+            flex: 1,
+            fontSize: "0.8125rem",
+            fontWeight: 600,
+            letterSpacing: "0.04em",
+            textTransform: "uppercase",
+            color: VS.text,
+          }}
+        >
+          File Information
+        </Typography>
+        <Box
+          sx={{
+            px: 1,
+            py: 0.35,
+            borderRadius: "5px",
+            backgroundColor: VS.accentDim,
+            border: `1px solid ${VS.accent}55`,
+          }}
+        >
+          <Typography
+            sx={{
+              fontSize: "0.625rem",
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              color: VS.accent,
+              fontFamily: VS.mono,
+            }}
+          >
+            {rows.length}
+          </Typography>
+        </Box>
+      </Box>
+
+      <Box sx={{ p: 1.5 }}>
+        {rows.length === 0 ? (
+          <Box
+            sx={{
+              px: 1.5,
+              py: 1.35,
+              borderRadius: "8px",
+              border: `1px solid ${VS.border}`,
+              backgroundColor: VS.bg,
+            }}
+          >
+            <Typography sx={{ fontSize: "0.875rem", color: VS.textMuted, lineHeight: 1.6 }}>
+              {emptyText}
+            </Typography>
+          </Box>
+        ) : (
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: {
+                xs: "repeat(2, 1fr)",
+                sm: "repeat(3, 1fr)",
+                md: "repeat(4, 1fr)",
+              },
+              gap: 1,
+            }}
+          >
+            {rows.map((row) => (
+              <FileInfoTile key={`${row.label}-${row.value}`} label={row.label} value={row.value} />
+            ))}
+          </Box>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
 function RecommendationsSection({
   items,
   emptyText,
@@ -1023,6 +1178,20 @@ export default function ResultsDashboard({
   const aiProbabilitySource = result.aiDetection?.source ?? null;
 
   const recommendations = result.recommendations ?? [];
+
+  const fileInformationRows = useMemo(() => {
+    const base =
+      result.fileInformation ??
+      ({
+        fileType: file?.type?.split("/")[1]?.toUpperCase() ?? "—",
+        fileSize: "—",
+        numPages: 1,
+        fileName: file?.name ?? null,
+        mimeType: file?.type ?? null,
+      } as const);
+    const enriched = enrichFileInformationFromResult(base, result);
+    return buildFileInformationRows(enriched);
+  }, [result, file]);
 
   const criticalLabel = riskLabel(result.report.riskLevel, riskScore);
   const criticalColor = scoreColor(riskScore);
@@ -1586,6 +1755,10 @@ export default function ResultsDashboard({
         <RecommendationsSection
           items={recommendations}
           emptyText="No recommendations were generated for this examination."
+        />
+        <FileInformationSection
+          rows={fileInformationRows}
+          emptyText="No file information was extracted for this document."
         />
       </Box>
 

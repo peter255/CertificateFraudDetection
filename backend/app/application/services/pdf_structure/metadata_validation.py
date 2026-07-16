@@ -63,16 +63,13 @@ from app.application.services.pdf_structure.metadata_presence import (
 
 
 def _resolve_creation_date(metadata: PdfMetadata | None) -> str | None:
-    embedded = resolve_embedded_creation_date(metadata)
-    if embedded:
-        return embedded
-    if metadata and metadata.file_modified:
-        return metadata.file_modified.strip()
-    return None
+    """Embedded document creation date only — never the upload/filesystem timestamp."""
+    return resolve_embedded_creation_date(metadata)
 
 
 def _resolve_modification_date(metadata: PdfMetadata | None) -> str | None:
-    embedded = _pick_metadata_string(
+    """Embedded document modification date only — never the upload/filesystem timestamp."""
+    return _pick_metadata_string(
         metadata,
         "modification_date",
         "document_modification_date",
@@ -83,11 +80,6 @@ def _resolve_modification_date(metadata: PdfMetadata | None) -> str | None:
         "exif_datetime_digitized",
         "modification_time",
     )
-    if embedded:
-        return embedded
-    if metadata and metadata.file_modified:
-        return metadata.file_modified.strip()
-    return None
 
 
 def _resolve_producer(metadata: PdfMetadata | None) -> str | None:

@@ -334,10 +334,6 @@ class PypdfMetadataExtractor:
             or document_properties.get("exif_datetime_digitized")
         )
 
-        if not creation_date and file_modified:
-            creation_date = file_modified
-        if not modification_date and file_modified:
-            modification_date = file_modified
         if not producer and creator:
             producer = creator
 
