@@ -53,6 +53,12 @@ class IAiAnalysisPort(Protocol):
         context: dict[str, Any],
     ) -> dict[str, Any] | None: ...
 
+    async def generate_recommendations(
+        self,
+        *,
+        context: dict[str, Any],
+    ) -> list[dict[str, str]] | None: ...
+
     async def generate_json_completion(
         self,
         *,

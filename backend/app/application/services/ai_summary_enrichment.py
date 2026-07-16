@@ -4,8 +4,9 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from app.application.dto.pdf_structure import PdfStructureAnalyzeResponse
+from app.application.dto.pdf_structure import PdfStructureAnalyzeResponse, ReportRecommendation
 from app.application.interfaces.ai_analysis_port import IAiAnalysisPort
+from app.application.services.pdf_structure.metadata_validation import build_metadata_recommendations
 from app.shared.logging.logger import get_logger
 
 logger = get_logger(__name__)
@@ -360,6 +361,40 @@ class AiSummaryEnrichmentService:
             image_manipulation_summary=image_summary,
             pdf_structure_summary=pdf_summary,
         )
+
+    async def enrich_recommendations(
+        self,
+        *,
+        context: dict[str, Any],
+        pdf_structure_analysis: PdfStructureAnalyzeResponse | None = None,
+        use_llm: bool = True,
+    ) -> list[ReportRecommendation]:
+        """Ask Azure OpenAI for expressive recommendations; fallback to forensic findings."""
+        summary_context = _summary_context(context)
+
+        if use_llm and self._ai_client.is_configured():
+            try:
+                generated = await self._ai_client.generate_recommendations(context=summary_context)
+                if generated:
+                    return [
+                        ReportRecommendation(
+                            recommendation=item["recommendation"],
+                            description=item["description"],
+                        )
+                        for item in generated
+                    ]
+            except Exception as exc:  # noqa: BLE001 — optional enrichment must not fail verify
+                logger.warning("Azure OpenAI recommendation generation failed: %s", exc)
+
+        return _fallback_recommendations(pdf_structure_analysis)
+
+
+def _fallback_recommendations(
+    pdf_structure_analysis: PdfStructureAnalyzeResponse | None,
+) -> list[ReportRecommendation]:
+    if pdf_structure_analysis is None:
+        return []
+    return build_metadata_recommendations(pdf_structure_analysis.findings)
 
 
 def _clean_optional_summary(value: Any) -> str | None:

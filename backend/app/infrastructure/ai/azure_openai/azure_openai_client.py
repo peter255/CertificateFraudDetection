@@ -314,6 +314,44 @@ class AzureOpenAIClient:
             )
         return parsed
 
+    async def generate_recommendations(
+        self,
+        *,
+        context: dict[str, Any],
+    ) -> list[dict[str, str]] | None:
+        """Ask Azure OpenAI for expressive action recommendations."""
+        if not self.is_configured():
+            return None
+
+        context_json = json.dumps(
+            _slim_recommendations_context(context),
+            ensure_ascii=False,
+            default=str,
+        )
+        if len(context_json) > _MAX_CONTEXT_CHARS:
+            context_json = context_json[:_MAX_CONTEXT_CHARS] + "…"
+
+        prompt = _prompt_loader.render(
+            ReportNarrativeTemplateNames.RECOMMENDATIONS,
+            context=context_json,
+        )
+
+        message_content = await self._chat_completion(
+            prompt,
+            max_completion_tokens=_MAX_SUMMARY_COMPLETION_TOKENS,
+            reasoning_effort="low",
+        )
+        if not message_content:
+            return None
+
+        parsed = _parse_recommendations(message_content)
+        if parsed is None:
+            logger.warning(
+                "Could not parse recommendations from: %s",
+                message_content[:300],
+            )
+        return parsed
+
     async def generate_json_completion(self, *, prompt: str) -> str | None:
         """
         Execute a caller-built prompt and return the raw completion text.
@@ -460,6 +498,27 @@ def _slim_summary_context(context: dict[str, Any]) -> dict[str, Any]:
         "pdf_structure_findings",
         "pdf_structure_summary",
         "pdf_structure_sources",
+    ):
+        if key in context and context[key] not in (None, "", [], {}):
+            slim[key] = context[key]
+    return slim
+
+
+def _slim_recommendations_context(context: dict[str, Any]) -> dict[str, Any]:
+    """Compact forensic context for Azure-authored recommendations."""
+    slim = _slim_summary_context(context)
+    for key in (
+        "vendor_flags",
+        "metadata_flags",
+        "certificate_flags",
+        "file_information",
+        "executive_summary",
+        "text_manipulation_summary",
+        "image_manipulation_summary",
+        "pdf_structure_summary",
+        "field_evidence",
+        "visual_evidence",
+        "layer_details",
     ):
         if key in context and context[key] not in (None, "", [], {}):
             slim[key] = context[key]
@@ -662,6 +721,62 @@ def _parse_display_analysis(raw: str) -> dict[str, Any] | None:
     if not out:
         return None
     return out
+
+
+def _parse_recommendations(raw: str) -> list[dict[str, str]] | None:
+    """Parse Azure JSON for actionable recommendations."""
+    text = raw.strip()
+    payload: dict[str, Any] | None = None
+    try:
+        loaded = json.loads(text)
+        if isinstance(loaded, dict):
+            payload = loaded
+    except json.JSONDecodeError:
+        match = re.search(r"\{[\s\S]*\}", text)
+        if match:
+            try:
+                loaded = json.loads(match.group(0))
+                if isinstance(loaded, dict):
+                    payload = loaded
+            except json.JSONDecodeError:
+                payload = None
+
+    if not payload:
+        return None
+
+    items = payload.get("recommendations")
+    if items is None:
+        items = payload.get("items")
+    if not isinstance(items, list):
+        return None
+
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in items[:5]:
+        if not isinstance(item, dict):
+            continue
+        recommendation = item.get("recommendation") or item.get("action") or item.get("text")
+        description = item.get("description") or item.get("rationale") or item.get("context")
+        if not isinstance(recommendation, str) or not recommendation.strip():
+            continue
+        if not isinstance(description, str) or not description.strip():
+            continue
+        rec_text = recommendation.strip()
+        desc_text = description.strip()
+        if _is_decision_recommendation(rec_text):
+            continue
+        key = rec_text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"recommendation": rec_text, "description": desc_text})
+
+    return out or None
+
+
+def _is_decision_recommendation(text: str) -> bool:
+    normalized = re.sub(r"[\s-]+", "_", text.strip().lower())
+    return normalized in {"approve", "reject", "manual_review"}
 
 
 def _slim_finding(item: dict[str, Any]) -> dict[str, Any]:

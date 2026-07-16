@@ -211,8 +211,6 @@ async def verify_with_engine_v2(
         content=raw_content,
         content_type=file.content_type,
         file_modified=(file_modified or "").strip() or None,
-        vendor_recommendation=response.recommendation,
-        vendor_recommendations=None,
     )
     displayed_metadata = file_information_to_compare_metadata(report_bits["file_information"])
 
@@ -245,7 +243,6 @@ async def verify_with_engine_v2(
             "metadata_flags": report_bits["metadata_flags"],
             "certificate_flags": report_bits["certificate_flags"],
             "file_information": report_bits["file_information"],
-            "recommendations": report_bits["recommendations"],
         }
     )
 
@@ -279,11 +276,21 @@ async def verify_with_engine_v2(
         visual_evidence=visual_payloads,
         use_llm=True,
     )
+    enrichment_context.update(display.as_response_updates())
+    if display.executive_summary:
+        enrichment_context["executive_summary"] = display.executive_summary
+
+    ai_recommendations = await ai_summary_service.enrich_recommendations(
+        context=enrichment_context,
+        pdf_structure_analysis=pdf_structure_analysis,
+        use_llm=True,
+    )
 
     updates: dict = {}
     updates.update(display.as_response_updates())
     if display.executive_summary:
         updates["executive_summary"] = display.executive_summary
+    updates["recommendations"] = [item.model_dump() for item in ai_recommendations]
 
     if ai_probability is not None:
         updates["ai_probability"] = ai_probability
