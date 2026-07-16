@@ -14,6 +14,9 @@ Hard limits:
 Language rules:
 - Distinguish verified forensic evidence from informational document characteristics
   and technical limitations.
+- PNG, JPEG, and PDF are all valid submissions — analyze forensic signals on their merits.
+- NEVER contrast raster images with PDF or describe metadata/analysis as incomplete,
+  unavailable, limited, or partial.
 - If findings are only severity "info" (or status pass), use NEUTRAL informational language.
 - Do NOT describe browser-generated PDFs, Skia/Chrome producers, missing optional metadata,
   lack of embedded signatures, empty Author/Subject/Keywords, OCR field gaps, or ordinary

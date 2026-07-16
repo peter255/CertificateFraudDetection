@@ -31,6 +31,39 @@ NO_LOCALIZED_VISUAL_EVIDENCE = (
     "No localized visual evidence of document manipulation was identified."
 )
 
+_UNWANTED_SENTENCE_MARKERS = (
+    "not a native pdf",
+    "not a pdf",
+    "png image, not",
+    "jpeg image, not",
+    "jpg image, not",
+    "is a png image",
+    "is a jpeg image",
+    "is an image, not",
+    "file is a png",
+    "file is a jpeg",
+    "because the file is a png",
+    "because the file is a jpeg",
+    "because the file is an image",
+    "raster image, not",
+    "information is incomplete",
+    "metadata is incomplete",
+    "analysis is incomplete",
+    "data is incomplete",
+    "incomplete metadata",
+    "incomplete information",
+    "limited metadata",
+    "metadata extraction was skipped",
+    "unsupported format",
+    "no pdf metadata was available",
+    "not available for cross-check",
+    "not available for comparison",
+    "could not be compared",
+    "analysis metadata was not available",
+)
+
+_FORMAT_NOISE_KEYS = frozenset({"parse_error", "is_pdf"})
+
 
 @dataclass(frozen=True)
 class DisplayAnalysisResult:
@@ -80,17 +113,23 @@ class AiSummaryEnrichmentService:
         if isinstance(vendor_summary, str) and vendor_summary.strip():
             cleaned = vendor_summary.strip()
             if not looks_like_recommendation(cleaned):
-                return cleaned
+                sanitized = sanitize_narrative_text(cleaned)
+                if sanitized:
+                    return sanitized
 
         if use_llm and self._ai_client.is_configured():
             try:
                 generated = await self._ai_client.generate_summary(context=summary_context)
                 if generated and not looks_like_recommendation(generated):
-                    return generated
+                    cleaned = sanitize_narrative_text(generated)
+                    if cleaned:
+                        return cleaned
             except Exception as exc:  # noqa: BLE001 — optional enrichment must not fail verify
                 logger.warning("Azure OpenAI summary generation failed: %s", exc)
 
-        return build_flags_summary(summary_context)
+        return sanitize_narrative_text(build_flags_summary(summary_context)) or build_flags_summary(
+            summary_context
+        )
 
     async def cross_check_summary(
         self,
@@ -113,12 +152,14 @@ class AiSummaryEnrichmentService:
                     pdf_structure_context=pdf_structure_context,
                 )
                 if generated and not looks_like_recommendation(generated):
-                    return generated
+                    cleaned = sanitize_narrative_text(generated)
+                    if cleaned:
+                        return cleaned
                 logger.warning("Azure cross-check summary missing/invalid; using PDF Structure fallback.")
             except Exception as exc:  # noqa: BLE001 — optional enrichment must not fail verify
                 logger.warning("Azure OpenAI vendor/structure cross-check failed: %s", exc)
 
-        return fallback
+        return sanitize_narrative_text(fallback) or fallback
 
     async def enrich_text_manipulation(
         self,
@@ -154,7 +195,9 @@ class AiSummaryEnrichmentService:
                     context=context or {},
                 )
                 if generated and not looks_like_recommendation(generated):
-                    return generated
+                    cleaned = sanitize_narrative_text(generated)
+                    if cleaned:
+                        return cleaned
                 logger.warning("Azure text-manipulation summary missing/invalid; using fallback.")
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Azure OpenAI text-manipulation summary failed: %s", exc)
@@ -193,7 +236,9 @@ class AiSummaryEnrichmentService:
                     context=ctx,
                 )
                 if generated and not looks_like_recommendation(generated):
-                    return generated
+                    cleaned = sanitize_narrative_text(generated)
+                    if cleaned:
+                        return cleaned
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Azure OpenAI image-manipulation summary failed: %s", exc)
 
@@ -270,9 +315,9 @@ class AiSummaryEnrichmentService:
         if isinstance(vendor_summary, str) and vendor_summary.strip():
             cleaned = vendor_summary.strip()
             if not looks_like_recommendation(cleaned):
-                executive = _shorten_local_summary(cleaned)
+                executive = _clean_optional_summary(cleaned)
         if not executive:
-            executive = _shorten_local_summary(build_flags_summary(summary_context))
+            executive = _clean_optional_summary(build_flags_summary(summary_context))
 
         text_summary = await self.enrich_text_manipulation(
             signals=signals or [],
@@ -288,13 +333,13 @@ class AiSummaryEnrichmentService:
         )
         pdf_summary = context.get("pdf_structure_summary")
         if isinstance(pdf_summary, str) and pdf_summary.strip():
-            pdf_summary = _shorten_local_summary(pdf_summary.strip())
+            pdf_summary = _clean_optional_summary(pdf_summary.strip())
         else:
             pdf_summary = None
 
         return DisplayAnalysisResult(
             executive_summary=executive,
-            text_manipulation_summary=_shorten_local_summary(text_summary) if text_summary else None,
+            text_manipulation_summary=_clean_optional_summary(text_summary) if text_summary else None,
             image_manipulation_summary=image_summary,
             pdf_structure_summary=pdf_summary,
         )
@@ -305,7 +350,8 @@ def _clean_optional_summary(value: Any) -> str | None:
         return None
     if looks_like_recommendation(value):
         return None
-    return _shorten_local_summary(value.strip())
+    shortened = _shorten_local_summary(value.strip())
+    return sanitize_narrative_text(shortened) if shortened else None
 
 
 def _shorten_local_summary(text: str | None) -> str | None:
@@ -456,6 +502,87 @@ def looks_like_recommendation(text: str | None) -> bool:
         return False
     lowered = text.lower()
     return any(marker in lowered for marker in _RECOMMENDATION_MARKERS)
+
+
+def _is_format_noise(text: str) -> bool:
+    lowered = text.lower()
+    return any(
+        phrase in lowered
+        for phrase in (
+            "unsupported format",
+            "not a native pdf",
+            "not a pdf",
+            "incomplete",
+            "extraction skipped",
+            "metadata extraction failed",
+        )
+    )
+
+
+def _sanitize_file_context(payload: Any) -> Any:
+    """Remove format-apology fields before they reach narrative prompts."""
+    if not isinstance(payload, dict):
+        return payload
+
+    cleaned = dict(payload)
+    for key in _FORMAT_NOISE_KEYS:
+        cleaned.pop(key, None)
+
+    props = cleaned.get("document_properties")
+    if isinstance(props, dict):
+        props_clean = {
+            key: value
+            for key, value in props.items()
+            if key != "note" or not _is_format_noise(str(value))
+        }
+        if props_clean:
+            cleaned["document_properties"] = props_clean
+        else:
+            cleaned.pop("document_properties", None)
+
+    return cleaned
+
+
+def _sanitize_findings_for_prompt(findings: Any) -> Any:
+    if not isinstance(findings, list):
+        return findings
+    kept: list[Any] = []
+    for item in findings:
+        if not isinstance(item, dict):
+            kept.append(item)
+            continue
+        severity = str(item.get("severity") or "").lower()
+        title = str(item.get("title") or "").lower()
+        if severity == "info" and (
+            "not present" in title
+            or "missing" in title
+            or "sparse or empty" in title
+            or "empty optional" in title
+        ):
+            continue
+        kept.append(item)
+    return kept
+
+
+def sanitize_narrative_text(text: str | None) -> str | None:
+    """Drop format-apology / incomplete-data sentences from user-facing narratives."""
+    if not text or not text.strip():
+        return text
+
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    kept: list[str] = []
+    for sentence in sentences:
+        lowered = sentence.lower()
+        if any(marker in lowered for marker in _UNWANTED_SENTENCE_MARKERS):
+            continue
+        kept.append(sentence.strip())
+
+    if not kept:
+        return None
+
+    cleaned = " ".join(kept)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or None
 
 
 def build_flags_summary(context: dict[str, Any]) -> str:
@@ -647,6 +774,17 @@ def _summary_context(context: dict[str, Any]) -> dict[str, Any]:
                 if provenance:
                     slim["provenance"] = provenance
 
+    if "file_information" in slim:
+        slim["file_information"] = _sanitize_file_context(slim["file_information"])
+    if "pdf_metadata" in slim:
+        slim["pdf_metadata"] = _sanitize_file_context(slim["pdf_metadata"])
+    if "pdf_structure_findings" in slim:
+        slim["pdf_structure_findings"] = _sanitize_findings_for_prompt(
+            slim["pdf_structure_findings"]
+        )
+    if isinstance(slim.get("pdf_structure_summary"), str):
+        slim["pdf_structure_summary"] = sanitize_narrative_text(slim["pdf_structure_summary"])
+
     return slim
 
 
@@ -655,6 +793,12 @@ def _pdf_structure_prompt_context(analysis: PdfStructureAnalyzeResponse) -> dict
     metadata = analysis.pdf_metadata
     findings_payload: list[dict[str, Any]] = []
     for item in analysis.findings[:20]:
+        if item.severity == "info" and (
+            "not present" in item.title.lower()
+            or "missing" in item.title.lower()
+            or "sparse or empty" in item.title.lower()
+        ):
+            continue
         findings_payload.append(
             {
                 "rule_id": item.rule_id,
@@ -665,6 +809,8 @@ def _pdf_structure_prompt_context(analysis: PdfStructureAnalyzeResponse) -> dict
             }
         )
 
+    findings_payload = _sanitize_findings_for_prompt(findings_payload)
+
     ocr_payload: dict[str, Any] | None = None
     if ocr is not None:
         ocr_payload = ocr.model_dump(exclude={"raw", "detected_text"})
@@ -674,9 +820,9 @@ def _pdf_structure_prompt_context(analysis: PdfStructureAnalyzeResponse) -> dict
 
     return {
         "ocr_fields": ocr_payload,
-        "pdf_metadata": metadata.model_dump() if metadata is not None else None,
+        "pdf_metadata": _sanitize_file_context(metadata.model_dump()) if metadata is not None else None,
         "findings": findings_payload,
-        "internal_summary": analysis.summary,
+        "internal_summary": sanitize_narrative_text(analysis.summary),
         "sources": analysis.sources,
     }
 

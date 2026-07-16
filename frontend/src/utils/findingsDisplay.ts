@@ -258,16 +258,15 @@ export function fileStructureDisplaySummary(
         .map((s) => signalTitle(s))
         .filter(Boolean)
         .slice(0, 3);
-      const listed = titles.length ? ` Noted characteristics: ${titles.join("; ")}.` : "";
+      const listed = titles.length ? ` Observed characteristics: ${titles.join("; ")}.` : "";
       return clampSummary(
         "File-structure review found no suspicious forensic indicators of manipulation." +
-          listed +
-          " Common PDF/OCR traits (metadata gaps, browser producers, extraction limits) are informational only."
+          listed
       );
     }
     return clampSummary(
       "File-structure review found no suspicious forensic indicators. " +
-        "No PDF structure inconsistencies were identified."
+        "No metadata or structure inconsistencies were identified."
     );
   }
 
@@ -275,7 +274,7 @@ export function fileStructureDisplaySummary(
     return clampSummary(
       (fromApi || "").trim() ||
         "File-structure review found no suspicious forensic indicators. " +
-          "Observed notes are informational document characteristics only."
+          "Observed notes reflect routine document characteristics only."
     );
   }
 

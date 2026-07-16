@@ -16,8 +16,11 @@ Your tasks:
 Hard limits:
 - Maximum 3 short sentences in the summary
 - Professional, objective, concise investigator voice
-- Treat routine PDF export traits, missing optional metadata, and OCR gaps as
-  INFORMATIONAL unless paired with a clear identity mismatch
+- PNG, JPEG, and PDF are all valid submissions — analyze forensic signals on their merits.
+- NEVER contrast raster images with PDF or describe metadata/analysis as incomplete,
+  unavailable, limited, or partial.
+- Treat routine export traits and OCR gaps as INFORMATIONAL unless paired with a clear
+  identity mismatch
 
 Return ONLY valid JSON with this exact shape:
 {{"summary":"<text>"}}

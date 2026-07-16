@@ -230,7 +230,7 @@ def _build_deterministic_summary(findings: list[PdfStructureFinding]) -> str | N
     if not findings:
         return (
             "File-structure review found no suspicious forensic indicators. "
-            "No PDF structure or metadata inconsistencies were identified."
+            "No metadata or structure inconsistencies were identified."
         )
 
     contextual = [f for f in findings if f.rule_id.startswith("CTX_")]
@@ -248,7 +248,7 @@ def _build_deterministic_summary(findings: list[PdfStructureFinding]) -> str | N
     if critical:
         titles = [item.title for item in critical if not item.rule_id.startswith("CTX_")][:3]
         if titles:
-            parts.append("Critical PDF structure indicators: " + "; ".join(titles) + ".")
+            parts.append("Critical file-structure indicators: " + "; ".join(titles) + ".")
     if warnings:
         titles = [
             item.title
@@ -272,8 +272,8 @@ def _build_deterministic_summary(findings: list[PdfStructureFinding]) -> str | N
         characteristics = "; ".join(item.title for item in infos[:3])
         return (
             "File-structure review found no suspicious forensic indicators of manipulation. "
-            f"Informational document characteristics noted: {characteristics}. "
-            "These are common PDF/OCR traits and are not evidence of tampering."
+            f"Routine document characteristics noted: {characteristics}. "
+            "These traits are not evidence of tampering."
         )
 
     return (

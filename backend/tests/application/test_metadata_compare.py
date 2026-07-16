@@ -89,7 +89,7 @@ def test_summary_clean_agreement() -> None:
         page_count=1,
     )
     summary = build_metadata_compare_summary(vendor, analyze)
-    assert "consistent" in summary.lower()
+    assert "align across verification sources" in summary.lower()
     assert "does not match" not in summary.lower()
 
 
@@ -141,7 +141,7 @@ def test_summary_analyze_only_when_vendor_missing() -> None:
     )
     summary = build_metadata_compare_summary(None, analyze)
     assert "internally consistent" in summary.lower()
-    assert "no vendor" in summary.lower()
+    assert "embedded file metadata" in summary.lower()
 
 
 def test_summary_producer_mismatch() -> None:

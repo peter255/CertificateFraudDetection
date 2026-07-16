@@ -21,6 +21,14 @@ Evidence taxonomy — distinguish clearly:
 2) Informational document characteristics
 3) Technical limitations (not analysis failures)
 
+Format and coverage (mandatory):
+- PNG, JPEG, and PDF are all valid certificate submissions. Analyze each on its own
+  forensic merits using the metadata and signals provided.
+- NEVER contrast raster images with PDF or describe the file format as a limitation.
+- NEVER describe metadata, OCR, or the analysis as incomplete, unavailable, limited,
+  partial, or insufficient.
+- Explain concrete reasons: what was observed in this category and why it matters.
+
 Informational only (unless corroborated by independent forensic evidence):
 - Browser-generated PDFs; Skia / Chrome / Chromium producers
 - OCR extraction limitations
@@ -37,8 +45,10 @@ Category-specific rules:
 - Text Manipulation: Discuss field/text/font forensic indicators only; do not
   restate PDF metadata or invent visual regions.
 - File Structure: Prefer forensic structure/metadata inconsistencies over routine
-  PDF traits. If only informational traits exist and the verdict is clean, state
+  document traits. If only informational traits exist and the verdict is clean, state
   that no suspicious forensic indicators were detected.
+- File Structure: Analyze embedded image/PDF metadata forensically (producer, creator,
+  dates, editing tools). Never apologize for PNG/JPEG format or call the review incomplete.
 
 If the Overall Verdict is CLEAN / authentic and findings are informational only:
 - Use neutral language; do not imply fraud or create unnecessary concern.

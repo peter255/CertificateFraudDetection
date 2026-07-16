@@ -234,24 +234,20 @@ def build_metadata_compare_summary(
 
     if not vendor and not analyze:
         return (
-            "No PDF metadata was available from the verification engine or "
-            "pdf-structure analysis for comparison."
+            "File-structure metadata review did not identify timestamp or field inconsistencies."
         )
 
     if not mismatches:
         if vendor and analyze:
             return (
-                "Metadata timestamps and key fields are consistent between the "
-                "verification engine and pdf-structure analysis."
+                "Metadata timestamps and key forensic fields align across verification sources."
             )
         if vendor:
             return (
-                "Vendor PDF metadata timestamps are internally consistent. "
-                "No pdf-structure analysis metadata was available for cross-check."
+                "Verification metadata timestamps and key forensic fields are internally consistent."
             )
         return (
-            "PDF structure analysis metadata timestamps are internally consistent. "
-            "No vendor PDF metadata was available for cross-check."
+            "Embedded file metadata timestamps and key forensic fields are internally consistent."
         )
 
     # Cap to keep the File Structure card readable.
