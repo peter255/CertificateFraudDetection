@@ -60,6 +60,13 @@ _UNWANTED_SENTENCE_MARKERS = (
     "not available for comparison",
     "could not be compared",
     "analysis metadata was not available",
+    "empty or stripped",
+    "metadata are empty",
+    "metadata is empty",
+    "core metadata are empty",
+    "core metadata is empty",
+    "empty or missing core metadata",
+    "stripped metadata",
 )
 
 _FORMAT_NOISE_KEYS = frozenset({"parse_error", "is_pdf"})
@@ -281,6 +288,18 @@ class AiSummaryEnrichmentService:
             if isinstance(executive, str) and looks_like_recommendation(executive):
                 executive = None
 
+            pdf_summary = _clean_optional_summary(
+                azure.get("pdf_structure_summary")
+            )
+            file_info = context.get("file_information")
+            if isinstance(file_info, dict) and _narrative_contradicts_file_information(
+                pdf_summary, file_info
+            ):
+                logger.warning(
+                    "Discarding contradictory Azure pdf_structure_summary; using deterministic fallback"
+                )
+                pdf_summary = _clean_optional_summary(context.get("pdf_structure_summary"))
+
             return DisplayAnalysisResult(
                 risk_score=azure.get("risk_score") if isinstance(azure.get("risk_score"), int) else None,
                 fraud_probability=(
@@ -304,9 +323,7 @@ class AiSummaryEnrichmentService:
                     azure.get("text_manipulation_summary")
                 ),
                 image_manipulation_summary=_clean_optional_summary(image_summary),
-                pdf_structure_summary=_clean_optional_summary(
-                    azure.get("pdf_structure_summary")
-                ),
+                pdf_structure_summary=pdf_summary,
             )
 
         # Local fallbacks — short summaries only; scores stay None (FE computes).
@@ -517,6 +534,80 @@ def _is_format_noise(text: str) -> bool:
             "metadata extraction failed",
         )
     )
+
+
+def _filter_contradictory_flag_tags(
+    flags: list[str],
+    file_info: dict[str, Any],
+) -> list[str]:
+    """Drop metadata-gap flags when displayed file information proves the field exists."""
+    skip: set[str] = set()
+    if file_info.get("creation_date"):
+        skip.add("MISSING_CREATION_DATE")
+    if file_info.get("producer"):
+        skip.add("MISSING_PRODUCER")
+    if file_info.get("creator"):
+        skip.add("MISSING_CREATOR")
+    if file_info.get("creation_date") or file_info.get("producer") or file_info.get("creator"):
+        skip.add("EMPTY_METADATA")
+
+    kept: list[str] = []
+    seen: set[str] = set()
+    for flag in flags:
+        text = str(flag).strip()
+        if not text:
+            continue
+        upper = text.upper()
+        if any(tag in upper for tag in skip):
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(text)
+    return kept
+
+
+def _narrative_contradicts_file_information(
+    text: str | None,
+    file_info: dict[str, Any] | None,
+) -> bool:
+    if not text or not isinstance(file_info, dict):
+        return False
+    lowered = text.lower()
+    if file_info.get("creation_date") and any(
+        phrase in lowered
+        for phrase in (
+            "missing creation date",
+            "no creation date",
+            "creation date not present",
+            "creation date not listed",
+            "empty or stripped",
+            "metadata are empty",
+            "metadata is empty",
+            "core metadata are empty",
+            "core metadata is empty",
+            "empty or missing core metadata",
+            "stripped metadata",
+            "anchors are empty",
+        )
+    ):
+        return True
+    if (file_info.get("producer") or file_info.get("creator")) and any(
+        phrase in lowered
+        for phrase in (
+            "metadata are empty",
+            "metadata is empty",
+            "empty or stripped",
+            "stripped metadata",
+            "anchors are empty",
+            "no producer",
+            "missing producer",
+            "producer field not",
+        )
+    ):
+        return True
+    return False
 
 
 def _sanitize_file_context(payload: Any) -> Any:
@@ -776,6 +867,29 @@ def _summary_context(context: dict[str, Any]) -> dict[str, Any]:
 
     if "file_information" in slim:
         slim["file_information"] = _sanitize_file_context(slim["file_information"])
+        file_info = slim["file_information"]
+        if isinstance(file_info, dict):
+            slim["displayed_file_metadata"] = {
+                key: file_info.get(key)
+                for key in (
+                    "creation_date",
+                    "modification_date",
+                    "producer",
+                    "creator",
+                    "num_pages",
+                    "file_type",
+                )
+                if file_info.get(key) not in (None, "", [], {})
+            }
+            for flag_key in (
+                "certificate_flags",
+                "vendor_flags",
+                "metadata_flags",
+                "detected_flags",
+            ):
+                flags = slim.get(flag_key)
+                if isinstance(flags, list):
+                    slim[flag_key] = _filter_contradictory_flag_tags(flags, file_info)
     if "pdf_metadata" in slim:
         slim["pdf_metadata"] = _sanitize_file_context(slim["pdf_metadata"])
     if "pdf_structure_findings" in slim:

@@ -188,18 +188,20 @@ def build_default_contextual_patterns() -> tuple[ContextualPattern, ...]:
         ),
         ContextualPattern(
             pattern_id="CTX_STRIPPED_METADATA_AND_IDENTITY",
-            title="Stripped metadata combined with missing identity fields",
+            title="Sparse metadata combined with missing OCR identity fields",
             rationale=(
-                "Empty or missing core metadata together with missing certificate identity "
-                "fields is more suspicious than either gap alone, because provenance and "
-                "identity anchors are both weak."
+                "When embedded metadata is genuinely sparse together with missing "
+                "certificate identity fields from OCR, provenance and identity anchors "
+                "are both weaker than a complete record. This is a supportive concern — "
+                "not proof of fraud."
             ),
             require_any_groups=(metadata_gaps, identity_gaps),
             severity="warning",
             status="warning",
             confidence=0.8,
             recommendation=(
-                "Treat simultaneous metadata and identity gaps as a combined provenance concern."
+                "Review OCR identity fields against the document face. Treat sparse "
+                "embedded metadata as contextual — not as proof metadata was stripped."
             ),
         ),
         ContextualPattern(

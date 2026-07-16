@@ -5,6 +5,12 @@ from dataclasses import dataclass, field
 
 from app.application.dto.pdf_structure import PdfStructureFinding
 from app.application.services.pdf_structure.context import PdfStructureContext
+from app.application.services.pdf_structure.metadata_presence import (
+    metadata_core_embedded_present,
+    resolve_embedded_creation_date,
+    resolve_embedded_creator,
+    resolve_embedded_producer,
+)
 from app.application.services.pdf_structure.rules.producer import match_suspicious_producer
 
 # Semantic tags used by contextual patterns (stable, explainable labels).
@@ -126,11 +132,30 @@ def build_indicator_index(
 
     _derive_soft_tags(context, add)
 
+    filtered = _filter_contradictory_metadata_tags(context, tags)
+
     return IndicatorIndex(
-        tags=frozenset(tags),
+        tags=frozenset(filtered),
         findings_by_rule=findings_by_rule,
         tag_sources=tag_sources,
     )
+
+
+def _filter_contradictory_metadata_tags(
+    context: PdfStructureContext,
+    tags: set[str],
+) -> set[str]:
+    """Drop metadata-gap tags when embedded file metadata proves the field exists."""
+    filtered = set(tags)
+    if resolve_embedded_creation_date(context.metadata):
+        filtered.discard(TAG_MISSING_CREATION_DATE)
+    if resolve_embedded_producer(context.metadata):
+        filtered.discard(TAG_MISSING_PRODUCER)
+    if resolve_embedded_creator(context.metadata):
+        filtered.discard(TAG_MISSING_CREATOR)
+    if metadata_core_embedded_present(context.metadata):
+        filtered.discard(TAG_EMPTY_METADATA)
+    return filtered
 
 
 def _derive_soft_tags(
@@ -160,11 +185,12 @@ def _derive_soft_tags(
     if producer_hit or creator_hit:
         add(TAG_SUSPICIOUS_PRODUCER, "context:suspicious_producer")
 
-    if context.metadata.is_pdf and not (context.metadata.producer or "").strip():
+    if context.metadata.is_pdf and not resolve_embedded_producer(context.metadata):
         add(TAG_MISSING_PRODUCER, "context:missing_producer")
-    if context.metadata.is_pdf and not (context.metadata.creator or "").strip():
+    creator = resolve_embedded_creator(context.metadata)
+    if context.metadata.is_pdf and not creator:
         add(TAG_MISSING_CREATOR, "context:missing_creator")
-    if context.metadata.is_pdf and not (context.metadata.creation_date or "").strip():
+    if context.metadata.is_pdf and not resolve_embedded_creation_date(context.metadata):
         add(TAG_MISSING_CREATION_DATE, "context:missing_creation_date")
 
     ocr_usable = bool(

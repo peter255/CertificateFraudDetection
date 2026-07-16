@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from app.application.dto.pdf_structure import PdfStructureFinding
 from app.application.services.pdf_structure.context import PdfStructureContext
+from app.application.services.pdf_structure.metadata_presence import (
+    metadata_core_embedded_present,
+    resolve_embedded_creation_date,
+    resolve_embedded_creator,
+    resolve_embedded_producer,
+)
 from app.application.services.pdf_structure.rules.base import finding
 
 
@@ -11,7 +17,7 @@ class MissingCreationDateRule:
     def evaluate(self, context: PdfStructureContext) -> PdfStructureFinding | None:
         if not context.metadata.is_pdf:
             return None
-        if context.metadata.creation_date:
+        if resolve_embedded_creation_date(context.metadata):
             return None
         return finding(
             rule_id=self.rule_id,
@@ -38,7 +44,7 @@ class MissingProducerRule:
     def evaluate(self, context: PdfStructureContext) -> PdfStructureFinding | None:
         if not context.metadata.is_pdf:
             return None
-        if context.metadata.producer:
+        if resolve_embedded_producer(context.metadata):
             return None
         return finding(
             rule_id=self.rule_id,
@@ -63,7 +69,7 @@ class MissingCreatorRule:
     def evaluate(self, context: PdfStructureContext) -> PdfStructureFinding | None:
         if not context.metadata.is_pdf:
             return None
-        if context.metadata.creator:
+        if resolve_embedded_creator(context.metadata):
             return None
         return finding(
             rule_id=self.rule_id,
@@ -89,16 +95,7 @@ class EmptyMetadataRule:
         if not context.metadata.is_pdf:
             return None
 
-        core_values = [
-            context.metadata.creation_date,
-            context.metadata.modification_date,
-            context.metadata.producer,
-            context.metadata.creator,
-            context.metadata.title,
-            context.metadata.author,
-            context.metadata.subject,
-        ]
-        if any(value for value in core_values):
+        if metadata_core_embedded_present(context.metadata):
             return None
 
         return finding(

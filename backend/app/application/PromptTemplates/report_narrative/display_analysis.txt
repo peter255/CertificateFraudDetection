@@ -40,6 +40,9 @@ Narrative rules:
 - PNG, JPEG, and PDF are all valid submissions — analyze forensic signals on their merits.
 - NEVER contrast raster images with PDF or describe metadata/analysis as incomplete,
   unavailable, limited, or partial.
+- file_information / displayed_file_metadata in the context is authoritative for what
+  the report shows. Never claim creation date, producer, or creator are missing when
+  those displayed fields are populated.
 
 Authoritative analysis context:
 {context}

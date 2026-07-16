@@ -47,6 +47,8 @@ Category-specific rules:
 - File Structure: Prefer forensic structure/metadata inconsistencies over routine
   document traits. If only informational traits exist and the verdict is clean, state
   that no suspicious forensic indicators were detected.
+- File Structure: When displayed_file_metadata or file_information lists creation_date,
+  producer, or creator, never describe those fields as missing, empty, or stripped.
 - File Structure: Analyze embedded image/PDF metadata forensically (producer, creator,
   dates, editing tools). Never apologize for PNG/JPEG format or call the review incomplete.
 

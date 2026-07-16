@@ -56,6 +56,7 @@ KNOWN_PRODUCERS: tuple[str, ...] = (
     "foxit",
     "nitro",
     "pdf-xchange",
+    "scan",
 )
 
 

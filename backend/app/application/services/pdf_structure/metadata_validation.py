@@ -57,19 +57,13 @@ def _pick_metadata_string(metadata: PdfMetadata | None, *keys: str) -> str | Non
     return None
 
 
+from app.application.services.pdf_structure.metadata_presence import (
+    resolve_embedded_creation_date,
+)
+
+
 def _resolve_creation_date(metadata: PdfMetadata | None) -> str | None:
-    embedded = _pick_metadata_string(
-        metadata,
-        "creation_date",
-        "document_creation_date",
-        "CreationDate",
-        "/CreationDate",
-        "exif_datetime_original",
-        "xmp_create_date",
-        "creation_time",
-        "png_date",
-        "date",
-    )
+    embedded = resolve_embedded_creation_date(metadata)
     if embedded:
         return embedded
     if metadata and metadata.file_modified:

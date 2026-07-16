@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from app.application.dto.pdf_structure import OcrExtractedFields, PdfMetadata
 from app.application.services.pdf_structure.context import PdfStructureContext
+from app.application.services.pdf_structure.contextual.indicators import (
+    TAG_MISSING_CREATION_DATE,
+    TAG_MISSING_PRODUCER,
+    build_indicator_index,
+)
 from app.application.services.pdf_structure.contextual.reasoner import ContextualReasoner
 from app.application.services.pdf_structure.rules.registry import build_default_rule_registry
 
@@ -115,3 +120,33 @@ def test_chronology_cluster_requires_multiple_date_tags() -> None:
     composites = ContextualReasoner().evaluate(context=context, atomic_findings=atomic)
 
     assert any(item.rule_id == "CTX_CHRONOLOGY_CLUSTER" for item in composites)
+
+
+def test_adobe_scan_metadata_does_not_emit_missing_creation_tags() -> None:
+    context = PdfStructureContext(
+        ocr=OcrExtractedFields(
+            certificate_id=None,
+            holder_name=None,
+            issuer=None,
+            detected_text="Certificate text",
+        ),
+        metadata=PdfMetadata(
+            is_pdf=True,
+            producer="Adobe Scan for iOS 26.03.19",
+            creator="Adobe Scan for iOS 26.03.19",
+            creation_date="2026-07-08T08:25:22.000Z",
+            modification_date="2026-07-08T08:25:22.000Z",
+            page_count=3,
+        ),
+        extras={"ocr_attempted": True, "ocr_configured": True},
+    )
+    atomic = build_default_rule_registry().evaluate_all(context)
+    index = build_indicator_index(context=context, atomic_findings=atomic)
+    assert TAG_MISSING_CREATION_DATE not in index.tags
+    assert TAG_MISSING_PRODUCER not in index.tags
+
+    composites = ContextualReasoner().evaluate(context=context, atomic_findings=atomic)
+    stripped = [item for item in composites if item.rule_id == "CTX_STRIPPED_METADATA_AND_IDENTITY"]
+    assert not stripped
+    if stripped:
+        assert "MISSING_CREATION_DATE" not in stripped[0].evidence["matched_tags"]
