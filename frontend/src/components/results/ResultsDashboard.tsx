@@ -3,8 +3,9 @@
  * Left: annotated document preview. Right: scores, verdict, findings, actions.
  *
  * DETAILED FINDINGS order:
- * 1) Visual evidence list (page + bbox only — clickable navigation)
- * 2) Text / Image / File Structure category cards below
+ * 1) Localized findings (highlightable on the document preview)
+ * 2) Document-wide findings (no viewer location) — full-width section
+ * 3) Text / Image / File Structure category cards below
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -18,6 +19,7 @@ import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import FlagOutlinedIcon from "@mui/icons-material/FlagOutlined";
 import PlaylistAddCheckOutlinedIcon from "@mui/icons-material/PlaylistAddCheckOutlined";
+import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import type {
   ReportRecommendationItem,
   RiskLevel,
@@ -80,6 +82,7 @@ function isDetailedFinding(region: TamperRegion): boolean {
   return Boolean(region.label?.trim() || region.description?.trim());
 }
 
+/** True when the finding can draw a highlight box on the document preview. */
 function findingCanHighlight(region: TamperRegion): boolean {
   const scope = region.scope ?? classifyFindingScope(region);
   if (scope !== "element") return false;
@@ -613,6 +616,203 @@ function VisualFindingCard({
   );
 }
 
+function DocumentWideFindingCard({
+  region,
+  index,
+}: {
+  region: TamperRegion;
+  index: number;
+}) {
+  const color = severityColor(region.severity);
+  const title =
+    humanizeLabel(region.label) ||
+    (region.description?.trim() ? "Document-wide signal" : "Forensic signal");
+  const description = region.description?.trim() || "";
+  const confidencePct =
+    region.confidence != null && Number.isFinite(region.confidence)
+      ? Math.round(region.confidence * 1000) / 10
+      : null;
+
+  return (
+    <Box
+      sx={{
+        px: 1.75,
+        py: 1.5,
+        borderRadius: "8px",
+        border: `1px solid ${VS.border}`,
+        backgroundColor: "rgba(35,37,40,0.03)",
+      }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 1.5,
+          mb: description ? 0.5 : 0,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.25, minWidth: 0 }}>
+          <Box
+            sx={{
+              width: 22,
+              height: 22,
+              borderRadius: "5px",
+              backgroundColor: color,
+              color: VS.onAccent,
+              fontSize: "0.625rem",
+              fontWeight: 800,
+              fontFamily: VS.mono,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              mt: 0.15,
+            }}
+          >
+            {index + 1}
+          </Box>
+          <Typography
+            sx={{
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              color: VS.text,
+              lineHeight: 1.35,
+            }}
+          >
+            {title}
+          </Typography>
+        </Box>
+        <Typography
+          sx={{
+            fontSize: "0.625rem",
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            color,
+            fontFamily: VS.mono,
+            flexShrink: 0,
+          }}
+        >
+          {SEVERITY_LABEL[region.severity]}
+        </Typography>
+      </Box>
+
+      {description ? (
+        <Typography
+          sx={{
+            fontSize: "0.8125rem",
+            color: VS.textSecondary,
+            lineHeight: 1.5,
+            pl: 4.25,
+            mb: confidencePct != null ? 0.75 : 0,
+          }}
+        >
+          {description}
+        </Typography>
+      ) : null}
+
+      {confidencePct != null ? (
+        <Typography
+          sx={{
+            fontSize: "0.6875rem",
+            color: VS.textMuted,
+            fontFamily: VS.mono,
+            pl: 4.25,
+          }}
+        >
+          Confidence {confidencePct}%
+        </Typography>
+      ) : null}
+    </Box>
+  );
+}
+
+function DocumentWideFindingsSection({
+  regions,
+}: {
+  regions: TamperRegion[];
+}) {
+  if (regions.length === 0) return null;
+
+  return (
+    <Box
+      sx={{
+        borderRadius: "10px",
+        border: `1px solid ${VS.border}`,
+        backgroundColor: VS.bgCard,
+        overflow: "hidden",
+      }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 1.25,
+          px: 2,
+          py: 1.5,
+          borderBottom: `1px solid ${VS.border}`,
+        }}
+      >
+        <Box sx={{ color: VS.textSecondary, display: "flex" }}>
+          <ArticleOutlinedIcon sx={{ fontSize: 18 }} />
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography
+            sx={{
+              fontSize: "0.8125rem",
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              color: VS.text,
+            }}
+          >
+            Document-Wide Forensic Signals
+          </Typography>
+          <Typography
+            sx={{
+              fontSize: "0.75rem",
+              color: VS.textSecondary,
+              lineHeight: 1.5,
+              mt: 0.35,
+            }}
+          >
+            Overall certificate or file-level findings that cannot be pinned to a
+            single region on the preview.
+          </Typography>
+        </Box>
+        <Box
+          sx={{
+            px: 1,
+            py: 0.35,
+            borderRadius: "5px",
+            backgroundColor: "rgba(35,37,40,0.06)",
+            border: `1px solid ${VS.borderStrong}`,
+            flexShrink: 0,
+          }}
+        >
+          <Typography
+            sx={{
+              fontSize: "0.625rem",
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              color: VS.textSecondary,
+              fontFamily: VS.mono,
+            }}
+          >
+            {regions.length}
+          </Typography>
+        </Box>
+      </Box>
+
+      <Box sx={{ p: 1.5, display: "flex", flexDirection: "column", gap: 1.25 }}>
+        {regions.map((region, index) => (
+          <DocumentWideFindingCard key={region.id} region={region} index={index} />
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
 function RecommendationCard({
   item,
   index,
@@ -780,24 +980,36 @@ export default function ResultsDashboard({
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
   const [activePage, setActivePage] = useState(1);
 
-  /** Overlay draw list — Detailed Findings (element + document-level cards). */
-  const visualFindings = useMemo(
+  /** All detailed findings from the engine. */
+  const detailedFindings = useMemo(
     () => result.tamperRegions.filter(isDetailedFinding),
     [result.tamperRegions]
+  );
+
+  /** Findings that can highlight a region on the document preview. */
+  const localizedFindings = useMemo(
+    () => detailedFindings.filter(findingCanHighlight),
+    [detailedFindings]
+  );
+
+  /** Findings with no mappable location on the viewer. */
+  const documentWideFindings = useMemo(
+    () => detailedFindings.filter((region) => !findingCanHighlight(region)),
+    [detailedFindings]
   );
 
   // Keep selection only if it still exists — never auto-pick on load.
   useEffect(() => {
     if (!selectedRegionId) return;
-    if (!visualFindings.some((r) => r.id === selectedRegionId)) {
+    if (!localizedFindings.some((r) => r.id === selectedRegionId)) {
       setSelectedRegionId(null);
     }
-  }, [visualFindings, selectedRegionId]);
+  }, [localizedFindings, selectedRegionId]);
 
   useEffect(() => {
-    const region = visualFindings.find((r) => r.id === selectedRegionId);
-    if (region && findingCanHighlight(region)) setActivePage(region.page);
-  }, [selectedRegionId, visualFindings]);
+    const region = localizedFindings.find((r) => r.id === selectedRegionId);
+    if (region) setActivePage(region.page);
+  }, [selectedRegionId, localizedFindings]);
 
   const {
     riskScore,
@@ -819,19 +1031,19 @@ export default function ResultsDashboard({
   // or when a document-level / non-highlightable finding is active.
   const showRegions = useMemo(() => {
     if (!selectedRegionId) return [];
-    const selected = visualFindings.find((r) => r.id === selectedRegionId);
-    if (!selected || !findingCanHighlight(selected)) return [];
+    const selected = localizedFindings.find((r) => r.id === selectedRegionId);
+    if (!selected) return [];
     if ((selected.page || 1) !== activePage) return [];
     return [selected];
-  }, [visualFindings, selectedRegionId, activePage]);
+  }, [localizedFindings, selectedRegionId, activePage]);
 
   const selectFinding = (region: TamperRegion) => {
     setSelectedRegionId((current) => (current === region.id ? null : region.id));
-    if (findingCanHighlight(region)) setActivePage(region.page);
+    setActivePage(region.page);
   };
 
   const handleSelectRegion = (id: string) => {
-    const region = visualFindings.find((r) => r.id === id);
+    const region = localizedFindings.find((r) => r.id === id);
     if (region) selectFinding(region);
     else setSelectedRegionId(id);
   };
@@ -1260,9 +1472,9 @@ export default function ResultsDashboard({
                   lineHeight: 1.5,
                 }}
               >
-                {visualFindings.length > 0
-                  ? "Select a finding. Element-level items highlight Azure layout regions; document-level items explain overall forensic signals without a box."
-                  : "No localized visual evidence was returned for this document."}
+                {localizedFindings.length > 0
+                  ? "Select a finding to highlight its location on the document preview."
+                  : "No localized findings with a mappable region were returned for this document."}
               </Typography>
             </Box>
 
@@ -1277,7 +1489,7 @@ export default function ResultsDashboard({
                 overflow: "auto",
               }}
             >
-              {visualFindings.map((region, index) => (
+              {localizedFindings.map((region, index) => (
                 <VisualFindingCard
                   key={region.id}
                   region={region}
@@ -1291,7 +1503,7 @@ export default function ResultsDashboard({
         </Box>
       </Box>
 
-      {/* Category analysis — full width under Viewer + Detailed Findings */}
+      {/* Document-wide findings + category analysis */}
       <Box
         sx={{
           display: "flex",
@@ -1300,6 +1512,7 @@ export default function ResultsDashboard({
           mt: { xs: 2.5, lg: 3 },
         }}
       >
+        <DocumentWideFindingsSection regions={documentWideFindings} />
         <FindingCategory
           title="Text Manipulation"
           icon={<TextFieldsIcon sx={{ fontSize: 18 }} />}
