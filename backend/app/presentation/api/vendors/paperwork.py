@@ -160,8 +160,6 @@ async def verify_with_engine_v2(
             item.get("bbox"),
         )
     for index, item in enumerate(response.field_evidence or [], start=1):
-        if not item.bbox:
-            continue
         logger.info(
             "[V2] vendor field_evidence #%d description=%r field_label=%r page=%s severity=%s bbox=%s",
             index,

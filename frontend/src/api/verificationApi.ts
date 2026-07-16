@@ -1004,6 +1004,228 @@ function harvestNestedSpatialCandidates(
   return out;
 }
 
+function regionsOverlap(a: TamperRegion, b: TamperRegion): boolean {
+  if (a.page !== b.page) return false;
+  if (spatialFindingKey(a.page, a.bbox) === spatialFindingKey(b.page, b.bbox)) {
+    return true;
+  }
+  return (
+    bboxIoU(a.bbox, b.bbox) >= 0.4 ||
+    bboxMostlyContained(a.bbox, b.bbox) ||
+    bboxMostlyContained(b.bbox, a.bbox)
+  );
+}
+
+function ensureUniqueRegionIds(regions: TamperRegion[]): TamperRegion[] {
+  const used = new Set<string>();
+  return regions.map((region, index) => {
+    let id = region.id?.trim() || `finding-${index + 1}`;
+    if (!used.has(id)) {
+      used.add(id);
+      return id === region.id ? region : { ...region, id };
+    }
+    let suffix = 2;
+    while (used.has(`${id}-${suffix}`)) suffix += 1;
+    const uniqueId = `${id}-${suffix}`;
+    used.add(uniqueId);
+    return { ...region, id: uniqueId };
+  });
+}
+
+/** Drop spatial duplicates; field_evidence wins and keeps log order. */
+function dedupeDetailedFindingRegions(regions: TamperRegion[]): TamperRegion[] {
+  const fieldEvidence = regions
+    .filter((region) => region.extras?.source === "field_evidence")
+    .sort(
+      (a, b) =>
+        (Number(a.extras?.fieldEvidenceIndex) || 0) -
+        (Number(b.extras?.fieldEvidenceIndex) || 0)
+    );
+  const others = regions.filter((region) => region.extras?.source !== "field_evidence");
+  const kept: TamperRegion[] = [];
+
+  const shouldSkip = (candidate: TamperRegion): boolean => {
+    for (const existing of kept) {
+      if (!regionsOverlap(candidate, existing)) continue;
+      const bothFieldEvidence =
+        candidate.extras?.source === "field_evidence" &&
+        existing.extras?.source === "field_evidence";
+      if (
+        bothFieldEvidence &&
+        candidate.label.trim().toLowerCase() !== existing.label.trim().toLowerCase()
+      ) {
+        continue;
+      }
+      return true;
+    }
+    return false;
+  };
+
+  for (const region of fieldEvidence) {
+    if (!shouldSkip(region)) kept.push(region);
+  }
+  for (const region of others) {
+    if (!shouldSkip(region)) kept.push(region);
+  }
+
+  return ensureUniqueRegionIds(kept);
+}
+
+function collectPageDims(
+  inputs: TamperRegionInput[],
+  fieldEvidence: EngineV2Signal[] = []
+): Map<number, { w: number; h: number }> {
+  const dimsByPage = new Map<number, { w: number; h: number }>();
+
+  for (const input of inputs) {
+    const page = input.page && input.page > 0 ? input.page : 1;
+    const w = Number(input.imageWidth);
+    const h = Number(input.imageHeight);
+    if (Number.isFinite(w) && w > 0 && Number.isFinite(h) && h > 0) {
+      dimsByPage.set(page, { w, h });
+    }
+  }
+
+  for (const signal of fieldEvidence) {
+    const page =
+      signal.page != null && Number.isFinite(signal.page) && signal.page >= 1
+        ? signal.page
+        : 1;
+    const w = Number(signal.image_width);
+    const h = Number(signal.image_height);
+    if (Number.isFinite(w) && w > 0 && Number.isFinite(h) && h > 0) {
+      dimsByPage.set(page, { w, h });
+    }
+  }
+
+  return dimsByPage;
+}
+
+function resolvePageDims(
+  page: number,
+  imageWidth: number,
+  imageHeight: number,
+  dimsByPage: Map<number, { w: number; h: number }>
+): { imageWidth: number; imageHeight: number } | null {
+  if (
+    Number.isFinite(imageWidth) &&
+    imageWidth > 0 &&
+    Number.isFinite(imageHeight) &&
+    imageHeight > 0
+  ) {
+    return { imageWidth, imageHeight };
+  }
+
+  const fallback = dimsByPage.get(page) ?? [...dimsByPage.values()][0];
+  if (!fallback) return null;
+  return { imageWidth: fallback.w, imageHeight: fallback.h };
+}
+
+/** One detailed-finding card per vendor field_evidence row (matches backend log). */
+function mapFieldEvidenceToTamperRegions(
+  items: EngineV2Signal[],
+  dimsByPage: Map<number, { w: number; h: number }>
+): TamperRegion[] {
+  const out: TamperRegion[] = [];
+
+  items.forEach((signal, index) => {
+    const label =
+      humanizeLabel(
+        signal.field_label ||
+          signal.field ||
+          signal.type ||
+          signal.check ||
+          "Field evidence"
+      ) || "Field evidence";
+    const description =
+      vendorFindingDescription(
+        signal.description,
+        signal.field_label || signal.type || label
+      ) || label;
+    if (!description.trim() && !label.trim()) return;
+
+    const page =
+      signal.page == null
+        ? 1
+        : Number.isFinite(signal.page) && signal.page >= 1
+          ? signal.page
+          : 1;
+
+    const dims = resolvePageDims(
+      page,
+      Number(signal.image_width),
+      Number(signal.image_height),
+      dimsByPage
+    );
+
+    const severity = normalizeSeverity(signal.severity, signal.status);
+    const shared = {
+      // Never reuse engine signal ids — they collide across rows and break selection.
+      id: `field-evidence-${index + 1}`,
+      label,
+      description,
+      severity,
+      page,
+      location: optionalString(signal.location),
+      layer: optionalString(signal.layer),
+      confidence: toConfidenceRatio(signal.confidence),
+      bboxSource: optionalString(signal.bbox_source),
+      hasImage: null,
+      hasCropImage: null,
+      extras: {
+        source: "field_evidence",
+        fieldEvidenceIndex: index + 1,
+      } as Record<string, unknown>,
+    };
+
+    if (!asBBox(signal.bbox)) {
+      if (!dims) return;
+      out.push({
+        ...shared,
+        bbox: [0, 0, 1, 1],
+        imageWidth: dims.imageWidth,
+        imageHeight: dims.imageHeight,
+        scope: "document",
+        canHighlight: false,
+      });
+      return;
+    }
+
+    if (!dims) return;
+
+    const interpreted = resolveBBox(
+      signal.bbox,
+      dims.imageWidth,
+      dims.imageHeight,
+      typeof signal.bbox_area_ratio === "number" ? signal.bbox_area_ratio : null
+    );
+    if (!interpreted) {
+      out.push({
+        ...shared,
+        bbox: [0, 0, 1, 1],
+        imageWidth: dims.imageWidth,
+        imageHeight: dims.imageHeight,
+        scope: "document",
+        canHighlight: false,
+      });
+      return;
+    }
+
+    const { xywh: bbox, raw, format, ambiguous } = interpreted;
+    out.push({
+      ...shared,
+      bbox,
+      rawBBox: raw,
+      bboxFormat: format,
+      bboxAmbiguous: ambiguous,
+      imageWidth: dims.imageWidth,
+      imageHeight: dims.imageHeight,
+    });
+  });
+
+  return out;
+}
+
 function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
   console.info("[vendor] localized findings response:", {
     visual_evidence: data.visual_evidence,
@@ -1011,9 +1233,10 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
     spatial_signals: (data.signals || []).filter((s) => Array.isArray(s.bbox) && s.bbox.length === 4),
   });
 
+  const fieldEvidence = data.field_evidence || [];
   const candidates: TamperRegionInput[] = [];
 
-  for (const signal of [...(data.signals || []), ...(data.field_evidence || [])]) {
+  for (const signal of data.signals || []) {
     const label = humanizeLabel(
       signal.field_label ||
         signal.field ||
@@ -1082,15 +1305,8 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
   // Allowed nested sources — only items that already carry a bbox.
   candidates.push(...harvestNestedSpatialCandidates(data));
 
-  const dimsByPage = new Map<number, { w: number; h: number }>();
-  for (const input of candidates) {
-    const page = input.page && input.page > 0 ? input.page : 1;
-    const w = Number(input.imageWidth);
-    const h = Number(input.imageHeight);
-    if (Number.isFinite(w) && w > 0 && Number.isFinite(h) && h > 0) {
-      dimsByPage.set(page, { w, h });
-    }
-  }
+  const dimsByPage = collectPageDims(candidates, fieldEvidence);
+  const fieldEvidenceRegions = mapFieldEvidenceToTamperRegions(fieldEvidence, dimsByPage);
 
   const out: TamperRegion[] = [];
   const seen = new Map<string, number>(); // spatial key → index in out
@@ -1214,7 +1430,7 @@ function mapTamperRegions(data: EngineV2ApiResponse): TamperRegion[] {
   }
 
   out.sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
-  return out;
+  return dedupeDetailedFindingRegions([...fieldEvidenceRegions, ...out]);
 }
 
 function v2SignalStatus(signal: EngineV2Signal): SignalStatus {
@@ -2002,23 +2218,28 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
         additionalFindings: null,
       },
     ],
-    tamperRegions: remapTamperRegionsToAzureLayout(
-      mapTamperRegions(data),
-      extractAzureAnalyzeResult(
-        data.structural_profile,
-        technical.structuralProfile,
-        data.raw_result,
-        data.engine_results,
-        data.layer_details
-      )
-    ).filter((region) => {
-      if (region.scope === "document") return true;
-      if (region.canHighlight) {
-        return isUsefulHighlightBox(region.bbox, region.imageWidth, region.imageHeight);
-      }
-      // Element without a confident Azure polygon — keep the card, draw nothing.
-      return Boolean(region.label?.trim() || region.description?.trim());
-    }),
+    tamperRegions: dedupeDetailedFindingRegions(
+      remapTamperRegionsToAzureLayout(
+        mapTamperRegions(data),
+        extractAzureAnalyzeResult(
+          data.structural_profile,
+          technical.structuralProfile,
+          data.raw_result,
+          data.engine_results,
+          data.layer_details
+        )
+      ).filter((region) => {
+        if (region.extras?.source === "field_evidence") {
+          return Boolean(region.label?.trim() || region.description?.trim());
+        }
+        if (region.scope === "document") return true;
+        if (region.canHighlight) {
+          return isUsefulHighlightBox(region.bbox, region.imageWidth, region.imageHeight);
+        }
+        // Element without a confident Azure polygon — keep the card, draw nothing.
+        return Boolean(region.label?.trim() || region.description?.trim());
+      })
+    ),
     heatmapUrl: null,
     engineDurationMs: resolvedDurationMs,
     engineVerdictLabel:

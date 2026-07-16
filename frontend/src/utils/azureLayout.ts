@@ -10,7 +10,7 @@
  */
 
 import type { TamperRegion } from "../types/verification";
-import { isDegenerateHighlightBox, uniqueFindingId } from "./findingLabels";
+import { isDegenerateHighlightBox } from "./findingLabels";
 import { classifyFindingScope } from "./findingScope";
 
 export type AzureMatchKind = "keyValuePair" | "word" | "line" | "paragraph" | "figure";
@@ -308,7 +308,6 @@ export function remapTamperRegionsToAzureLayout(
 
     const remapped: TamperRegion = {
       ...region,
-      id: uniqueFindingId(hit.page, padded),
       bbox: padded,
       rawBBox: hit.xywh,
       bboxFormat: "xywh",

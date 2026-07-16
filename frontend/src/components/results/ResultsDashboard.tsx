@@ -1279,7 +1279,7 @@ export default function ResultsDashboard({
             >
               {visualFindings.map((region, index) => (
                 <VisualFindingCard
-                  key={`${region.id}-${index}`}
+                  key={region.id}
                   region={region}
                   index={index}
                   active={region.id === selectedRegionId}
