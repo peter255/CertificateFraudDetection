@@ -2,6 +2,8 @@ import type { FileInformationSection, VerificationResult } from "../types/verifi
 
 type DisplayRow = { label: string; value: string };
 
+export type CoreFileInfoCard = { label: string; value: string };
+
 const ALWAYS_SHOW_LABELS = new Set(["Producer", "Original Creation Date"]);
 
 const CORE_FIELD_ORDER: Array<{ key: keyof FileInformationSection; label: string }> = [
@@ -273,6 +275,57 @@ function shouldSkipPropertyRow(
     return true;
   }
   return false;
+}
+
+function resolveFormatLabel(info: FileInformationSection, file: File | null): string {
+  const fromType = formatDisplayValue(info.fileType);
+  if (fromType) return fromType;
+
+  const fromMime =
+    formatDisplayValue(info.mimeType)?.split("/")[1]?.toUpperCase() ??
+    file?.type?.split("/")[1]?.toUpperCase() ??
+    null;
+  if (fromMime) return fromMime;
+
+  const fromProps = formatDisplayValue(info.documentProperties?.format);
+  if (fromProps) return fromProps;
+
+  return "—";
+}
+
+function resolvePageCount(info: FileInformationSection): string {
+  const pages = info.numPages;
+  if (pages != null && Number.isFinite(pages) && pages > 0) {
+    return String(Math.trunc(pages));
+  }
+  return "1";
+}
+
+export function buildCoreFileInfoCards(
+  info: FileInformationSection | null | undefined,
+  file: File | null
+): CoreFileInfoCard[] {
+  const base: FileInformationSection =
+    info ??
+    ({
+      fileType: file?.type?.split("/")[1]?.toUpperCase() ?? "—",
+      fileSize: "—",
+      numPages: 1,
+      fileName: file?.name ?? null,
+      mimeType: file?.type ?? null,
+    } satisfies FileInformationSection);
+
+  const fileName =
+    formatDisplayValue(base.fileName) ?? file?.name?.trim() ?? "—";
+  const format = resolveFormatLabel(base, file);
+  const size = formatDisplayValue(base.fileSize) ?? "—";
+
+  return [
+    { label: "File Name", value: fileName },
+    { label: "Format", value: format },
+    { label: "Size", value: size },
+    { label: "Number of Pages", value: resolvePageCount(base) },
+  ];
 }
 
 export function buildFileInformationRows(

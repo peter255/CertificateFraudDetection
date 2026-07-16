@@ -20,7 +20,6 @@ import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import FlagOutlinedIcon from "@mui/icons-material/FlagOutlined";
 import PlaylistAddCheckOutlinedIcon from "@mui/icons-material/PlaylistAddCheckOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
-import InsertDriveFileOutlinedIcon from "@mui/icons-material/InsertDriveFileOutlined";
 import type {
   ReportRecommendationItem,
   RiskLevel,
@@ -52,7 +51,7 @@ import {
 } from "../../utils/findingScope";
 import { VS } from "../../theme";
 import {
-  buildFileInformationRows,
+  buildCoreFileInfoCards,
   enrichFileInformationFromResult,
 } from "../../utils/fileInformationDisplay";
 
@@ -886,19 +885,27 @@ function RecommendationCard({
   );
 }
 
-function FileInfoTile({ label, value }: { label: string; value: string }) {
+function FileInfoTile({
+  label,
+  value,
+  compact = false,
+}: {
+  label: string;
+  value: string;
+  compact?: boolean;
+}) {
   return (
     <Box
       sx={{
-        p: 1.25,
-        borderRadius: "8px",
+        p: compact ? 1 : 1.25,
+        borderRadius: compact ? "6px" : "8px",
         border: `1px solid ${VS.border}`,
         backgroundColor: "rgba(35,37,40,0.03)",
-        minHeight: 72,
+        minHeight: compact ? 56 : 72,
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
-        gap: 0.75,
+        gap: compact ? 0.5 : 0.75,
       }}
     >
       <Typography
@@ -916,14 +923,14 @@ function FileInfoTile({ label, value }: { label: string; value: string }) {
       </Typography>
       <Typography
         sx={{
-          fontSize: "0.8125rem",
+          fontSize: compact ? "0.75rem" : "0.8125rem",
           fontWeight: 600,
           color: VS.text,
           lineHeight: 1.35,
           overflow: "hidden",
           textOverflow: "ellipsis",
           display: "-webkit-box",
-          WebkitLineClamp: 2,
+          WebkitLineClamp: compact ? 1 : 2,
           WebkitBoxOrient: "vertical",
         }}
         title={value}
@@ -934,103 +941,39 @@ function FileInfoTile({ label, value }: { label: string; value: string }) {
   );
 }
 
-function FileInformationSection({
-  rows,
-  emptyText,
+function CompactFileInfoStrip({
+  cards,
 }: {
-  rows: Array<{ label: string; value: string }>;
-  emptyText: string;
+  cards: Array<{ label: string; value: string }>;
 }) {
   return (
     <Box
       sx={{
-        borderRadius: "10px",
-        border: `1px solid ${VS.border}`,
-        backgroundColor: VS.bgCard,
-        overflow: "hidden",
         flexShrink: 0,
+        px: 1.5,
+        py: 1.25,
+        borderTop: `1px solid ${VS.border}`,
+        backgroundColor: VS.bg,
       }}
     >
       <Box
         sx={{
-          display: "flex",
-          alignItems: "center",
-          gap: 1.25,
-          px: 2,
-          py: 1.5,
-          borderBottom: `1px solid ${VS.border}`,
+          display: "grid",
+          gridTemplateColumns: {
+            xs: "repeat(2, minmax(0, 1fr))",
+            sm: "repeat(4, minmax(0, 1fr))",
+          },
+          gap: 0.75,
         }}
       >
-        <Box sx={{ color: VS.accent, display: "flex" }}>
-          <InsertDriveFileOutlinedIcon sx={{ fontSize: 18 }} />
-        </Box>
-        <Typography
-          sx={{
-            flex: 1,
-            fontSize: "0.8125rem",
-            fontWeight: 600,
-            letterSpacing: "0.04em",
-            textTransform: "uppercase",
-            color: VS.text,
-          }}
-        >
-          File Information
-        </Typography>
-        <Box
-          sx={{
-            px: 1,
-            py: 0.35,
-            borderRadius: "5px",
-            backgroundColor: VS.accentDim,
-            border: `1px solid ${VS.accent}55`,
-          }}
-        >
-          <Typography
-            sx={{
-              fontSize: "0.625rem",
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              color: VS.accent,
-              fontFamily: VS.mono,
-            }}
-          >
-            {rows.length}
-          </Typography>
-        </Box>
-      </Box>
-
-      <Box sx={{ p: 1.5 }}>
-        {rows.length === 0 ? (
-          <Box
-            sx={{
-              px: 1.5,
-              py: 1.35,
-              borderRadius: "8px",
-              border: `1px solid ${VS.border}`,
-              backgroundColor: VS.bg,
-            }}
-          >
-            <Typography sx={{ fontSize: "0.875rem", color: VS.textMuted, lineHeight: 1.6 }}>
-              {emptyText}
-            </Typography>
-          </Box>
-        ) : (
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: {
-                xs: "repeat(2, 1fr)",
-                sm: "repeat(3, 1fr)",
-                md: "repeat(4, 1fr)",
-              },
-              gap: 1,
-            }}
-          >
-            {rows.map((row) => (
-              <FileInfoTile key={`${row.label}-${row.value}`} label={row.label} value={row.value} />
-            ))}
-          </Box>
-        )}
+        {cards.map((card) => (
+          <FileInfoTile
+            key={card.label}
+            label={card.label}
+            value={card.value}
+            compact
+          />
+        ))}
       </Box>
     </Box>
   );
@@ -1179,7 +1122,7 @@ export default function ResultsDashboard({
 
   const recommendations = result.recommendations ?? [];
 
-  const fileInformationRows = useMemo(() => {
+  const coreFileInfoCards = useMemo(() => {
     const base =
       result.fileInformation ??
       ({
@@ -1190,7 +1133,7 @@ export default function ResultsDashboard({
         mimeType: file?.type ?? null,
       } as const);
     const enriched = enrichFileInformationFromResult(base, result);
-    return buildFileInformationRows(enriched);
+    return buildCoreFileInfoCards(enriched, file);
   }, [result, file]);
 
   const criticalLabel = riskLabel(result.report.riskLevel, riskScore);
@@ -1308,6 +1251,8 @@ export default function ResultsDashboard({
               fitContent
             />
           </Box>
+
+          <CompactFileInfoStrip cards={coreFileInfoCards} />
         </Box>
 
         {/* ── Right: analytics + visual findings (height tracks viewer column) ─ */}
@@ -1755,10 +1700,6 @@ export default function ResultsDashboard({
         <RecommendationsSection
           items={recommendations}
           emptyText="No recommendations were generated for this examination."
-        />
-        <FileInformationSection
-          rows={fileInformationRows}
-          emptyText="No file information was extracted for this document."
         />
       </Box>
 
