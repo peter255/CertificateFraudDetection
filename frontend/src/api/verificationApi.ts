@@ -1,7 +1,8 @@
 /**
  * verificationApi — HTTP client for the active verification engine endpoint.
  *
- * Engine selection: VITE_VERIFICATION_ENGINE=v1|v2 (see config/vendors.ts).
+ * Engine selection: VITE_VERIFICATION_ENGINE=v1|v2, with optional runtime override
+ * (localStorage — see config/engineSettings.ts and /#/engine).
  */
 
 import type {
@@ -14,9 +15,9 @@ import type {
   ReportRecommendationItem,
 } from "../types/verification";
 import {
-  ACTIVE_VERIFICATION_ENGINE,
-  VERIFICATION_ENGINE_PATH,
-} from "../config/vendors";
+  getActiveVerificationEngine,
+  getActiveVerificationEnginePath,
+} from "../config/engineSettings";
 import {
   decideUserVerdict,
   DECISION_THRESHOLDS,
@@ -2267,13 +2268,16 @@ const BASE_URL = "/api/v1";
  * Upload a certificate file for verification via the configured engine.
  */
 export async function verifyDocument(file: File): Promise<VerificationResult> {
+  const activeEngine = getActiveVerificationEngine();
+  const enginePath = getActiveVerificationEnginePath();
+
   const body = new FormData();
   body.append("file", file);
   if (file.lastModified > 0) {
     body.append("file_modified", new Date(file.lastModified).toISOString());
   }
 
-  if (ACTIVE_VERIFICATION_ENGINE === "v1") {
+  if (activeEngine === "v1") {
     body.append("holder_name", "Unknown");
     body.append("issuer_name", "Unknown");
     body.append("document_type", "academic_certificate");
@@ -2282,7 +2286,7 @@ export async function verifyDocument(file: File): Promise<VerificationResult> {
     body.append("ocr_mode", "auto");
   }
 
-  const response = await fetch(`${BASE_URL}${VERIFICATION_ENGINE_PATH}`, {
+  const response = await fetch(`${BASE_URL}${enginePath}`, {
     method: "POST",
     body,
   });
@@ -2298,7 +2302,7 @@ export async function verifyDocument(file: File): Promise<VerificationResult> {
 
   const data = await response.json();
 
-  if (ACTIVE_VERIFICATION_ENGINE === "v1") {
+  if (activeEngine === "v1") {
     return mapEngineV1Response(data as EngineV1ApiResponse);
   }
 

@@ -14,11 +14,14 @@ import "@fontsource/inter/600.css";
 import "@fontsource/inter/700.css";
 import App from "./App";
 import { AppThemeProvider } from "./providers/ThemeModeProvider";
+import { VerificationEngineProvider } from "./providers/VerificationEngineProvider";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <AppThemeProvider>
-      <App />
+      <VerificationEngineProvider>
+        <App />
+      </VerificationEngineProvider>
     </AppThemeProvider>
   </React.StrictMode>
 );
