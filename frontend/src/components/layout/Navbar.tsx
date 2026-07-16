@@ -37,7 +37,7 @@ export default function Navbar({
         top: 0,
         zIndex: 100,
         backgroundColor: isDark
-          ? "rgba(10,12,13,0.92)"
+          ? "rgba(35,37,40,0.92)"
           : "rgba(255,255,255,0.92)",
         backdropFilter: "blur(12px)",
         borderBottom: `1px solid ${vs.border}`,
@@ -192,7 +192,7 @@ export default function Navbar({
             </Box>
           )}
 
-          <Tooltip title={isDark ? "Switch to UAE light theme" : "Switch to dark theme"}>
+          <Tooltip title={isDark ? "Switch to light theme" : "Switch to dark theme"}>
             <IconButton
               size="small"
               onClick={toggleMode}

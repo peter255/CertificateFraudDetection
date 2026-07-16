@@ -504,6 +504,43 @@ export async function downloadVerificationReport(
   y = drawSectionTitle(doc, "Consolidated Verdict", y);
   y = drawParagraphBox(doc, consolidated, y, contentWidth);
 
+  const recommendations = result.recommendations ?? [];
+  y = drawSectionTitle(doc, "Recommendations", y);
+  y = drawParagraphBox(
+    doc,
+    recommendations.length
+      ? recommendations.map((item) => `• ${item}`).join("\n")
+      : "No recommendations were generated for this examination.",
+    y,
+    contentWidth
+  );
+
+  const fileInfo = result.fileInformation ?? {
+    fileType: "—",
+    fileSize: "—",
+    numPages: 1,
+  };
+  y = drawSectionTitle(doc, "File Information", y);
+  y = drawKeyValueTable(doc, y, [
+    ["File Type", fileInfo.fileType],
+    ["File Size", fileInfo.fileSize],
+    ["Number of Pages", String(fileInfo.numPages)],
+  ]);
+
+  const certificateFlags =
+    result.certificateFlags?.length
+      ? result.certificateFlags
+      : [...(result.vendorFlags ?? []), ...(result.metadataFlags ?? [])];
+  y = drawSectionTitle(doc, "Certificate Flags", y);
+  y = drawParagraphBox(
+    doc,
+    certificateFlags.length
+      ? certificateFlags.map((item) => `• ${item}`).join("\n")
+      : "No certificate flags were reported.",
+    y,
+    contentWidth
+  );
+
   // Detailed Findings — same polished list as the on-screen panel
   y = drawSectionTitle(doc, "Detailed Findings", y);
   doc.setFont("helvetica", "normal");

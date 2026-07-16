@@ -614,6 +614,148 @@ function VisualFindingCard({
   );
 }
 
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileTypeFromName(fileName: string | null): string {
+  if (!fileName || !fileName.includes(".")) return "—";
+  const ext = fileName.split(".").pop()?.trim().toLowerCase();
+  if (!ext) return "—";
+  if (ext === "pdf") return "PDF";
+  if (ext === "jpeg" || ext === "jpg") return "JPEG";
+  return ext.toUpperCase();
+}
+
+function ReportListSection({
+  title,
+  items,
+  emptyText,
+}: {
+  title: string;
+  items: string[];
+  emptyText: string;
+}) {
+  return (
+    <Box
+      sx={{
+        p: 2.25,
+        borderRadius: "12px",
+        border: `1px solid ${VS.border}`,
+        backgroundColor: VS.bgCard,
+        flexShrink: 0,
+      }}
+    >
+      <Typography
+        sx={{
+          fontSize: "0.6875rem",
+          fontWeight: 600,
+          letterSpacing: "0.1em",
+          color: VS.textMuted,
+          fontFamily: VS.mono,
+          mb: 1.25,
+        }}
+      >
+        {title}
+      </Typography>
+      {items.length === 0 ? (
+        <Typography sx={{ fontSize: "0.875rem", color: VS.textMuted, lineHeight: 1.6 }}>
+          {emptyText}
+        </Typography>
+      ) : (
+        <Box component="ul" sx={{ m: 0, pl: 2.25 }}>
+          {items.map((item, index) => (
+            <Typography
+              key={`${title}-${index}`}
+              component="li"
+              sx={{
+                fontSize: "0.875rem",
+                color: VS.textSecondary,
+                lineHeight: 1.65,
+                mb: 0.75,
+              }}
+            >
+              {item}
+            </Typography>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function FileInformationSection({
+  fileType,
+  fileSize,
+  numPages,
+}: {
+  fileType: string;
+  fileSize: string;
+  numPages: number;
+}) {
+  const rows = [
+    { label: "File Type", value: fileType },
+    { label: "File Size", value: fileSize },
+    { label: "Number of Pages", value: String(numPages) },
+  ];
+
+  return (
+    <Box
+      sx={{
+        p: 2.25,
+        borderRadius: "12px",
+        border: `1px solid ${VS.border}`,
+        backgroundColor: VS.bgCard,
+        flexShrink: 0,
+      }}
+    >
+      <Typography
+        sx={{
+          fontSize: "0.6875rem",
+          fontWeight: 600,
+          letterSpacing: "0.1em",
+          color: VS.textMuted,
+          fontFamily: VS.mono,
+          mb: 1.25,
+        }}
+      >
+        FILE INFORMATION
+      </Typography>
+      <Box sx={{ display: "grid", gap: 1 }}>
+        {rows.map((row) => (
+          <Box
+            key={row.label}
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 2,
+              py: 0.5,
+              borderBottom: `1px solid ${VS.border}`,
+            }}
+          >
+            <Typography sx={{ fontSize: "0.8125rem", color: VS.textMuted }}>
+              {row.label}
+            </Typography>
+            <Typography
+              sx={{
+                fontSize: "0.875rem",
+                fontWeight: 600,
+                color: VS.textSecondary,
+                textAlign: "right",
+              }}
+            >
+              {row.value}
+            </Typography>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
 export default function ResultsDashboard({
   result,
   file,
@@ -665,6 +807,29 @@ export default function ResultsDashboard({
   } = useMemo(() => computeAnalysisDisplayScores(result), [result]);
   const aiProbabilitySource = result.aiDetection?.source ?? null;
 
+  const certificateFlags = useMemo(() => {
+    if (result.certificateFlags?.length) return result.certificateFlags;
+    const merged = [...(result.vendorFlags || []), ...(result.metadataFlags || [])];
+    const seen = new Set<string>();
+    return merged.filter((flag) => {
+      const key = flag.trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [result.certificateFlags, result.vendorFlags, result.metadataFlags]);
+
+  const fileInformation = useMemo(() => {
+    if (result.fileInformation) return result.fileInformation;
+    return {
+      fileType: fileTypeFromName(file?.name ?? null),
+      fileSize: file ? formatBytes(file.size) : "—",
+      numPages: 1,
+    };
+  }, [result.fileInformation, file]);
+
+  const recommendations = result.recommendations ?? [];
+
   const criticalLabel = riskLabel(result.report.riskLevel, riskScore);
   const criticalColor = scoreColor(riskScore);
 
@@ -694,8 +859,8 @@ export default function ResultsDashboard({
     }
   };
 
-  /** Locked row height — tall enough to show most of the document page. */
-  const viewerRowHeight = {
+  /** Minimum row height; row grows when the document preview is taller. */
+  const viewerRowMin = {
     xs: "min(60vh, 600px)",
     lg: "calc(100vh - 280px)",
   };
@@ -716,8 +881,7 @@ export default function ResultsDashboard({
           gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1.05fr) minmax(0, 0.95fr)" },
           gap: { xs: 2.5, lg: 3 },
           alignItems: "stretch",
-          height: { lg: viewerRowHeight.lg },
-          minHeight: { lg: viewerRowHeight.lg },
+          minHeight: viewerRowMin,
         }}
       >
         {/* ── Left: document + overlays ─────────────────────────────────── */}
@@ -729,9 +893,9 @@ export default function ResultsDashboard({
             overflow: "hidden",
             display: "flex",
             flexDirection: "column",
-            height: viewerRowHeight,
-            minHeight: viewerRowHeight,
-            maxHeight: viewerRowHeight,
+            minHeight: viewerRowMin,
+            height: "auto",
+            alignSelf: "stretch",
           }}
         >
           <Box
@@ -759,7 +923,7 @@ export default function ResultsDashboard({
             </Typography>
           </Box>
 
-          <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+          <Box sx={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column" }}>
             <DocumentViewer
               file={file}
               regions={showRegions as TamperRegion[]}
@@ -770,20 +934,21 @@ export default function ResultsDashboard({
               onPageChange={setActivePage}
               onPageCountChange={onPageCountChange}
               hideChrome
+              fitContent
             />
           </Box>
         </Box>
 
-        {/* ── Right: analytics + visual findings (same fixed row height) ─ */}
+        {/* ── Right: analytics + visual findings (height tracks viewer column) ─ */}
         <Box
           sx={{
             display: "flex",
             flexDirection: "column",
             gap: 2,
-            height: { xs: "auto", lg: viewerRowHeight.lg },
-            minHeight: { xs: viewerRowHeight.xs, lg: viewerRowHeight.lg },
-            maxHeight: { lg: viewerRowHeight.lg },
-            overflow: { lg: "hidden" },
+            minHeight: viewerRowMin,
+            height: "100%",
+            alignSelf: "stretch",
+            overflow: "hidden",
           }}
         >
           {/* Score summary */}
@@ -1081,9 +1246,7 @@ export default function ResultsDashboard({
           <Box
             sx={{
               flex: 1,
-              minHeight: { xs: 280, lg: 0 },
-              height: { xs: 320 },
-              maxHeight: { xs: 320, lg: "none" },
+              minHeight: { xs: 280, lg: 200 },
               display: "flex",
               flexDirection: "column",
               borderRadius: "10px",
@@ -1206,6 +1369,31 @@ export default function ResultsDashboard({
                 }
               )
           )}
+        />
+      </Box>
+
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+          mt: { xs: 2.5, lg: 3 },
+        }}
+      >
+        <ReportListSection
+          title="RECOMMENDATIONS"
+          items={recommendations}
+          emptyText="No recommendations were generated for this examination."
+        />
+        <FileInformationSection
+          fileType={fileInformation.fileType}
+          fileSize={fileInformation.fileSize}
+          numPages={fileInformation.numPages}
+        />
+        <ReportListSection
+          title="CERTIFICATE FLAGS"
+          items={certificateFlags}
+          emptyText="No certificate flags were reported."
         />
       </Box>
 

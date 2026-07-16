@@ -66,29 +66,32 @@ export const lightVS: VSTokens = {
   mono: FONT_SANS,
 };
 
-/** Original VERISCAN dark cyber palette. */
+/**
+ * UAE Design System–aligned palette (dark).
+ * Same gold accent and semantic colors as light; inverted neutrals.
+ */
 export const darkVS: VSTokens = {
-  bg: "#0a0c0d",
-  bgElevated: "#111416",
-  bgCard: "#14181b",
-  bgPanel: "#0e1113",
-  border: "rgba(255,255,255,0.08)",
-  borderStrong: "rgba(255,255,255,0.14)",
-  text: "#F4F7FA",
-  textSecondary: "#9AA3AD",
-  textMuted: "#6B737C",
-  accent: "#00FFA3",
-  accentHover: "#5CFFC4",
+  bg: "#1C1D21",
+  bgElevated: "#232528",
+  bgCard: "#282A2E",
+  bgPanel: "#222427",
+  border: "rgba(255,255,255,0.10)",
+  borderStrong: "rgba(255,255,255,0.18)",
+  text: "#F2F2F2",
+  textSecondary: "#B0B4BA",
+  textMuted: "#7A7E85",
+  accent: "#CA9A2C",
+  accentHover: "#D4AB47",
   brandGold: "#CA9A2C",
-  accentDim: "rgba(0,255,163,0.14)",
-  accentGlow: "rgba(0,255,163,0.35)",
-  onAccent: "#0A0C0D",
-  danger: "#FF4B6B",
-  dangerDim: "rgba(255,75,107,0.14)",
-  warning: "#F5A524",
-  warningDim: "rgba(245,165,36,0.14)",
-  success: "#00E676",
-  successDim: "rgba(0,230,118,0.12)",
+  accentDim: "rgba(202,154,44,0.16)",
+  accentGlow: "rgba(202,154,44,0.22)",
+  onAccent: "#FFFFFF",
+  danger: "#E5485C",
+  dangerDim: "rgba(200,16,46,0.18)",
+  warning: "#D4A043",
+  warningDim: "rgba(154,107,31,0.18)",
+  success: "#34A87A",
+  successDim: "rgba(0,107,72,0.18)",
   sans: FONT_SANS,
   heading: FONT_HEADING,
   mono: FONT_SANS,
@@ -112,6 +115,11 @@ function buildShadows(mode: ThemeMode): Shadows {
     shadows[2] =
       "0 1px 3px rgba(35,37,40,0.08), 0 1px 2px rgba(35,37,40,0.04)";
     shadows[4] = "0 4px 12px rgba(35,37,40,0.08)";
+  } else {
+    shadows[1] = "0 1px 2px rgba(0,0,0,0.2)";
+    shadows[2] =
+      "0 1px 3px rgba(0,0,0,0.25), 0 1px 2px rgba(0,0,0,0.15)";
+    shadows[4] = "0 4px 12px rgba(0,0,0,0.3)";
   }
   return shadows;
 }
@@ -119,6 +127,12 @@ function buildShadows(mode: ThemeMode): Shadows {
 export function createAppTheme(mode: ThemeMode): Theme {
   const vs = tokensFor(mode);
   const isDark = mode === "dark";
+  const hoverWash = isDark
+    ? "rgba(255,255,255,0.04)"
+    : "rgba(35,37,40,0.04)";
+  const trackBg = isDark
+    ? "rgba(255,255,255,0.08)"
+    : "rgba(35,37,40,0.08)";
 
   return createTheme({
     palette: {
@@ -126,7 +140,7 @@ export function createAppTheme(mode: ThemeMode): Theme {
       primary: {
         main: vs.accent,
         light: vs.accentHover,
-        dark: isDark ? "#00C87F" : "#782C0B",
+        dark: "#782C0B",
         contrastText: vs.onAccent,
       },
       secondary: {
@@ -146,20 +160,20 @@ export function createAppTheme(mode: ThemeMode): Theme {
       success: {
         main: vs.success,
         light: vs.successDim,
-        dark: isDark ? "#00C853" : "#004D34",
+        dark: "#004D34",
         contrastText: vs.onAccent,
       },
       warning: {
         main: vs.warning,
         light: vs.warningDim,
-        dark: isDark ? "#D4890F" : "#7A5418",
+        dark: "#7A5418",
         contrastText: vs.onAccent,
       },
       error: {
         main: vs.danger,
         light: vs.dangerDim,
-        dark: isDark ? "#E03555" : "#9A0C22",
-        contrastText: isDark ? "#FFFFFF" : vs.onAccent,
+        dark: "#9A0C22",
+        contrastText: vs.onAccent,
       },
     },
     typography: {
@@ -229,7 +243,7 @@ export function createAppTheme(mode: ThemeMode): Theme {
           },
           "::selection": {
             backgroundColor: vs.accentDim,
-            color: isDark ? vs.bg : vs.text,
+            color: vs.text,
           },
         },
       },
@@ -258,9 +272,6 @@ export function createAppTheme(mode: ThemeMode): Theme {
             color: vs.onAccent,
             "&:hover": {
               backgroundColor: vs.accentHover,
-              ...(isDark
-                ? { boxShadow: `0 0 24px ${vs.accentGlow}` }
-                : {}),
             },
           },
           outlined: {
@@ -274,9 +285,7 @@ export function createAppTheme(mode: ThemeMode): Theme {
           text: {
             color: vs.textSecondary,
             "&:hover": {
-              backgroundColor: isDark
-                ? "rgba(255,255,255,0.04)"
-                : "rgba(35,37,40,0.04)",
+              backgroundColor: hoverWash,
               color: vs.text,
             },
           },
@@ -299,9 +308,7 @@ export function createAppTheme(mode: ThemeMode): Theme {
         styleOverrides: {
           root: {
             borderRadius: 4,
-            backgroundColor: isDark
-              ? "rgba(255,255,255,0.08)"
-              : "rgba(35,37,40,0.08)",
+            backgroundColor: trackBg,
             height: 4,
           },
           bar: {

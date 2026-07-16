@@ -1202,10 +1202,10 @@ export default function DocumentViewer({
         borderRadius: hideChrome ? 0 : "12px",
         display: "flex",
         flexDirection: "column",
-        overflow: "hidden",
+        overflow: fitContent ? "visible" : "hidden",
         height: fitContent ? "auto" : "100%",
         minHeight: 0,
-        maxHeight: "100%",
+        maxHeight: fitContent ? "none" : "100%",
         boxShadow: "none",
       }}
     >

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.application.dto.pdf_structure import PdfStructureFinding
 from app.application.services.pdf_structure.context import PdfStructureContext
-from app.application.services.pdf_structure.date_utils import is_invalid_timestamp
+from app.application.services.pdf_structure.date_utils import is_invalid_timestamp, parse_flexible_datetime
 from app.application.services.pdf_structure.rules.base import finding
 
 
@@ -127,6 +127,73 @@ class ExpirationBeforeAwardRule:
                 },
                 recommendation="Verify extracted dates against the visible certificate text.",
                 confidence=0.95,
+            )
+        return None
+
+
+class AwardAfterFileModificationRule:
+    rule_id = "PDF_AWARD_AFTER_FILE_MODIFIED"
+
+    def evaluate(self, context: PdfStructureContext) -> PdfStructureFinding | None:
+        dates = context.parsed_dates()
+        award = dates["award_date"] or dates["issue_date"]
+        file_modified = parse_flexible_datetime(context.metadata.file_modified)
+        if award is None or file_modified is None:
+            return None
+        if award > file_modified:
+            label = "award_date" if dates["award_date"] else "issue_date"
+            return finding(
+                rule_id=self.rule_id,
+                severity="warning",
+                status="warning",
+                title="Award/issue date after file modification date",
+                description=(
+                    f"The certificate {label.replace('_', ' ')} is later than the "
+                    "file filesystem modification timestamp, suggesting possible metadata inconsistency."
+                ),
+                evidence={
+                    label: getattr(context.ocr, label, None)
+                    or (context.ocr.award_date or context.ocr.issue_date),
+                    "file_modified": context.metadata.file_modified,
+                },
+                recommendation=(
+                    "Cross-check certificate dates against file provenance and issuer records."
+                ),
+                confidence=0.72,
+            )
+        return None
+
+
+class AwardBeforeFileModificationRule:
+    rule_id = "PDF_AWARD_BEFORE_FILE_MODIFIED"
+
+    def evaluate(self, context: PdfStructureContext) -> PdfStructureFinding | None:
+        dates = context.parsed_dates()
+        award = dates["award_date"] or dates["issue_date"]
+        file_modified = parse_flexible_datetime(context.metadata.file_modified)
+        if award is None or file_modified is None:
+            return None
+        # Large gap where award precedes file modified by more than a day can be suspicious for born-digital.
+        if award < file_modified:
+            label = "award_date" if dates["award_date"] else "issue_date"
+            return finding(
+                rule_id=self.rule_id,
+                severity="info",
+                status="pass",
+                title="Award/issue date before file modification date",
+                description=(
+                    f"The certificate {label.replace('_', ' ')} precedes the file "
+                    "filesystem modification timestamp. This can be legitimate for "
+                    "scanned or re-exported certificates."
+                ),
+                evidence={
+                    label: context.ocr.award_date or context.ocr.issue_date,
+                    "file_modified": context.metadata.file_modified,
+                },
+                recommendation=(
+                    "Informational only unless independent forensic indicators of tampering are present."
+                ),
+                confidence=0.65,
             )
         return None
 

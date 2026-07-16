@@ -210,6 +210,22 @@ export interface VerificationResult {
   isScan: boolean | null;
   fileKind: string | null;
   technical: EngineTechnicalDetails;
+  /** Vendor flags preserved verbatim from the engine response. */
+  vendorFlags?: string[];
+  /** Metadata validation flags from pdf-structure analysis. */
+  metadataFlags?: string[];
+  /** Combined vendor + metadata flags for Certificate Flags section. */
+  certificateFlags?: string[];
+  /** File Type, File Size, Number of Pages. */
+  fileInformation?: FileInformationSection | null;
+  /** Recommendations (vendor + metadata), shown after Summary. */
+  recommendations?: string[];
+}
+
+export interface FileInformationSection {
+  fileType: string;
+  fileSize: string;
+  numPages: number;
 }
 
 export interface DocumentInfoData {

@@ -13,6 +13,8 @@ from app.application.services.pdf_structure.metadata_compare import (
     find_vendor_pdf_metadata,
 )
 from app.application.services.pdf_structure_enrichment import PdfStructureEnrichmentService
+from app.application.services.report_enrichment import build_report_enrichment
+from app.application.services.vendor_flags import collect_vendor_flags_v2
 from app.infrastructure.vendors.paperwork.client import PaperworkClient
 from app.infrastructure.vendors.paperwork.dependencies import provide_paperwork_client
 from app.infrastructure.vendors.paperwork.models import PaperworkSignal, PaperworkVerifyResponse
@@ -157,6 +159,7 @@ async def verify_with_engine_v2(
         "holder_name": response.holder_name,
         "issuer_name": response.issuer_name,
         "issue_date": response.issue_date,
+        "vendor_flags": collect_vendor_flags_v2(response.model_dump()),
     }
 
     # Vendor is done; PDF structure usually finished during the vendor wait.
@@ -184,6 +187,22 @@ async def verify_with_engine_v2(
     # Keep vendor executive narrative for the local summary path.
     if response.executive_summary:
         enrichment_context["executive_summary"] = response.executive_summary
+
+    report_bits = build_report_enrichment(
+        vendor_flags=enrichment_context.get("vendor_flags") or [],
+        pdf_structure_analysis=pdf_structure_analysis,
+        filename=filename,
+        content=raw_content,
+        vendor_recommendation=response.recommendation,
+        vendor_recommendations=None,
+    )
+    enrichment_context.update(
+        {
+            "metadata_flags": report_bits["metadata_flags"],
+            "certificate_flags": report_bits["certificate_flags"],
+            "file_information": report_bits["file_information"],
+        }
+    )
 
     # Resolve AI probability first (may call Azure), then one Azure call for scores + narratives.
     (ai_probability, ai_probability_source) = await ai_probability_service.enrich(
@@ -254,5 +273,7 @@ async def verify_with_engine_v2(
                 updates["issuer_name"] = ocr.issuer
             if not response.issue_date and (ocr.issue_date or ocr.award_date):
                 updates["issue_date"] = ocr.issue_date or ocr.award_date
+
+    updates.update(report_bits)
 
     return response.model_copy(update=updates)

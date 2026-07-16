@@ -47,13 +47,31 @@ class OcrExtractedFields(BaseModel):
     )
 
 
+class FileInformation(BaseModel):
+    """Basic uploaded-file facts for the File Information report section."""
+
+    file_type: str
+    file_size: str
+    file_size_bytes: int
+    num_pages: int = Field(default=1, ge=1)
+
+
 class PdfMetadata(BaseModel):
     """Normalized PDF document metadata used by forensic rules."""
 
+    file_type: str | None = None
     creation_date: str | None = None
     modification_date: str | None = None
+    file_modified: str | None = Field(
+        default=None,
+        description="Filesystem last-modified timestamp when available (ISO).",
+    )
     producer: str | None = None
     creator: str | None = None
+    editing_producer: str | None = Field(
+        default=None,
+        description="Software inferred to have last edited the file (metadata.ipynb).",
+    )
     pdf_version: str | None = None
     page_count: int | None = None
     file_size: int | None = None

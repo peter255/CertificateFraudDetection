@@ -13,6 +13,8 @@ from app.application.services.pdf_structure.metadata_compare import (
     find_vendor_pdf_metadata,
 )
 from app.application.services.pdf_structure_enrichment import PdfStructureEnrichmentService
+from app.application.services.report_enrichment import build_report_enrichment
+from app.application.services.vendor_flags import collect_vendor_flags_v1
 from app.infrastructure.vendors.truthscan.client import TruthScanClient
 from app.infrastructure.vendors.truthscan.dependencies import provide_truthscan_client
 from app.infrastructure.vendors.truthscan.models import TruthScanSignal, TruthScanVerifyResponse
@@ -102,6 +104,7 @@ async def verify_with_engine_v1(
         raise
 
     analysis = response.analysis
+    vendor_flags = collect_vendor_flags_v1(analysis.model_dump())
     enrichment_context: dict[str, Any] = {
         "engine": "v1",
         "verdict": response.overall_status or response.final_result,
@@ -128,6 +131,7 @@ async def verify_with_engine_v1(
         },
         "holder_name": resolved_holder,
         "issuer_name": resolved_issuer,
+        "vendor_flags": vendor_flags,
     }
 
     signal_payloads = [signal.model_dump(exclude_none=True) for signal in response.signals]
@@ -174,6 +178,22 @@ async def verify_with_engine_v1(
     if ai_probability is not None:
         enrichment_context["ai_probability"] = ai_probability
 
+    report_bits = build_report_enrichment(
+        vendor_flags=vendor_flags,
+        pdf_structure_analysis=pdf_structure_analysis,
+        filename=filename,
+        content=raw_content,
+        vendor_recommendation=response.report.recommendation,
+        vendor_recommendations=analysis.vendor_recommendations,
+    )
+    enrichment_context.update(
+        {
+            "metadata_flags": report_bits["metadata_flags"],
+            "certificate_flags": report_bits["certificate_flags"],
+            "file_information": report_bits["file_information"],
+        }
+    )
+
     display = await ai_summary_service.enrich_display_analysis(
         context=enrichment_context,
         signals=signal_payloads,
@@ -203,5 +223,7 @@ async def verify_with_engine_v1(
         ]
         if pdf_signals:
             updates["signals"] = [*response.signals, *pdf_signals]
+
+    updates.update(report_bits)
 
     return response.model_copy(update=updates)

@@ -99,6 +99,11 @@ interface EngineV1ApiResponse {
   text_logic_score?: number | null;
   image_forensics_score?: number | null;
   file_structure_score?: number | null;
+  vendor_flags?: string[];
+  metadata_flags?: string[];
+  certificate_flags?: string[];
+  file_information?: Record<string, unknown>;
+  recommendations?: string[];
   analysis?: {
     heatmap_url?: string | null;
     reasoning?: string;
@@ -239,6 +244,46 @@ interface EngineV2ApiResponse {
   text_logic_score?: number | null;
   image_forensics_score?: number | null;
   file_structure_score?: number | null;
+  vendor_flags?: string[];
+  metadata_flags?: string[];
+  certificate_flags?: string[];
+  file_information?: Record<string, unknown>;
+  recommendations?: string[];
+}
+
+function mapReportEnrichmentFields(data: {
+  vendor_flags?: string[];
+  metadata_flags?: string[];
+  certificate_flags?: string[];
+  file_information?: Record<string, unknown>;
+  recommendations?: string[];
+}): Pick<
+  VerificationResult,
+  "vendorFlags" | "metadataFlags" | "certificateFlags" | "fileInformation" | "recommendations"
+> {
+  const fileInfoRaw = asRecord(data.file_information);
+  const numPagesRaw = fileInfoRaw?.num_pages ?? fileInfoRaw?.numPages;
+  const numPages =
+    typeof numPagesRaw === "number" && Number.isFinite(numPagesRaw) && numPagesRaw > 0
+      ? Math.round(numPagesRaw)
+      : 1;
+  const fileType = optionalString(fileInfoRaw?.file_type ?? fileInfoRaw?.fileType);
+  const fileSize = optionalString(fileInfoRaw?.file_size ?? fileInfoRaw?.fileSize);
+
+  return {
+    vendorFlags: asStringList(data.vendor_flags),
+    metadataFlags: asStringList(data.metadata_flags),
+    certificateFlags: asStringList(data.certificate_flags),
+    fileInformation:
+      fileType || fileSize
+        ? {
+            fileType: fileType || "—",
+            fileSize: fileSize || "—",
+            numPages,
+          }
+        : null,
+    recommendations: asStringList(data.recommendations),
+  };
 }
 
 function optionalScore100(value: unknown): number | null {
@@ -714,6 +759,7 @@ function mapEngineV1Response(data: EngineV1ApiResponse): VerificationResult {
       analysisStatus,
       engineResults,
     },
+    ...mapReportEnrichmentFields(data),
   };
 
   return applyUserDecision(base, {
@@ -1405,7 +1451,7 @@ function collectV2Flags(data: EngineV2ApiResponse): string[] {
 
   const fraudTypes = data.fraud_types?.length ? data.fraud_types : data.fraud?.types || [];
   for (const type of fraudTypes) {
-    push(explainFraudType(type));
+    push(type);
   }
 
   for (const factor of asStringList(llmReport.risk_factors)) {
@@ -1920,6 +1966,7 @@ function mapEngineV2Response(data: EngineV2ApiResponse): VerificationResult {
     isScan: typeof data.is_scan === "boolean" ? data.is_scan : null,
     fileKind: optionalString(data.file_kind),
     technical,
+    ...mapReportEnrichmentFields(data),
   };
 
   return applyUserDecision(base, {

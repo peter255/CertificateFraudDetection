@@ -472,6 +472,19 @@ def build_flags_summary(context: dict[str, Any]) -> str:
     if not flags:
         flags = _collect_flags(context)
 
+    vendor_flags = _as_str_list(context.get("vendor_flags"))
+    metadata_flags = _as_str_list(context.get("metadata_flags"))
+    if vendor_flags or metadata_flags:
+        combined: list[str] = []
+        seen_combo: set[str] = set()
+        for item in [*vendor_flags, *metadata_flags, *flags]:
+            key = item.strip().lower()
+            if not key or key in seen_combo or looks_like_recommendation(item):
+                continue
+            seen_combo.add(key)
+            combined.append(item.strip())
+        flags = combined or flags
+
     # Deduplicate while preserving order.
     seen: set[str] = set()
     unique_flags: list[str] = []
@@ -496,10 +509,23 @@ def build_flags_summary(context: dict[str, Any]) -> str:
         top = unique_flags[:3]
         listed = ", ".join(top)
         extra = f" (+{len(unique_flags) - 3} more)" if len(unique_flags) > 3 else ""
+        vendor_part = ""
+        meta_part = ""
+        if vendor_flags:
+            vendor_part = f" Vendor flags: {', '.join(vendor_flags[:2])}"
+            if len(vendor_flags) > 2:
+                vendor_part += f" (+{len(vendor_flags) - 2} more)"
+            vendor_part += "."
+        if metadata_flags:
+            meta_part = f" Metadata flags: {', '.join(metadata_flags[:2])}"
+            if len(metadata_flags) > 2:
+                meta_part += f" (+{len(metadata_flags) - 2} more)"
+            meta_part += "."
         return (
             f"Overall assessment: {verdict_label}. "
             f"Primary forensic indicators: {listed}{extra}."
-        )
+            f"{vendor_part}{meta_part}"
+        ).strip()
 
     if _verdict_is_clean(context):
         return (
@@ -550,6 +576,10 @@ def _summary_context(context: dict[str, Any]) -> dict[str, Any]:
         "pdf_structure_findings",
         "pdf_structure_summary",
         "pdf_structure_sources",
+        "vendor_flags",
+        "metadata_flags",
+        "certificate_flags",
+        "file_information",
     ):
         value = context.get(key)
         if value not in (None, "", [], {}):
@@ -559,6 +589,16 @@ def _summary_context(context: dict[str, Any]) -> dict[str, Any]:
             slim[key] = value
 
     flags = _collect_flags(context)
+    vendor_flags = _as_str_list(context.get("vendor_flags"))
+    metadata_flags = _as_str_list(context.get("metadata_flags"))
+    if vendor_flags:
+        slim["vendor_flags"] = vendor_flags
+    if metadata_flags:
+        slim["metadata_flags"] = metadata_flags
+    certificate_flags = _as_str_list(context.get("certificate_flags"))
+    if certificate_flags:
+        slim["certificate_flags"] = certificate_flags
+        flags = certificate_flags
     if flags:
         slim["detected_flags"] = flags
 

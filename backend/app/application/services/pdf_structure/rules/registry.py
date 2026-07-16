@@ -5,7 +5,9 @@ from app.application.services.pdf_structure.context import PdfStructureContext
 from app.application.services.pdf_structure.rules.base import ForensicRule
 from app.application.services.pdf_structure.rules.chronology import (
     AwardAfterModificationRule,
+    AwardAfterFileModificationRule,
     AwardBeforeCreationRule,
+    AwardBeforeFileModificationRule,
     ExpirationBeforeAwardRule,
     ImpossibleChronologyRule,
     InvalidTimestampsRule,
@@ -17,6 +19,9 @@ from app.application.services.pdf_structure.rules.metadata import (
     MissingCreationDateRule,
     MissingCreatorRule,
     MissingProducerRule,
+)
+from app.application.services.pdf_structure.rules.editing_software import (
+    EditingSoftwareDetectedRule,
 )
 from app.application.services.pdf_structure.rules.ocr_fields import OcrMissingImportantFieldsRule
 from app.application.services.pdf_structure.rules.producer import (
@@ -58,11 +63,14 @@ def build_default_rule_registry() -> ForensicRuleRegistry:
             ModificationBeforeCreationRule(),
             AwardBeforeCreationRule(),
             AwardAfterModificationRule(),
+            AwardAfterFileModificationRule(),
+            AwardBeforeFileModificationRule(),
             ExpirationBeforeAwardRule(),
             MissingCreationDateRule(),
             MissingProducerRule(),
             MissingCreatorRule(),
             SuspiciousProducerRule(),
+            EditingSoftwareDetectedRule(),
             UnknownProducerRule(),
             EmptyMetadataRule(),
             InvalidTimestampsRule(),

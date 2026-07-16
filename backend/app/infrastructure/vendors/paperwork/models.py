@@ -186,3 +186,23 @@ class PaperworkVerifyResponse(BaseModel):
         le=100,
         description="Azure OpenAI File Structure score (0–100).",
     )
+    vendor_flags: list[str] = Field(
+        default_factory=list,
+        description="Vendor-reported flags preserved verbatim.",
+    )
+    metadata_flags: list[str] = Field(
+        default_factory=list,
+        description="Metadata validation flags from pdf-structure analysis.",
+    )
+    certificate_flags: list[str] = Field(
+        default_factory=list,
+        description="Combined vendor + metadata flags for Certificate Flags section.",
+    )
+    file_information: dict[str, Any] = Field(
+        default_factory=dict,
+        description="File Type, File Size, and Number of Pages.",
+    )
+    recommendations: list[str] = Field(
+        default_factory=list,
+        description="Action recommendations (vendor + metadata), separate from summary.",
+    )
