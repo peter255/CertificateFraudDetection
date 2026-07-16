@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.application.dto.pdf_structure import ReportRecommendation
+
 
 class PaperworkSignal(BaseModel):
     """Engine V2 signal / field_evidence item — preserves engine fields."""
@@ -200,9 +202,9 @@ class PaperworkVerifyResponse(BaseModel):
     )
     file_information: dict[str, Any] = Field(
         default_factory=dict,
-        description="File Type, File Size, and Number of Pages.",
+        description="File facts and extracted metadata for the File Information section.",
     )
-    recommendations: list[str] = Field(
+    recommendations: list[ReportRecommendation] = Field(
         default_factory=list,
-        description="Action recommendations (vendor + metadata), separate from summary.",
+        description="Action recommendations (vendor + metadata) with forensic context.",
     )

@@ -11,6 +11,7 @@ import type {
   Finding,
   TamperRegion,
   AiDetection,
+  ReportRecommendationItem,
 } from "../types/verification";
 import {
   ACTIVE_VERIFICATION_ENGINE,
@@ -103,7 +104,7 @@ interface EngineV1ApiResponse {
   metadata_flags?: string[];
   certificate_flags?: string[];
   file_information?: Record<string, unknown>;
-  recommendations?: string[];
+  recommendations?: ReportRecommendationItem[] | string[];
   analysis?: {
     heatmap_url?: string | null;
     reasoning?: string;
@@ -248,7 +249,55 @@ interface EngineV2ApiResponse {
   metadata_flags?: string[];
   certificate_flags?: string[];
   file_information?: Record<string, unknown>;
-  recommendations?: string[];
+  recommendations?: ReportRecommendationItem[] | string[];
+}
+
+function optionalBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  return null;
+}
+
+function mapFileInformation(
+  fileInfoRaw: Record<string, unknown> | null
+): VerificationResult["fileInformation"] {
+  if (!fileInfoRaw || Object.keys(fileInfoRaw).length === 0) return null;
+
+  const numPagesRaw = fileInfoRaw.num_pages ?? fileInfoRaw.numPages;
+  const numPages =
+    typeof numPagesRaw === "number" && Number.isFinite(numPagesRaw) && numPagesRaw > 0
+      ? Math.round(numPagesRaw)
+      : 1;
+  const fileType = optionalString(fileInfoRaw.file_type ?? fileInfoRaw.fileType);
+  const fileSize = optionalString(fileInfoRaw.file_size ?? fileInfoRaw.fileSize);
+  const fileSizeBytesRaw = fileInfoRaw.file_size_bytes ?? fileInfoRaw.fileSizeBytes;
+  const fileSizeBytes =
+    typeof fileSizeBytesRaw === "number" && Number.isFinite(fileSizeBytesRaw) && fileSizeBytesRaw >= 0
+      ? Math.round(fileSizeBytesRaw)
+      : null;
+
+  return {
+    fileName: optionalString(fileInfoRaw.filename ?? fileInfoRaw.fileName),
+    mimeType: optionalString(fileInfoRaw.mime_type ?? fileInfoRaw.mimeType),
+    fileType: fileType || "—",
+    fileSize: fileSize || "—",
+    fileSizeBytes,
+    numPages,
+    creationDate: optionalString(fileInfoRaw.creation_date ?? fileInfoRaw.creationDate),
+    modificationDate: optionalString(fileInfoRaw.modification_date ?? fileInfoRaw.modificationDate),
+    fileModified: optionalString(fileInfoRaw.file_modified ?? fileInfoRaw.fileModified),
+    producer: optionalString(fileInfoRaw.producer),
+    creator: optionalString(fileInfoRaw.creator),
+    editingProducer: optionalString(fileInfoRaw.editing_producer ?? fileInfoRaw.editingProducer),
+    pdfVersion: optionalString(fileInfoRaw.pdf_version ?? fileInfoRaw.pdfVersion),
+    title: optionalString(fileInfoRaw.title),
+    author: optionalString(fileInfoRaw.author),
+    subject: optionalString(fileInfoRaw.subject),
+    keywords: optionalString(fileInfoRaw.keywords),
+    isPdf: optionalBoolean(fileInfoRaw.is_pdf ?? fileInfoRaw.isPdf),
+    parseError: optionalString(fileInfoRaw.parse_error ?? fileInfoRaw.parseError),
+    documentProperties:
+      optionalRecord(fileInfoRaw.document_properties ?? fileInfoRaw.documentProperties) ?? {},
+  };
 }
 
 function mapReportEnrichmentFields(data: {
@@ -256,33 +305,19 @@ function mapReportEnrichmentFields(data: {
   metadata_flags?: string[];
   certificate_flags?: string[];
   file_information?: Record<string, unknown>;
-  recommendations?: string[];
+  recommendations?: ReportRecommendationItem[] | string[];
 }): Pick<
   VerificationResult,
   "vendorFlags" | "metadataFlags" | "certificateFlags" | "fileInformation" | "recommendations"
 > {
   const fileInfoRaw = asRecord(data.file_information);
-  const numPagesRaw = fileInfoRaw?.num_pages ?? fileInfoRaw?.numPages;
-  const numPages =
-    typeof numPagesRaw === "number" && Number.isFinite(numPagesRaw) && numPagesRaw > 0
-      ? Math.round(numPagesRaw)
-      : 1;
-  const fileType = optionalString(fileInfoRaw?.file_type ?? fileInfoRaw?.fileType);
-  const fileSize = optionalString(fileInfoRaw?.file_size ?? fileInfoRaw?.fileSize);
 
   return {
     vendorFlags: asStringList(data.vendor_flags),
     metadataFlags: asStringList(data.metadata_flags),
     certificateFlags: asStringList(data.certificate_flags),
-    fileInformation:
-      fileType || fileSize
-        ? {
-            fileType: fileType || "—",
-            fileSize: fileSize || "—",
-            numPages,
-          }
-        : null,
-    recommendations: asStringList(data.recommendations),
+    fileInformation: mapFileInformation(fileInfoRaw),
+    recommendations: mapRecommendations(data.recommendations),
   };
 }
 
@@ -574,6 +609,26 @@ function asRecord(value: unknown): Record<string, unknown> {
 function asStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function mapRecommendations(value: unknown): ReportRecommendationItem[] {
+  if (!Array.isArray(value)) return [];
+  const out: ReportRecommendationItem[] = [];
+  for (const item of value) {
+    if (typeof item === "string" && item.trim()) {
+      out.push({ recommendation: item.trim() });
+      continue;
+    }
+    const rec = asRecord(item);
+    const text = optionalString(rec.recommendation ?? rec.text);
+    if (!text) continue;
+    const description = optionalString(rec.description);
+    out.push({
+      recommendation: text,
+      ...(description ? { description } : {}),
+    });
+  }
+  return out;
 }
 
 function humanizeKey(key: string): string {
@@ -1985,6 +2040,9 @@ const BASE_URL = "/api/v1";
 export async function verifyDocument(file: File): Promise<VerificationResult> {
   const body = new FormData();
   body.append("file", file);
+  if (file.lastModified > 0) {
+    body.append("file_modified", new Date(file.lastModified).toISOString());
+  }
 
   if (ACTIVE_VERIFICATION_ENGINE === "v1") {
     body.append("holder_name", "Unknown");

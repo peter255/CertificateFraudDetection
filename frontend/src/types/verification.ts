@@ -219,13 +219,35 @@ export interface VerificationResult {
   /** File Type, File Size, Number of Pages. */
   fileInformation?: FileInformationSection | null;
   /** Recommendations (vendor + metadata), shown after Summary. */
-  recommendations?: string[];
+  recommendations?: ReportRecommendationItem[];
+}
+
+export interface ReportRecommendationItem {
+  recommendation: string;
+  description?: string;
 }
 
 export interface FileInformationSection {
+  fileName?: string | null;
+  mimeType?: string | null;
   fileType: string;
   fileSize: string;
+  fileSizeBytes?: number | null;
   numPages: number;
+  creationDate?: string | null;
+  modificationDate?: string | null;
+  fileModified?: string | null;
+  producer?: string | null;
+  creator?: string | null;
+  editingProducer?: string | null;
+  pdfVersion?: string | null;
+  title?: string | null;
+  author?: string | null;
+  subject?: string | null;
+  keywords?: string | null;
+  isPdf?: boolean | null;
+  parseError?: string | null;
+  documentProperties?: Record<string, unknown>;
 }
 
 export interface DocumentInfoData {

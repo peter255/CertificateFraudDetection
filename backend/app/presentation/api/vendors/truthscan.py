@@ -10,6 +10,7 @@ from app.application.services.ai_probability_enrichment import AiProbabilityEnri
 from app.application.services.ai_summary_enrichment import AiSummaryEnrichmentService
 from app.application.services.pdf_structure.metadata_compare import (
     build_metadata_compare_summary,
+    file_information_to_compare_metadata,
     find_vendor_pdf_metadata,
 )
 from app.application.services.pdf_structure_enrichment import PdfStructureEnrichmentService
@@ -32,12 +33,15 @@ def _attach_pdf_structure_to_context(
     analysis: PdfStructureAnalyzeResponse,
     *,
     cross_check_summary: str | None,
+    displayed_metadata: dict[str, Any] | None = None,
 ) -> None:
     """Augment executive-summary context with PDF Structure metadata + findings."""
     ocr = analysis.ocr_fields
     if ocr is not None:
         enrichment_context["ocr_fields"] = ocr.model_dump(exclude={"raw", "detected_text"})
-    if analysis.pdf_metadata is not None:
+    if displayed_metadata:
+        enrichment_context["pdf_metadata"] = displayed_metadata
+    elif analysis.pdf_metadata is not None:
         enrichment_context["pdf_metadata"] = analysis.pdf_metadata.model_dump()
     enrichment_context["pdf_structure_findings"] = [
         {
@@ -72,6 +76,10 @@ async def verify_with_engine_v1(
     document_type: str = Form(
         default="academic_certificate",
         description="Document category: academic_certificate | professional_license | identity_document | corporate_document",
+    ),
+    file_modified: str | None = Form(
+        default=None,
+        description="Client-reported last-modified timestamp (ISO-8601) when available.",
     ),
     client: TruthScanClient = Depends(provide_truthscan_client),
     ai_probability_service: AiProbabilityEnrichmentService = Depends(provide_ai_probability_enrichment),
@@ -160,6 +168,18 @@ async def verify_with_engine_v1(
     )
 
     metadata_summary: str | None = None
+    report_bits = build_report_enrichment(
+        vendor_flags=vendor_flags,
+        pdf_structure_analysis=pdf_structure_analysis,
+        filename=filename,
+        content=raw_content,
+        content_type=file.content_type,
+        file_modified=(file_modified or "").strip() or None,
+        vendor_recommendation=response.report.recommendation,
+        vendor_recommendations=analysis.vendor_recommendations,
+    )
+    displayed_metadata = file_information_to_compare_metadata(report_bits["file_information"])
+
     if pdf_structure_analysis is not None:
         vendor_pdf_metadata = find_vendor_pdf_metadata(
             analysis.raw_query_response,
@@ -167,30 +187,24 @@ async def verify_with_engine_v1(
         )
         metadata_summary = build_metadata_compare_summary(
             vendor_pdf_metadata,
-            pdf_structure_analysis.pdf_metadata,
+            displayed_metadata,
         )
         _attach_pdf_structure_to_context(
             enrichment_context,
             pdf_structure_analysis,
             cross_check_summary=metadata_summary,
+            displayed_metadata=displayed_metadata,
         )
 
     if ai_probability is not None:
         enrichment_context["ai_probability"] = ai_probability
 
-    report_bits = build_report_enrichment(
-        vendor_flags=vendor_flags,
-        pdf_structure_analysis=pdf_structure_analysis,
-        filename=filename,
-        content=raw_content,
-        vendor_recommendation=response.report.recommendation,
-        vendor_recommendations=analysis.vendor_recommendations,
-    )
     enrichment_context.update(
         {
             "metadata_flags": report_bits["metadata_flags"],
             "certificate_flags": report_bits["certificate_flags"],
             "file_information": report_bits["file_information"],
+            "recommendations": report_bits["recommendations"],
         }
     )
 

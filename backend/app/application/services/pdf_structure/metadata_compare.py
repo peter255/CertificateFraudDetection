@@ -113,9 +113,13 @@ def normalize_vendor_metadata(raw: Mapping[str, Any] | None) -> dict[str, Any]:
 
 
 def normalize_analyze_metadata(metadata: PdfMetadata | Mapping[str, Any] | None) -> dict[str, Any]:
-    """Normalize analyze-pipeline PdfMetadata into the same flat compare shape."""
+    """Normalize analyze-pipeline metadata into the same flat compare shape."""
     if metadata is None:
         return {}
+    if isinstance(metadata, Mapping) and (
+        "num_pages" in metadata or "file_size_bytes" in metadata
+    ):
+        return file_information_to_compare_metadata(metadata)
     if isinstance(metadata, PdfMetadata):
         data = metadata.model_dump()
     elif isinstance(metadata, Mapping):
@@ -137,6 +141,64 @@ def normalize_analyze_metadata(metadata: PdfMetadata | Mapping[str, Any] | None)
             out["page_count"] = int(page_count)
         except (TypeError, ValueError):
             pass
+    return out
+
+
+def file_information_to_compare_metadata(
+    file_info: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """
+    Map the displayed File Information payload to pdf-structure compare metadata.
+
+    Keeps vendor/metadata comparison and AI prompts aligned with what the UI shows.
+    """
+    if not file_info:
+        return {}
+
+    data = dict(file_info)
+    out: dict[str, Any] = {}
+    for key in (
+        "creation_date",
+        "modification_date",
+        "producer",
+        "creator",
+        "author",
+        "file_modified",
+        "file_type",
+        "title",
+        "subject",
+        "keywords",
+        "pdf_version",
+        "editing_producer",
+        "parse_error",
+    ):
+        value = data.get(key)
+        if value is None or value == "":
+            continue
+        text = str(value).strip()
+        if text:
+            out[key] = text
+
+    pages = data.get("num_pages", data.get("page_count"))
+    if pages is not None:
+        try:
+            out["page_count"] = int(pages)
+        except (TypeError, ValueError):
+            pass
+
+    if data.get("file_size_bytes") is not None:
+        try:
+            out["file_size"] = int(data["file_size_bytes"])
+        except (TypeError, ValueError):
+            pass
+
+    if data.get("is_pdf") is not None:
+        out["is_pdf"] = bool(data.get("is_pdf"))
+
+    props = data.get("document_properties")
+    if isinstance(props, Mapping) and props:
+        out["document_properties"] = dict(props)
+
     return out
 
 

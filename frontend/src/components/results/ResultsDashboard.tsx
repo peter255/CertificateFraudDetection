@@ -17,7 +17,10 @@ import ImageIcon from "@mui/icons-material/Image";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import FlagOutlinedIcon from "@mui/icons-material/FlagOutlined";
+import PlaylistAddCheckOutlinedIcon from "@mui/icons-material/PlaylistAddCheckOutlined";
 import type {
+  FileInformationSection as FileInformationData,
+  ReportRecommendationItem,
   RiskLevel,
   Signal,
   SignalStatus,
@@ -26,6 +29,7 @@ import type {
 } from "../../types/verification";
 import DocumentViewer, { isValidOverlayRegion } from "../viewer/DocumentViewer";
 import { downloadVerificationReport } from "../../utils/downloadReport";
+import { buildFileInformationRows, enrichFileInformationFromResult, mergeClientImageMetadata, normalizeFileInformation, readImageDimensionsFromFile } from "../../utils/fileInformationDisplay";
 import {
   buildLocalCategorySummary,
   categoryRiskLabel,
@@ -630,77 +634,166 @@ function fileTypeFromName(fileName: string | null): string {
   return ext.toUpperCase();
 }
 
-function ReportListSection({
-  title,
+function RecommendationCard({
+  item,
+  index,
+}: {
+  item: ReportRecommendationItem;
+  index: number;
+}) {
+  const description = item.description?.trim() ?? "";
+
+  return (
+    <Box
+      sx={{
+        px: 1.75,
+        py: 1.5,
+        borderRadius: "8px",
+        border: `1px solid ${VS.border}`,
+        backgroundColor: "rgba(35,37,40,0.03)",
+      }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 1.5,
+          mb: description ? 0.5 : 0,
+        }}
+      >
+        <Typography
+          sx={{ fontSize: "0.875rem", fontWeight: 600, color: VS.text, lineHeight: 1.35 }}
+        >
+          {item.recommendation}
+        </Typography>
+        <Typography
+          sx={{
+            fontSize: "0.6875rem",
+            color: VS.textMuted,
+            fontFamily: VS.mono,
+            flexShrink: 0,
+          }}
+        >
+          {`REC-${String(index + 1).padStart(2, "0")}`}
+        </Typography>
+      </Box>
+      {description ? (
+        <Typography
+          sx={{
+            fontSize: "0.8125rem",
+            color: VS.textSecondary,
+            lineHeight: 1.5,
+          }}
+        >
+          {description}
+        </Typography>
+      ) : null}
+      <Box
+        sx={{
+          mt: description ? 1.25 : 1,
+          height: 2,
+          borderRadius: 1,
+          backgroundColor: `${VS.accent}55`,
+          maxWidth: 48,
+        }}
+      />
+    </Box>
+  );
+}
+
+function RecommendationsSection({
   items,
   emptyText,
 }: {
-  title: string;
-  items: string[];
+  items: ReportRecommendationItem[];
   emptyText: string;
 }) {
   return (
     <Box
       sx={{
-        p: 2.25,
-        borderRadius: "12px",
+        borderRadius: "10px",
         border: `1px solid ${VS.border}`,
         backgroundColor: VS.bgCard,
+        overflow: "hidden",
         flexShrink: 0,
       }}
     >
-      <Typography
+      <Box
         sx={{
-          fontSize: "0.6875rem",
-          fontWeight: 600,
-          letterSpacing: "0.1em",
-          color: VS.textMuted,
-          fontFamily: VS.mono,
-          mb: 1.25,
+          display: "flex",
+          alignItems: "center",
+          gap: 1.25,
+          px: 2,
+          py: 1.5,
+          borderBottom: `1px solid ${VS.border}`,
         }}
       >
-        {title}
-      </Typography>
-      {items.length === 0 ? (
-        <Typography sx={{ fontSize: "0.875rem", color: VS.textMuted, lineHeight: 1.6 }}>
-          {emptyText}
-        </Typography>
-      ) : (
-        <Box component="ul" sx={{ m: 0, pl: 2.25 }}>
-          {items.map((item, index) => (
-            <Typography
-              key={`${title}-${index}`}
-              component="li"
-              sx={{
-                fontSize: "0.875rem",
-                color: VS.textSecondary,
-                lineHeight: 1.65,
-                mb: 0.75,
-              }}
-            >
-              {item}
-            </Typography>
-          ))}
+        <Box sx={{ color: VS.accent, display: "flex" }}>
+          <PlaylistAddCheckOutlinedIcon sx={{ fontSize: 18 }} />
         </Box>
-      )}
+        <Typography
+          sx={{
+            flex: 1,
+            fontSize: "0.8125rem",
+            fontWeight: 600,
+            letterSpacing: "0.04em",
+            textTransform: "uppercase",
+            color: VS.text,
+          }}
+        >
+          Recommendations
+        </Typography>
+        <Box
+          sx={{
+            px: 1,
+            py: 0.35,
+            borderRadius: "5px",
+            backgroundColor: VS.accentDim,
+            border: `1px solid ${VS.accent}55`,
+          }}
+        >
+          <Typography
+            sx={{
+              fontSize: "0.625rem",
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              color: VS.accent,
+              fontFamily: VS.mono,
+            }}
+          >
+            {items.length}
+          </Typography>
+        </Box>
+      </Box>
+
+      <Box sx={{ p: 1.5, display: "flex", flexDirection: "column", gap: 1.25 }}>
+        {items.length === 0 ? (
+          <Box
+            sx={{
+              px: 1.5,
+              py: 1.35,
+              borderRadius: "8px",
+              border: `1px solid ${VS.border}`,
+              backgroundColor: VS.bg,
+            }}
+          >
+            <Typography sx={{ fontSize: "0.875rem", color: VS.textMuted, lineHeight: 1.6 }}>
+              {emptyText}
+            </Typography>
+          </Box>
+        ) : (
+          items.map((item, index) => (
+            <RecommendationCard key={`recommendation-${index}`} item={item} index={index} />
+          ))
+        )}
+      </Box>
     </Box>
   );
 }
 
-function FileInformationSection({
-  fileType,
-  fileSize,
-  numPages,
-}: {
-  fileType: string;
-  fileSize: string;
-  numPages: number;
-}) {
-  const rows = [
-    { label: "File Type", value: fileType },
-    { label: "File Size", value: fileSize },
-    { label: "Number of Pages", value: String(numPages) },
-  ];
+function FileInformationSection({ info }: { info: FileInformationData }) {
+  const rows = buildFileInformationRows(info);
 
   return (
     <Box
@@ -725,9 +818,9 @@ function FileInformationSection({
         FILE INFORMATION
       </Typography>
       <Box sx={{ display: "grid", gap: 1 }}>
-        {rows.map((row) => (
+        {rows.map((row, index) => (
           <Box
-            key={row.label}
+            key={`${row.label}-${index}`}
             sx={{
               display: "flex",
               justifyContent: "space-between",
@@ -736,7 +829,7 @@ function FileInformationSection({
               borderBottom: `1px solid ${VS.border}`,
             }}
           >
-            <Typography sx={{ fontSize: "0.8125rem", color: VS.textMuted }}>
+            <Typography sx={{ fontSize: "0.8125rem", color: VS.textMuted, flexShrink: 0 }}>
               {row.label}
             </Typography>
             <Typography
@@ -745,6 +838,7 @@ function FileInformationSection({
                 fontWeight: 600,
                 color: VS.textSecondary,
                 textAlign: "right",
+                wordBreak: "break-word",
               }}
             >
               {row.value}
@@ -807,26 +901,74 @@ export default function ResultsDashboard({
   } = useMemo(() => computeAnalysisDisplayScores(result), [result]);
   const aiProbabilitySource = result.aiDetection?.source ?? null;
 
-  const certificateFlags = useMemo(() => {
-    if (result.certificateFlags?.length) return result.certificateFlags;
-    const merged = [...(result.vendorFlags || []), ...(result.metadataFlags || [])];
-    const seen = new Set<string>();
-    return merged.filter((flag) => {
-      const key = flag.trim().toLowerCase();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(
+    null
+  );
+
+  useEffect(() => {
+    if (!file) {
+      setImageDimensions(null);
+      return;
+    }
+    let cancelled = false;
+    void readImageDimensionsFromFile(file).then((dims) => {
+      if (!cancelled) setImageDimensions(dims);
     });
-  }, [result.certificateFlags, result.vendorFlags, result.metadataFlags]);
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
 
   const fileInformation = useMemo(() => {
-    if (result.fileInformation) return result.fileInformation;
-    return {
-      fileType: fileTypeFromName(file?.name ?? null),
-      fileSize: file ? formatBytes(file.size) : "—",
-      numPages: 1,
+    const clientFileModified =
+      file && file.lastModified > 0 ? new Date(file.lastModified).toISOString() : null;
+
+    const clientFields = {
+      fileName: file?.name ?? null,
+      mimeType: file?.type || null,
+      fileSizeBytes: file?.size ?? null,
+      fileModified: clientFileModified,
     };
-  }, [result.fileInformation, file]);
+
+    if (result.fileInformation) {
+      return normalizeFileInformation(
+        enrichFileInformationFromResult(
+          mergeClientImageMetadata(
+            {
+              ...result.fileInformation,
+              fileName: result.fileInformation.fileName ?? clientFields.fileName,
+              mimeType: result.fileInformation.mimeType ?? clientFields.mimeType,
+              fileSizeBytes: result.fileInformation.fileSizeBytes ?? clientFields.fileSizeBytes,
+              fileModified: result.fileInformation.fileModified ?? clientFields.fileModified,
+            },
+            imageDimensions,
+            file
+          ),
+          result
+        )
+      );
+    }
+
+    return normalizeFileInformation(
+      enrichFileInformationFromResult(
+        mergeClientImageMetadata(
+          {
+            fileName: clientFields.fileName,
+            mimeType: clientFields.mimeType,
+            fileType: fileTypeFromName(file?.name ?? null),
+            fileSize: file ? formatBytes(file.size) : "—",
+            fileSizeBytes: clientFields.fileSizeBytes,
+            numPages: 1,
+            fileModified: clientFields.fileModified,
+            isPdf: file?.name?.toLowerCase().endsWith(".pdf") ?? false,
+          },
+          imageDimensions,
+          file
+        ),
+        result
+      )
+    );
+  }, [result, result.fileInformation, file, imageDimensions]);
 
   const recommendations = result.recommendations ?? [];
 
@@ -1380,21 +1522,11 @@ export default function ResultsDashboard({
           mt: { xs: 2.5, lg: 3 },
         }}
       >
-        <ReportListSection
-          title="RECOMMENDATIONS"
+        <RecommendationsSection
           items={recommendations}
           emptyText="No recommendations were generated for this examination."
         />
-        <FileInformationSection
-          fileType={fileInformation.fileType}
-          fileSize={fileInformation.fileSize}
-          numPages={fileInformation.numPages}
-        />
-        <ReportListSection
-          title="CERTIFICATE FLAGS"
-          items={certificateFlags}
-          emptyText="No certificate flags were reported."
-        />
+        <FileInformationSection info={fileInformation} />
       </Box>
 
       {/* Actions — side by side at page bottom */}

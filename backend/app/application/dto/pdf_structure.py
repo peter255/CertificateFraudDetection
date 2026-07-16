@@ -24,6 +24,13 @@ class PdfStructureFinding(BaseModel):
     )
 
 
+class ReportRecommendation(BaseModel):
+    """Action recommendation with optional forensic context for the report UI."""
+
+    recommendation: str
+    description: str = ""
+
+
 class OcrExtractedFields(BaseModel):
     """Normalized certificate fields extracted from Azure Document Intelligence."""
 
@@ -48,12 +55,28 @@ class OcrExtractedFields(BaseModel):
 
 
 class FileInformation(BaseModel):
-    """Basic uploaded-file facts for the File Information report section."""
+    """Uploaded-file facts and extracted metadata for the File Information report section."""
 
     file_type: str
     file_size: str
     file_size_bytes: int
     num_pages: int = Field(default=1, ge=1)
+    filename: str | None = None
+    mime_type: str | None = None
+    creation_date: str | None = None
+    modification_date: str | None = None
+    file_modified: str | None = None
+    producer: str | None = None
+    creator: str | None = None
+    editing_producer: str | None = None
+    pdf_version: str | None = None
+    title: str | None = None
+    author: str | None = None
+    subject: str | None = None
+    keywords: str | None = None
+    is_pdf: bool | None = None
+    parse_error: str | None = None
+    document_properties: dict[str, Any] = Field(default_factory=dict)
 
 
 class PdfMetadata(BaseModel):

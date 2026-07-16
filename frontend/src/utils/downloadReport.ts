@@ -6,6 +6,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type {
+  ReportRecommendationItem,
   TamperRegion,
   VerificationResult,
   VerdictType,
@@ -27,6 +28,15 @@ import {
   signalTitle,
   verdictFallback,
 } from "./findingsDisplay";
+import { buildFileInformationRows } from "./fileInformationDisplay";
+
+function formatRecommendationForReport(item: ReportRecommendationItem): string {
+  const lines = [`• ${item.recommendation}`];
+  if (item.description?.trim()) {
+    lines.push(`  ${item.description.trim()}`);
+  }
+  return lines.join("\n");
+}
 import {
   humanizeLabel,
   sanitizeFindingText,
@@ -509,7 +519,7 @@ export async function downloadVerificationReport(
   y = drawParagraphBox(
     doc,
     recommendations.length
-      ? recommendations.map((item) => `• ${item}`).join("\n")
+      ? recommendations.map((item) => formatRecommendationForReport(item)).join("\n\n")
       : "No recommendations were generated for this examination.",
     y,
     contentWidth
@@ -521,11 +531,11 @@ export async function downloadVerificationReport(
     numPages: 1,
   };
   y = drawSectionTitle(doc, "File Information", y);
-  y = drawKeyValueTable(doc, y, [
-    ["File Type", fileInfo.fileType],
-    ["File Size", fileInfo.fileSize],
-    ["Number of Pages", String(fileInfo.numPages)],
-  ]);
+  y = drawKeyValueTable(
+    doc,
+    y,
+    buildFileInformationRows(fileInfo).map((row) => [row.label, row.value])
+  );
 
   const certificateFlags =
     result.certificateFlags?.length

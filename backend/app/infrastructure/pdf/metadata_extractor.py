@@ -13,17 +13,20 @@ from app.shared.logging.logger import get_logger
 
 logger = get_logger(__name__)
 
+_RASTER_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".tif", ".tiff", ".bmp")
+_INFO_SKIP_KEYS = frozenset({"exif", "icc_profile", "xmp", "icc_profile_name"})
 
-def _human_file_type(filename: str, *, is_pdf: bool, is_jpeg: bool) -> str:
+
+def _human_file_type(filename: str, *, is_pdf: bool, detected_format: str | None = None) -> str:
     if is_pdf:
         return "PDF"
-    if is_jpeg:
-        return "JPEG"
+    if detected_format:
+        return detected_format.upper()
     ext = Path(filename).suffix.lower().lstrip(".")
     return ext.upper() if ext else "UNKNOWN"
 
 
-def _parse_pdf_embedded_date(raw: str | None) -> str | None:
+def _parse_embedded_date(raw: str | None) -> str | None:
     if not raw:
         return None
     parsed = parse_flexible_datetime(raw)
@@ -32,8 +35,30 @@ def _parse_pdf_embedded_date(raw: str | None) -> str | None:
     return str(raw).strip() or None
 
 
+def _normalize_info_key(key: str) -> str:
+    return key.strip().lower().replace(" ", "_")
+
+
+def _is_raster_image(content: bytes, lower_name: str) -> bool:
+    if lower_name.endswith(_RASTER_EXTENSIONS):
+        return True
+    if content[:3] == b"\xff\xd8\xff":
+        return True
+    if content[:8] == b"\x89PNG\r\n\x1a\n":
+        return True
+    if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return True
+    if content[:6] in (b"GIF87a", b"GIF89a"):
+        return True
+    if content[:2] in (b"MM", b"II"):
+        return True
+    if content[:2] == b"BM":
+        return True
+    return False
+
+
 class PypdfMetadataExtractor:
-    """Extract file metadata (PDF + JPEG) aligned with metadata.ipynb."""
+    """Extract file metadata (PDF + raster images) aligned with metadata.ipynb."""
 
     def extract(
         self,
@@ -46,33 +71,32 @@ class PypdfMetadataExtractor:
         size = file_size if file_size is not None else len(content)
         lower_name = filename.lower()
         is_pdf = content.startswith(b"%PDF") or lower_name.endswith(".pdf")
-        is_jpeg = lower_name.endswith((".jpg", ".jpeg")) or content[:3] == b"\xff\xd8\xff"
-        file_type = _human_file_type(filename, is_pdf=is_pdf, is_jpeg=is_jpeg)
 
-        if is_jpeg and not is_pdf:
-            return self._extract_jpeg(
+        if is_pdf:
+            return self._extract_pdf(
                 content,
                 filename=filename,
                 file_size=size,
-                file_type=file_type,
+                file_type=_human_file_type(filename, is_pdf=True),
                 file_modified=file_modified,
             )
 
-        if not is_pdf:
-            return PdfMetadata(
-                file_type=file_type,
+        if _is_raster_image(content, lower_name):
+            return self._extract_raster_image(
+                content,
+                filename=filename,
                 file_size=size,
-                is_pdf=False,
+                file_type_hint=_human_file_type(filename, is_pdf=False),
                 file_modified=file_modified,
-                document_properties={"note": "Unsupported format — PDF/JPEG metadata extraction skipped"},
             )
 
-        return self._extract_pdf(
+        return self._extract_raster_image(
             content,
             filename=filename,
             file_size=size,
-            file_type=file_type,
+            file_type_hint=_human_file_type(filename, is_pdf=False),
             file_modified=file_modified,
+            allow_unsupported=True,
         )
 
     def _extract_pdf(
@@ -108,8 +132,8 @@ class PypdfMetadataExtractor:
         subject = _meta_get(meta, "subject", "/Subject")
         keywords = _meta_get(meta, "keywords", "/Keywords")
 
-        creation_iso = _parse_pdf_embedded_date(_stringify(creation))
-        modification_iso = _parse_pdf_embedded_date(_stringify(modification))
+        creation_iso = _parse_embedded_date(_stringify(creation))
+        modification_iso = _parse_embedded_date(_stringify(modification))
 
         editing_producer: str | None = None
         producer_text = _stringify(producer)
@@ -161,19 +185,25 @@ class PypdfMetadataExtractor:
             is_pdf=True,
         )
 
-    def _extract_jpeg(
+    def _extract_raster_image(
         self,
         content: bytes,
         *,
         filename: str,
         file_size: int,
-        file_type: str,
+        file_type_hint: str,
         file_modified: str | None,
+        allow_unsupported: bool = False,
     ) -> PdfMetadata:
-        document_properties: dict[str, Any] = {"format": "JPEG"}
+        document_properties: dict[str, Any] = {}
         creator: str | None = None
         producer: str | None = None
         editing_producer: str | None = None
+        title: str | None = None
+        author: str | None = None
+        subject: str | None = None
+        keywords: str | None = None
+        file_type = file_type_hint
         parse_error: str | None = None
 
         try:
@@ -181,16 +211,23 @@ class PypdfMetadataExtractor:
             from PIL.ExifTags import TAGS
         except ImportError:
             return PdfMetadata(
-                file_type=file_type,
+                file_type=file_type_hint,
                 file_size=file_size,
                 is_pdf=False,
                 file_modified=file_modified,
-                parse_error="Pillow not installed — JPEG EXIF/XMP extraction skipped",
+                parse_error="Pillow not installed — image metadata extraction skipped",
                 document_properties=document_properties,
             )
 
         try:
             with Image.open(BytesIO(content)) as img:
+                detected_format = _stringify(img.format) or file_type_hint
+                file_type = _human_file_type(filename, is_pdf=False, detected_format=detected_format)
+                document_properties["format"] = detected_format
+
+                document_properties.update(_parse_png_text_chunks(content))
+                document_properties.update(_extract_image_info_chunks(img.info))
+
                 exif_ifd0_raw = img.getexif()
                 exif = {TAGS.get(tag_id, tag_id): value for tag_id, value in exif_ifd0_raw.items()}
 
@@ -217,18 +254,34 @@ class PypdfMetadataExtractor:
 
                 xmp_creator_tool = xmp_desc.get("CreatorTool") if isinstance(xmp_desc, dict) else None
 
-                creator = _stringify(exif.get("Make")) or _stringify(exif.get("Artist")) or _stringify(
-                    xmp_creator_tool
+                creator = (
+                    _stringify(document_properties.get("author"))
+                    or _stringify(exif.get("Artist"))
+                    or _stringify(exif.get("Make"))
+                    or _stringify(xmp_creator_tool)
                 )
-                producer = _stringify(exif.get("Software")) or _stringify(xmp_creator_tool)
-                editing_producer = _stringify(exif.get("Software")) or _stringify(xmp_creator_tool)
+                producer = (
+                    _stringify(document_properties.get("software"))
+                    or _stringify(document_properties.get("producer"))
+                    or _stringify(exif.get("Software"))
+                    or _stringify(xmp_creator_tool)
+                )
+                editing_producer = producer
+                title = _stringify(document_properties.get("title")) or _stringify(exif.get("ImageDescription"))
+                author = _stringify(document_properties.get("author")) or _stringify(exif.get("Artist"))
+                subject = _stringify(document_properties.get("description")) or _stringify(
+                    exif.get("UserComment")
+                )
+                keywords = _stringify(document_properties.get("comment"))
 
                 document_properties.update(
                     {
+                        "camera_make": _stringify(exif.get("Make")),
                         "camera_model": _stringify(exif.get("Model")),
                         "image_width": img.width,
                         "image_height": img.height,
                         "color_mode": img.mode,
+                        "dpi": _stringify(img.info.get("dpi")),
                         "exif_datetime_original": _stringify(
                             exif_sub.get("DateTimeOriginal") or exif.get("DateTimeOriginal")
                         ),
@@ -245,21 +298,132 @@ class PypdfMetadataExtractor:
                         "has_xmp": bool(xmp_desc),
                     }
                 )
+                for tag_name, tag_value in {**exif, **exif_sub}.items():
+                    key = f"exif_{_normalize_info_key(str(tag_name))}"
+                    if key in document_properties:
+                        continue
+                    text = _stringify(tag_value)
+                    if text:
+                        document_properties[key] = text
         except Exception as exc:  # noqa: BLE001
-            logger.warning("JPEG metadata parse failed for %s: %s", filename, exc)
+            logger.warning("Image metadata parse failed for %s: %s", filename, exc)
+            if allow_unsupported:
+                return PdfMetadata(
+                    file_type=file_type_hint,
+                    file_size=file_size,
+                    is_pdf=False,
+                    file_modified=file_modified,
+                    parse_error=str(exc),
+                    document_properties={
+                        "note": "Unsupported format — metadata extraction failed",
+                    },
+                )
             parse_error = str(exc)
+
+        creation_date = (
+            document_properties.get("creation_time")
+            or document_properties.get("png_date")
+            or document_properties.get("date")
+            or document_properties.get("exif_datetime_original")
+            or document_properties.get("xmp_create_date")
+        )
+        modification_date = (
+            document_properties.get("modification_time")
+            or document_properties.get("exif_datetime_modified")
+            or document_properties.get("xmp_modify_date")
+            or document_properties.get("exif_datetime_digitized")
+        )
+
+        if not creation_date and file_modified:
+            creation_date = file_modified
+        if not modification_date and file_modified:
+            modification_date = file_modified
+        if not producer and creator:
+            producer = creator
 
         return PdfMetadata(
             file_type=file_type,
             file_modified=file_modified,
+            creation_date=_stringify(creation_date),
+            modification_date=_stringify(modification_date),
             creator=creator,
             producer=producer,
             editing_producer=editing_producer,
+            title=title,
+            author=author,
+            subject=subject,
+            keywords=keywords,
             file_size=file_size,
             document_properties=document_properties,
             is_pdf=False,
             parse_error=parse_error,
         )
+
+
+def _parse_png_text_chunks(content: bytes) -> dict[str, Any]:
+    """Read PNG tEXt / iTXt metadata chunks (Software, Creation Time, etc.)."""
+    if not content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return {}
+
+    props: dict[str, Any] = {}
+    offset = 8
+    while offset + 12 <= len(content):
+        length = int.from_bytes(content[offset : offset + 4], "big")
+        chunk_type = content[offset + 4 : offset + 8]
+        data_start = offset + 8
+        data_end = data_start + length
+        if data_end > len(content):
+            break
+        chunk_data = content[data_start:data_end]
+
+        if chunk_type == b"tEXt" and b"\x00" in chunk_data:
+            key_raw, value_raw = chunk_data.split(b"\x00", 1)
+            key = _normalize_info_key(key_raw.decode("latin-1", errors="replace"))
+            value = _stringify(value_raw.decode("latin-1", errors="replace"))
+            if key and value:
+                props[key] = value
+        elif chunk_type == b"iTXt" and len(chunk_data) >= 2:
+            try:
+                null_idx = chunk_data.index(0)
+                key = _normalize_info_key(chunk_data[:null_idx].decode("utf-8", errors="replace"))
+                tail = chunk_data[null_idx + 1 :]
+                if len(tail) >= 2:
+                    compression_flag = tail[0]
+                    compression_method = tail[1]
+                    tail = tail[2:]
+                    if b"\x00" in tail:
+                        _, text_raw = tail.split(b"\x00", 1)
+                        if compression_flag == 0:
+                            value = _stringify(text_raw.decode("utf-8", errors="replace"))
+                        elif compression_method == 0:
+                            import zlib
+
+                            value = _stringify(
+                                zlib.decompress(text_raw).decode("utf-8", errors="replace")
+                            )
+                        else:
+                            value = None
+                        if key and value:
+                            props[key] = value
+            except Exception:  # noqa: BLE001
+                pass
+
+        offset = data_end + 4
+    return props
+
+
+def _extract_image_info_chunks(info: dict[str, Any]) -> dict[str, Any]:
+    props: dict[str, Any] = {}
+    for key, value in (info or {}).items():
+        if _normalize_info_key(str(key)) in _INFO_SKIP_KEYS:
+            continue
+        if isinstance(value, (bytes, bytearray)):
+            continue
+        text = _stringify(value)
+        if text is None:
+            continue
+        props[_normalize_info_key(str(key))] = text
+    return props
 
 
 def _meta_get(meta: Any, *names: str) -> Any:
@@ -312,5 +476,9 @@ def _stringify(value: Any) -> str | None:
         except Exception:  # noqa: BLE001
             return None
         return text or None
+    if isinstance(value, tuple):
+        parts = [_stringify(item) for item in value]
+        cleaned = [part for part in parts if part]
+        return ", ".join(cleaned) if cleaned else None
     text = str(value).strip()
     return text or None

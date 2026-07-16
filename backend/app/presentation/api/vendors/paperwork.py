@@ -10,6 +10,7 @@ from app.application.services.ai_probability_enrichment import AiProbabilityEnri
 from app.application.services.ai_summary_enrichment import AiSummaryEnrichmentService
 from app.application.services.pdf_structure.metadata_compare import (
     build_metadata_compare_summary,
+    file_information_to_compare_metadata,
     find_vendor_pdf_metadata,
 )
 from app.application.services.pdf_structure_enrichment import PdfStructureEnrichmentService
@@ -50,12 +51,15 @@ def _attach_pdf_structure_to_context(
     analysis: PdfStructureAnalyzeResponse,
     *,
     cross_check_summary: str | None,
+    displayed_metadata: dict[str, Any] | None = None,
 ) -> None:
     """Augment executive-summary context with PDF Structure metadata + findings."""
     ocr = analysis.ocr_fields
     if ocr is not None:
         enrichment_context["ocr_fields"] = ocr.model_dump(exclude={"raw", "detected_text"})
-    if analysis.pdf_metadata is not None:
+    if displayed_metadata:
+        enrichment_context["pdf_metadata"] = displayed_metadata
+    elif analysis.pdf_metadata is not None:
         enrichment_context["pdf_metadata"] = analysis.pdf_metadata.model_dump()
     enrichment_context["pdf_structure_findings"] = [
         {
@@ -92,6 +96,10 @@ async def verify_with_engine_v2(
     ocr_mode: str = Form(
         default="auto",
         description='OCR mode. Use "auto" unless a specific mode is required.',
+    ),
+    file_modified: str | None = Form(
+        default=None,
+        description="Client-reported last-modified timestamp (ISO-8601) when available.",
     ),
     client: PaperworkClient = Depends(provide_paperwork_client),
     ai_probability_service: AiProbabilityEnrichmentService = Depends(provide_ai_probability_enrichment),
@@ -165,6 +173,18 @@ async def verify_with_engine_v2(
     # Vendor is done; PDF structure usually finished during the vendor wait.
     pdf_structure_analysis = await pdf_structure_task
 
+    report_bits = build_report_enrichment(
+        vendor_flags=enrichment_context.get("vendor_flags") or [],
+        pdf_structure_analysis=pdf_structure_analysis,
+        filename=filename,
+        content=raw_content,
+        content_type=file.content_type,
+        file_modified=(file_modified or "").strip() or None,
+        vendor_recommendation=response.recommendation,
+        vendor_recommendations=None,
+    )
+    displayed_metadata = file_information_to_compare_metadata(report_bits["file_information"])
+
     metadata_summary: str | None = None
     if pdf_structure_analysis is not None:
         vendor_pdf_metadata = find_vendor_pdf_metadata(
@@ -176,31 +196,25 @@ async def verify_with_engine_v2(
         )
         metadata_summary = build_metadata_compare_summary(
             vendor_pdf_metadata,
-            pdf_structure_analysis.pdf_metadata,
+            displayed_metadata,
         )
         _attach_pdf_structure_to_context(
             enrichment_context,
             pdf_structure_analysis,
             cross_check_summary=metadata_summary,
+            displayed_metadata=displayed_metadata,
         )
 
     # Keep vendor executive narrative for the local summary path.
     if response.executive_summary:
         enrichment_context["executive_summary"] = response.executive_summary
 
-    report_bits = build_report_enrichment(
-        vendor_flags=enrichment_context.get("vendor_flags") or [],
-        pdf_structure_analysis=pdf_structure_analysis,
-        filename=filename,
-        content=raw_content,
-        vendor_recommendation=response.recommendation,
-        vendor_recommendations=None,
-    )
     enrichment_context.update(
         {
             "metadata_flags": report_bits["metadata_flags"],
             "certificate_flags": report_bits["certificate_flags"],
             "file_information": report_bits["file_information"],
+            "recommendations": report_bits["recommendations"],
         }
     )
 
@@ -262,6 +276,10 @@ async def verify_with_engine_v2(
 
         profile = dict(response.structural_profile or {})
         profile.update(pdf_updates["pdf_structure_profile"])
+        if displayed_metadata:
+            pdf_structure_profile = profile.get("pdf_structure_analysis")
+            if isinstance(pdf_structure_profile, dict):
+                pdf_structure_profile["pdf_metadata"] = displayed_metadata
         updates["structural_profile"] = profile
 
         # Best-effort identity fill from Azure DI OCR when vendor OCR missed fields.

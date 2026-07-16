@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.application.dto.pdf_structure import PdfMetadata
 from app.application.services.pdf_structure.metadata_compare import (
     build_metadata_compare_summary,
+    file_information_to_compare_metadata,
     find_vendor_pdf_metadata,
     normalize_vendor_metadata,
 )
@@ -44,6 +45,26 @@ def test_find_vendor_pdf_metadata_prefers_nested_shape() -> None:
     assert flat["page_count"] == 1
     assert flat["font_count"] == 3
     assert flat["fonts"] == ["AAAAAA+SegoeUI-Bold", "BAAAAA+SegoeUI"]
+
+
+def test_file_information_to_compare_metadata_uses_displayed_fields() -> None:
+    file_info = {
+        "file_type": "PNG",
+        "file_size": "1.00 MB",
+        "file_size_bytes": 1043322,
+        "num_pages": 1,
+        "creation_date": "2026-07-09T11:11:12.000Z",
+        "modification_date": "2026-07-09T11:11:12.000Z",
+        "producer": "Adobe Photoshop",
+        "creator": "Adobe Photoshop",
+        "is_pdf": False,
+        "document_properties": {"image_width": 1920, "image_height": 1080},
+    }
+    compare = file_information_to_compare_metadata(file_info)
+    assert compare["creation_date"] == "2026-07-09T11:11:12.000Z"
+    assert compare["producer"] == "Adobe Photoshop"
+    assert compare["page_count"] == 1
+    assert compare["document_properties"]["image_width"] == 1920
 
 
 def test_summary_clean_agreement() -> None:
