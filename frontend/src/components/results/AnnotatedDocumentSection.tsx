@@ -68,8 +68,13 @@ export default function AnnotatedDocumentSection({
     }
   }, [validRegions, selectedId]);
 
-  const selected = validRegions.find((r) => r.id === selectedId) ?? null;
-  void selected;
+  const showRegions = useMemo(() => {
+    if (!selectedId) return [];
+    const selected = validRegions.find((r) => r.id === selectedId);
+    if (!selected) return [];
+    if ((selected.page || 1) !== activePage) return [];
+    return [selected];
+  }, [validRegions, selectedId, activePage]);
 
   // Jump to the region's page when selection changes. Do not depend on
   // activePage — that fought toolbar prev/next and always snapped back.
@@ -142,7 +147,7 @@ export default function AnnotatedDocumentSection({
           <Box sx={{ flex: 1, minHeight: 0 }}>
             <DocumentViewer
               file={file}
-              regions={validRegions}
+              regions={showRegions}
               heatmapUrl={resolvedHeatmap}
               selectedRegionId={selectedId}
               onSelectRegion={setSelectedId}

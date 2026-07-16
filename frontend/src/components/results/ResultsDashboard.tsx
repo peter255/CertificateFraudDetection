@@ -815,17 +815,25 @@ export default function ResultsDashboard({
   const criticalLabel = riskLabel(result.report.riskLevel, riskScore);
   const criticalColor = scoreColor(riskScore);
 
-  // Draw all drawable element-level findings on the active page; selection styles the active box.
+  // Show only the selected highlightable finding; hide boxes when nothing is selected
+  // or when a document-level / non-highlightable finding is active.
   const showRegions = useMemo(() => {
-    return visualFindings.filter(
-      (region) =>
-        findingCanHighlight(region) && (region.page || 1) === activePage
-    );
-  }, [visualFindings, activePage]);
+    if (!selectedRegionId) return [];
+    const selected = visualFindings.find((r) => r.id === selectedRegionId);
+    if (!selected || !findingCanHighlight(selected)) return [];
+    if ((selected.page || 1) !== activePage) return [];
+    return [selected];
+  }, [visualFindings, selectedRegionId, activePage]);
 
   const selectFinding = (region: TamperRegion) => {
     setSelectedRegionId((current) => (current === region.id ? null : region.id));
     if (findingCanHighlight(region)) setActivePage(region.page);
+  };
+
+  const handleSelectRegion = (id: string) => {
+    const region = visualFindings.find((r) => r.id === id);
+    if (region) selectFinding(region);
+    else setSelectedRegionId(id);
   };
 
   const handleExport = async () => {
@@ -911,7 +919,7 @@ export default function ResultsDashboard({
               regions={showRegions as TamperRegion[]}
               heatmapUrl={null}
               selectedRegionId={selectedRegionId}
-              onSelectRegion={setSelectedRegionId}
+              onSelectRegion={handleSelectRegion}
               currentPage={activePage}
               onPageChange={setActivePage}
               onPageCountChange={onPageCountChange}
