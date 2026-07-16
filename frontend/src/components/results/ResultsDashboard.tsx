@@ -19,7 +19,6 @@ import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import FlagOutlinedIcon from "@mui/icons-material/FlagOutlined";
 import PlaylistAddCheckOutlinedIcon from "@mui/icons-material/PlaylistAddCheckOutlined";
 import type {
-  FileInformationSection as FileInformationData,
   ReportRecommendationItem,
   RiskLevel,
   Signal,
@@ -29,7 +28,6 @@ import type {
 } from "../../types/verification";
 import DocumentViewer, { isValidOverlayRegion } from "../viewer/DocumentViewer";
 import { downloadVerificationReport } from "../../utils/downloadReport";
-import { buildFileInformationRows, enrichFileInformationFromResult, mergeClientImageMetadata, normalizeFileInformation, readImageDimensionsFromFile } from "../../utils/fileInformationDisplay";
 import {
   buildLocalCategorySummary,
   categoryRiskLabel,
@@ -615,22 +613,6 @@ function VisualFindingCard({
   );
 }
 
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function fileTypeFromName(fileName: string | null): string {
-  if (!fileName || !fileName.includes(".")) return "—";
-  const ext = fileName.split(".").pop()?.trim().toLowerCase();
-  if (!ext) return "—";
-  if (ext === "pdf") return "PDF";
-  if (ext === "jpeg" || ext === "jpg") return "JPEG";
-  return ext.toUpperCase();
-}
-
 function RecommendationCard({
   item,
   index,
@@ -789,119 +771,6 @@ function RecommendationsSection({
   );
 }
 
-function FileInformationSection({ info }: { info: FileInformationData }) {
-  const rows = buildFileInformationRows(info);
-
-  return (
-    <Box
-      sx={{
-        p: 2.25,
-        borderRadius: "12px",
-        border: `1px solid ${VS.border}`,
-        backgroundColor: VS.bgCard,
-        flexShrink: 0,
-      }}
-    >
-      <Typography
-        sx={{
-          fontSize: "0.6875rem",
-          fontWeight: 600,
-          letterSpacing: "0.1em",
-          color: VS.textMuted,
-          fontFamily: VS.mono,
-          mb: 1.25,
-        }}
-      >
-        FILE INFORMATION
-      </Typography>
-      <Box sx={{ display: "grid", gap: 1 }}>
-        {rows.map((row, index) => (
-          <Box
-            key={`${row.label}-${index}`}
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 2,
-              py: 0.5,
-              borderBottom: `1px solid ${VS.border}`,
-            }}
-          >
-            <Typography sx={{ fontSize: "0.8125rem", color: VS.textMuted, flexShrink: 0 }}>
-              {row.label}
-            </Typography>
-            <Typography
-              sx={{
-                fontSize: "0.875rem",
-                fontWeight: 600,
-                color: VS.textSecondary,
-                textAlign: "right",
-                wordBreak: "break-word",
-              }}
-            >
-              {row.value}
-            </Typography>
-          </Box>
-        ))}
-      </Box>
-    </Box>
-  );
-}
-
-function CertificateFlagsSection({
-  items,
-  emptyText,
-}: {
-  items: string[];
-  emptyText: string;
-}) {
-  return (
-    <Box
-      sx={{
-        p: 2.25,
-        borderRadius: "12px",
-        border: `1px solid ${VS.border}`,
-        backgroundColor: VS.bgCard,
-        flexShrink: 0,
-      }}
-    >
-      <Typography
-        sx={{
-          fontSize: "0.6875rem",
-          fontWeight: 600,
-          letterSpacing: "0.1em",
-          color: VS.textMuted,
-          fontFamily: VS.mono,
-          mb: 1.25,
-        }}
-      >
-        CERTIFICATE FLAGS
-      </Typography>
-      {items.length === 0 ? (
-        <Typography sx={{ fontSize: "0.875rem", color: VS.textMuted, lineHeight: 1.6 }}>
-          {emptyText}
-        </Typography>
-      ) : (
-        <Box component="ul" sx={{ m: 0, pl: 2.25 }}>
-          {items.map((item, index) => (
-            <Typography
-              key={`certificate-flag-${index}`}
-              component="li"
-              sx={{
-                fontSize: "0.875rem",
-                color: VS.textSecondary,
-                lineHeight: 1.65,
-                mb: 0.75,
-              }}
-            >
-              {item}
-            </Typography>
-          ))}
-        </Box>
-      )}
-    </Box>
-  );
-}
-
 export default function ResultsDashboard({
   result,
   file,
@@ -941,81 +810,7 @@ export default function ResultsDashboard({
   } = useMemo(() => computeAnalysisDisplayScores(result), [result]);
   const aiProbabilitySource = result.aiDetection?.source ?? null;
 
-  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(
-    null
-  );
-
-  useEffect(() => {
-    if (!file) {
-      setImageDimensions(null);
-      return;
-    }
-    let cancelled = false;
-    void readImageDimensionsFromFile(file).then((dims) => {
-      if (!cancelled) setImageDimensions(dims);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [file]);
-
-  const fileInformation = useMemo(() => {
-    const clientFileModified =
-      file && file.lastModified > 0 ? new Date(file.lastModified).toISOString() : null;
-
-    const clientFields = {
-      fileName: file?.name ?? null,
-      mimeType: file?.type || null,
-      fileSizeBytes: file?.size ?? null,
-      fileModified: clientFileModified,
-    };
-
-    if (result.fileInformation) {
-      return normalizeFileInformation(
-        enrichFileInformationFromResult(
-          mergeClientImageMetadata(
-            {
-              ...result.fileInformation,
-              fileName: result.fileInformation.fileName ?? clientFields.fileName,
-              mimeType: result.fileInformation.mimeType ?? clientFields.mimeType,
-              fileSizeBytes: result.fileInformation.fileSizeBytes ?? clientFields.fileSizeBytes,
-              fileModified: result.fileInformation.fileModified ?? clientFields.fileModified,
-            },
-            imageDimensions,
-            file
-          ),
-          result
-        )
-      );
-    }
-
-    return normalizeFileInformation(
-      enrichFileInformationFromResult(
-        mergeClientImageMetadata(
-          {
-            fileName: clientFields.fileName,
-            mimeType: clientFields.mimeType,
-            fileType: fileTypeFromName(file?.name ?? null),
-            fileSize: file ? formatBytes(file.size) : "—",
-            fileSizeBytes: clientFields.fileSizeBytes,
-            numPages: 1,
-            fileModified: clientFields.fileModified,
-            isPdf: file?.name?.toLowerCase().endsWith(".pdf") ?? false,
-          },
-          imageDimensions,
-          file
-        ),
-        result
-      )
-    );
-  }, [result, result.fileInformation, file, imageDimensions]);
-
   const recommendations = result.recommendations ?? [];
-
-  const certificateFlags = useMemo(() => {
-    if (result.certificateFlags?.length) return result.certificateFlags;
-    return [...(result.vendorFlags ?? []), ...(result.metadataFlags ?? [])];
-  }, [result.certificateFlags, result.vendorFlags, result.metadataFlags]);
 
   const criticalLabel = riskLabel(result.report.riskLevel, riskScore);
   const criticalColor = scoreColor(riskScore);
@@ -1570,11 +1365,6 @@ export default function ResultsDashboard({
         <RecommendationsSection
           items={recommendations}
           emptyText="No recommendations were generated for this examination."
-        />
-        <FileInformationSection info={fileInformation} />
-        <CertificateFlagsSection
-          items={certificateFlags}
-          emptyText="No certificate flags were reported."
         />
       </Box>
 
